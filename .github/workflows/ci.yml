@@ -25,6 +25,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run tests
         run: cargo test --verbose
+      - name: Run tests (with tokio feature)
+        run: cargo test --verbose --features tokio
 
   clippy:
     name: Clippy
