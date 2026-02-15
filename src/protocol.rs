@@ -260,7 +260,7 @@ pub struct Stratum(pub u8);
 ///
 /// The interpretation depends on the value in the stratum field:
 ///
-/// - For packet stratum 0 (unspecified or invalid), this is a four-character ASCII [RFC1345]
+/// - For packet stratum 0 (unspecified or invalid), this is a four-character ASCII \[RFC1345\]
 ///   string, called the "kiss code", used for debugging and monitoring purposes.
 /// - For stratum 1 (reference clock), this is a four-octet, left-justified, zero-padded ASCII
 ///   string assigned to the reference clock.
@@ -464,7 +464,7 @@ impl TryFrom<u32> for KissOfDeath {
 ///
 /// ### Format
 ///
-/// The NTP packet is a UDP datagram [RFC0768]. Some fields use multiple words and others are
+/// The NTP packet is a UDP datagram \[RFC0768\]. Some fields use multiple words and others are
 /// packed in smaller fields within a word. The NTP packet header shown below has 12 words followed
 /// by optional extension fields and finally an optional message authentication code (MAC)
 /// consisting of the Key Identifier field and Message Digest field.
