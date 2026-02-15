@@ -1,13 +1,11 @@
 Ntplib
 ------------
 
-[![Build Status](https://travis-ci.org/JeffBelgum/ntp.svg?branch=master)](https://travis-ci.org/JeffBelgum/ntp)
-[![Documentation](https://docs.rs/ntp/badge.svg)](https://docs.rs/ntp)
-[![Crates.io](https://img.shields.io/crates/v/ntp.svg?maxAge=2592000)](https://crates.io/crates/ntp)
-[![License](https://img.shields.io/crates/l/ntp.svg)](https://github.com/JeffBelgum/ntp#license)
+[![Documentation](https://docs.rs/ntp_usg/badge.svg)](https://docs.rs/ntp_usg)
+[![Crates.io](https://img.shields.io/crates/v/ntp_usg.svg?maxAge=2592000)](https://crates.io/crates/ntp_usg)
+[![License](https://img.shields.io/crates/l/ntp.svg)](https://github.com/192d-Wing/ntp_usg#license)
 
 An ntp packet parsing library written in Rust.
-
 
 Usage
 -----
@@ -33,7 +31,6 @@ Todo
 - [ ] async support
 - [ ] setting clocks
 - [ ] ntp server functionality
-
 
 Contributions
 -------------
