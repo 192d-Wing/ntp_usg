@@ -37,6 +37,19 @@ pub mod protocol;
 /// (seconds since 1900-01-01) and Unix timestamps (seconds since 1970-01-01).
 pub mod unix_time;
 
+/// Async NTP client functions using the Tokio runtime.
+///
+/// Enable with the `tokio` feature flag:
+///
+/// ```toml
+/// [dependencies]
+/// ntp_usg = { version = "0.9", features = ["tokio"] }
+/// ```
+///
+/// See [`async_ntp::request`] and [`async_ntp::request_with_timeout`] for details.
+#[cfg(feature = "tokio")]
+pub mod async_ntp;
+
 /// Error returned when the server responds with a Kiss-o'-Death (KoD) packet.
 ///
 /// Per RFC 5905 Section 7.4, recipients of kiss codes MUST inspect them and take
