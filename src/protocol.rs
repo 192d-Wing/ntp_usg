@@ -7,7 +7,6 @@
 //! Documentation is largely derived (and often copied directly) from IETF RFC 5905.
 
 use byteorder::{BE, ReadBytesExt, WriteBytesExt};
-use conv::TryFrom;
 use std::{fmt, io};
 
 /// NTP port number.
@@ -137,26 +136,38 @@ pub struct DateFormat {
     pub fraction: u64,
 }
 
-custom_derive! {
-    /// A 2-bit integer warning of an impending leap second to be inserted or deleted in the last
-    /// minute of the current month with values defined below:
-    ///
-    /// Note that this field is packed in the actual header.
-    ///
-    /// As the only constructors are via associated constants, it should be impossible to create an
-    /// invalid `LeapIndicator`.
-    #[repr(u8)]
-    #[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq, TryFrom(u8))]
-    pub enum LeapIndicator {
-        /// No leap required.
-        #[default]
-        NoWarning = 0,
-        /// Last minute of the day has 61 seconds.
-        AddOne = 1,
-        /// Last minute of the day has 59 seconds.
-        SubOne = 2,
-        /// Clock unsynchronized.
-        Unknown = 3,
+/// A 2-bit integer warning of an impending leap second to be inserted or deleted in the last
+/// minute of the current month with values defined below:
+///
+/// Note that this field is packed in the actual header.
+///
+/// As the only constructors are via associated constants, it should be impossible to create an
+/// invalid `LeapIndicator`.
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub enum LeapIndicator {
+    /// No leap required.
+    #[default]
+    NoWarning = 0,
+    /// Last minute of the day has 61 seconds.
+    AddOne = 1,
+    /// Last minute of the day has 59 seconds.
+    SubOne = 2,
+    /// Clock unsynchronized.
+    Unknown = 3,
+}
+
+impl TryFrom<u8> for LeapIndicator {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(LeapIndicator::NoWarning),
+            1 => Ok(LeapIndicator::AddOne),
+            2 => Ok(LeapIndicator::SubOne),
+            3 => Ok(LeapIndicator::Unknown),
+            _ => Err(()),
+        }
     }
 }
 
@@ -169,24 +180,40 @@ custom_derive! {
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Version(u8);
 
-custom_derive! {
-    /// A 3-bit integer representing the mode.
-    ///
-    /// Note that while this struct is 8-bits, this field is packed to 3 in the actual header.
-    ///
-    /// As the only constructors are via associated constants, it should be impossible to create an
-    /// invalid `Mode`.
-    #[repr(u8)]
-    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, TryFrom(u8))]
-    pub enum Mode {
-        Reserved = 0,
-        SymmetricActive = 1,
-        SymmetricPassive = 2,
-        Client = 3,
-        Server = 4,
-        Broadcast = 5,
-        NtpControlMessage = 6,
-        ReservedForPrivateUse = 7,
+/// A 3-bit integer representing the mode.
+///
+/// Note that while this struct is 8-bits, this field is packed to 3 in the actual header.
+///
+/// As the only constructors are via associated constants, it should be impossible to create an
+/// invalid `Mode`.
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Mode {
+    Reserved = 0,
+    SymmetricActive = 1,
+    SymmetricPassive = 2,
+    Client = 3,
+    Server = 4,
+    Broadcast = 5,
+    NtpControlMessage = 6,
+    ReservedForPrivateUse = 7,
+}
+
+impl TryFrom<u8> for Mode {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Mode::Reserved),
+            1 => Ok(Mode::SymmetricActive),
+            2 => Ok(Mode::SymmetricPassive),
+            3 => Ok(Mode::Client),
+            4 => Ok(Mode::Server),
+            5 => Ok(Mode::Broadcast),
+            6 => Ok(Mode::NtpControlMessage),
+            7 => Ok(Mode::ReservedForPrivateUse),
+            _ => Err(()),
+        }
     }
 }
 
@@ -251,76 +278,129 @@ macro_rules! code_to_u32 {
     };
 }
 
-custom_derive! {
-    /// A four-octet, left-justified, zero-padded ASCII string assigned to the reference clock.
-    ///
-    /// The authoritative list of Reference Identifiers is maintained by IANA; however, any string
-    /// beginning with the ASCII character "X" is reserved for unregistered experimentation and
-    /// development.
-    #[repr(u32)]
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, TryFrom(u32))]
-    pub enum PrimarySource {
-        Goes = code_to_u32!(b"GOES"),
-        Gps = code_to_u32!(b"GPS\0"),
-        Cdma = code_to_u32!(b"CDMA"),
-        Gal = code_to_u32!(b"GAL\0"),
-        Pps = code_to_u32!(b"PPS\0"),
-        Irig = code_to_u32!(b"IRIG"),
-        Wwvb = code_to_u32!(b"WWVB"),
-        Dcf = code_to_u32!(b"DCF\0"),
-        Hgb = code_to_u32!(b"HGB\0"),
-        Msf = code_to_u32!(b"MSF\0"),
-        Jjy = code_to_u32!(b"JJY\0"),
-        Lorc = code_to_u32!(b"LORC"),
-        Tdf = code_to_u32!(b"TDF\0"),
-        Chu = code_to_u32!(b"CHU\0"),
-        Wwv = code_to_u32!(b"WWV\0"),
-        Wwvh = code_to_u32!(b"WWVH"),
-        Nist = code_to_u32!(b"NIST"),
-        Acts = code_to_u32!(b"ACTS"),
-        Usno = code_to_u32!(b"USNO"),
-        Ptb = code_to_u32!(b"PTB\0"),
-        Goog = code_to_u32!(b"GOOG"),
-        Locl = code_to_u32!(b"LOCL"),
-        Cesm = code_to_u32!(b"CESM"),
-        Rbdm = code_to_u32!(b"RBDM"),
-        Omeg = code_to_u32!(b"OMEG"),
-        Dcn = code_to_u32!(b"DCN\0"),
-        Tsp = code_to_u32!(b"TSP\0"),
-        Dts = code_to_u32!(b"DTS\0"),
-        Atom = code_to_u32!(b"ATOM"),
-        Vlf = code_to_u32!(b"VLF\0"),
-        Opps = code_to_u32!(b"OPPS"),
-        Free = code_to_u32!(b"FREE"),
-        Init = code_to_u32!(b"INIT"),
-        Null = 0,
+/// A four-octet, left-justified, zero-padded ASCII string assigned to the reference clock.
+///
+/// The authoritative list of Reference Identifiers is maintained by IANA; however, any string
+/// beginning with the ASCII character "X" is reserved for unregistered experimentation and
+/// development.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PrimarySource {
+    Goes = code_to_u32!(b"GOES"),
+    Gps = code_to_u32!(b"GPS\0"),
+    Cdma = code_to_u32!(b"CDMA"),
+    Gal = code_to_u32!(b"GAL\0"),
+    Pps = code_to_u32!(b"PPS\0"),
+    Irig = code_to_u32!(b"IRIG"),
+    Wwvb = code_to_u32!(b"WWVB"),
+    Dcf = code_to_u32!(b"DCF\0"),
+    Hgb = code_to_u32!(b"HGB\0"),
+    Msf = code_to_u32!(b"MSF\0"),
+    Jjy = code_to_u32!(b"JJY\0"),
+    Lorc = code_to_u32!(b"LORC"),
+    Tdf = code_to_u32!(b"TDF\0"),
+    Chu = code_to_u32!(b"CHU\0"),
+    Wwv = code_to_u32!(b"WWV\0"),
+    Wwvh = code_to_u32!(b"WWVH"),
+    Nist = code_to_u32!(b"NIST"),
+    Acts = code_to_u32!(b"ACTS"),
+    Usno = code_to_u32!(b"USNO"),
+    Ptb = code_to_u32!(b"PTB\0"),
+    Goog = code_to_u32!(b"GOOG"),
+    Locl = code_to_u32!(b"LOCL"),
+    Cesm = code_to_u32!(b"CESM"),
+    Rbdm = code_to_u32!(b"RBDM"),
+    Omeg = code_to_u32!(b"OMEG"),
+    Dcn = code_to_u32!(b"DCN\0"),
+    Tsp = code_to_u32!(b"TSP\0"),
+    Dts = code_to_u32!(b"DTS\0"),
+    Atom = code_to_u32!(b"ATOM"),
+    Vlf = code_to_u32!(b"VLF\0"),
+    Opps = code_to_u32!(b"OPPS"),
+    Free = code_to_u32!(b"FREE"),
+    Init = code_to_u32!(b"INIT"),
+    Null = 0,
+}
+
+impl TryFrom<u32> for PrimarySource {
+    type Error = ();
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            v if v == code_to_u32!(b"GOES") => Ok(PrimarySource::Goes),
+            v if v == code_to_u32!(b"GPS\0") => Ok(PrimarySource::Gps),
+            v if v == code_to_u32!(b"CDMA") => Ok(PrimarySource::Cdma),
+            v if v == code_to_u32!(b"GAL\0") => Ok(PrimarySource::Gal),
+            v if v == code_to_u32!(b"PPS\0") => Ok(PrimarySource::Pps),
+            v if v == code_to_u32!(b"IRIG") => Ok(PrimarySource::Irig),
+            v if v == code_to_u32!(b"WWVB") => Ok(PrimarySource::Wwvb),
+            v if v == code_to_u32!(b"DCF\0") => Ok(PrimarySource::Dcf),
+            v if v == code_to_u32!(b"HGB\0") => Ok(PrimarySource::Hgb),
+            v if v == code_to_u32!(b"MSF\0") => Ok(PrimarySource::Msf),
+            v if v == code_to_u32!(b"JJY\0") => Ok(PrimarySource::Jjy),
+            v if v == code_to_u32!(b"LORC") => Ok(PrimarySource::Lorc),
+            v if v == code_to_u32!(b"TDF\0") => Ok(PrimarySource::Tdf),
+            v if v == code_to_u32!(b"CHU\0") => Ok(PrimarySource::Chu),
+            v if v == code_to_u32!(b"WWV\0") => Ok(PrimarySource::Wwv),
+            v if v == code_to_u32!(b"WWVH") => Ok(PrimarySource::Wwvh),
+            v if v == code_to_u32!(b"NIST") => Ok(PrimarySource::Nist),
+            v if v == code_to_u32!(b"ACTS") => Ok(PrimarySource::Acts),
+            v if v == code_to_u32!(b"USNO") => Ok(PrimarySource::Usno),
+            v if v == code_to_u32!(b"PTB\0") => Ok(PrimarySource::Ptb),
+            v if v == code_to_u32!(b"GOOG") => Ok(PrimarySource::Goog),
+            v if v == code_to_u32!(b"LOCL") => Ok(PrimarySource::Locl),
+            v if v == code_to_u32!(b"CESM") => Ok(PrimarySource::Cesm),
+            v if v == code_to_u32!(b"RBDM") => Ok(PrimarySource::Rbdm),
+            v if v == code_to_u32!(b"OMEG") => Ok(PrimarySource::Omeg),
+            v if v == code_to_u32!(b"DCN\0") => Ok(PrimarySource::Dcn),
+            v if v == code_to_u32!(b"TSP\0") => Ok(PrimarySource::Tsp),
+            v if v == code_to_u32!(b"DTS\0") => Ok(PrimarySource::Dts),
+            v if v == code_to_u32!(b"ATOM") => Ok(PrimarySource::Atom),
+            v if v == code_to_u32!(b"VLF\0") => Ok(PrimarySource::Vlf),
+            v if v == code_to_u32!(b"OPPS") => Ok(PrimarySource::Opps),
+            v if v == code_to_u32!(b"FREE") => Ok(PrimarySource::Free),
+            v if v == code_to_u32!(b"INIT") => Ok(PrimarySource::Init),
+            0 => Ok(PrimarySource::Null),
+            _ => Err(()),
+        }
     }
 }
 
-custom_derive! {
-    /// If the Stratum field is 0, which implies unspecified or invalid, the Reference Identifier
-    /// field can be used to convey messages useful for status reporting and access control. These
-    /// are called **Kiss-o'-Death** (KoD) packets and the ASCII messages they convey are called
-    /// kiss codes.
-    ///
-    /// The KoD packets got their name because an early use was to tell clients to stop sending
-    /// packets that violate server access controls. The kiss codes can provide useful information
-    /// for an intelligent client, either NTPv4 or SNTPv4. Kiss codes are encoded in four-character
-    /// ASCII strings that are left justified and zero filled. The strings are designed for
-    /// character displays and log files.
-    ///
-    /// Recipients of kiss codes MUST inspect them and, in the following cases, take the actions
-    /// described.
-    #[repr(u32)]
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, TryFrom(u32))]
-    pub enum KissOfDeath {
-        /// The client MUST demobilize any associations to that server and stop sending packets to it.
-        Deny = code_to_u32!(b"DENY"),
-        /// The client MUST demobilize any associations to that server and stop sending packets to it.
-        Rstr = code_to_u32!(b"RSTR"),
-        /// The client MUST immediately reduce its polling interval to that server and continue to
-        /// reduce it each time it receives a RATE kiss code.
-        Rate = code_to_u32!(b"RATE"),
+/// If the Stratum field is 0, which implies unspecified or invalid, the Reference Identifier
+/// field can be used to convey messages useful for status reporting and access control. These
+/// are called **Kiss-o'-Death** (KoD) packets and the ASCII messages they convey are called
+/// kiss codes.
+///
+/// The KoD packets got their name because an early use was to tell clients to stop sending
+/// packets that violate server access controls. The kiss codes can provide useful information
+/// for an intelligent client, either NTPv4 or SNTPv4. Kiss codes are encoded in four-character
+/// ASCII strings that are left justified and zero filled. The strings are designed for
+/// character displays and log files.
+///
+/// Recipients of kiss codes MUST inspect them and, in the following cases, take the actions
+/// described.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum KissOfDeath {
+    /// The client MUST demobilize any associations to that server and stop sending packets to it.
+    Deny = code_to_u32!(b"DENY"),
+    /// The client MUST demobilize any associations to that server and stop sending packets to it.
+    Rstr = code_to_u32!(b"RSTR"),
+    /// The client MUST immediately reduce its polling interval to that server and continue to
+    /// reduce it each time it receives a RATE kiss code.
+    Rate = code_to_u32!(b"RATE"),
+}
+
+impl TryFrom<u32> for KissOfDeath {
+    type Error = ();
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            v if v == code_to_u32!(b"DENY") => Ok(KissOfDeath::Deny),
+            v if v == code_to_u32!(b"RSTR") => Ok(KissOfDeath::Rstr),
+            v if v == code_to_u32!(b"RATE") => Ok(KissOfDeath::Rate),
+            _ => Err(()),
+        }
     }
 }
 
@@ -677,7 +757,7 @@ impl ReadFromBytes for (LeapIndicator, Version, Mode) {
         let li_u8 = li_vn_mode >> 6;
         let vn_u8 = (li_vn_mode >> 3) & 0b111;
         let mode_u8 = li_vn_mode & 0b111;
-        let li = match <LeapIndicator as conv::TryFrom<_>>::try_from(li_u8).ok() {
+        let li = match LeapIndicator::try_from(li_u8).ok() {
             Some(li) => li,
             None => {
                 let err_msg = "unknown leap indicator";
@@ -685,7 +765,7 @@ impl ReadFromBytes for (LeapIndicator, Version, Mode) {
             }
         };
         let vn = Version(vn_u8);
-        let mode = match <Mode as conv::TryFrom<_>>::try_from(mode_u8).ok() {
+        let mode = match Mode::try_from(mode_u8).ok() {
             Some(mode) => mode,
             None => {
                 let err_msg = "unknown association mode";
@@ -707,9 +787,9 @@ impl ReadFromBytes for Packet {
         let reference_id = {
             let u = reader.read_u32::<BE>()?;
             if stratum == Stratum::PRIMARY {
-                match <PrimarySource as conv::TryFrom<_>>::try_from(u) {
+                match PrimarySource::try_from(u) {
                     Ok(src) => ReferenceIdentifier::PrimarySource(src),
-                    Err(_) => match <KissOfDeath as conv::TryFrom<_>>::try_from(u) {
+                    Err(_) => match KissOfDeath::try_from(u) {
                         Ok(kod) => ReferenceIdentifier::KissOfDeath(kod),
                         Err(_) => {
                             let err_msg = "unknown reference id";

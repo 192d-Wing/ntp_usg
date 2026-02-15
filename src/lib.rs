@@ -22,9 +22,6 @@ fn main() {
 #![recursion_limit = "1024"]
 
 #[macro_use]
-extern crate custom_derive;
-extern crate conv;
-#[macro_use]
 extern crate log;
 extern crate byteorder;
 
