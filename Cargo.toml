@@ -1,6 +1,6 @@
 [package]
 name = "ntp_usg"
-version = "0.8.0"
+version = "0.9.0"
 authors = ["Jeff Belgum <jeffbelgum@gmail.com>"]
 license = "Apache-2.0 OR MIT"
 edition = "2024"
