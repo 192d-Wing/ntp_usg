@@ -30,12 +30,43 @@ use std::time::Duration;
 pub mod protocol;
 pub mod unix_time;
 
-/// Send a blocking request to an ntp server with a hardcoded 5 second timeout.
+/// Send a blocking request to an NTP server with a hardcoded 5 second timeout.
 ///
-///   `addr` can be any valid socket address
-///   returns an error if the server cannot be reached or the response is invalid.
+/// # Arguments
 ///
-///   **TODO**: remove hardcoded timeout
+/// * `addr` - Any valid socket address (e.g., `"pool.ntp.org:123"` or `"192.168.1.1:123"`)
+///
+/// # Returns
+///
+/// Returns an NTP `Packet` containing the server's response, or an error if the server
+/// cannot be reached or the response is invalid.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use std::error::Error;
+/// # fn main() -> Result<(), Box<dyn Error>> {
+/// // Request time from NTP pool
+/// let response = ntp::request("pool.ntp.org:123")?;
+///
+/// // Access timestamp fields
+/// println!("Server time: {:?}", response.transmit_timestamp);
+/// println!("Stratum: {:?}", response.stratum);
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Errors
+///
+/// Returns `io::Error` if:
+/// - Cannot bind to local UDP socket
+/// - Network timeout (5 seconds for read/write)
+/// - Invalid NTP packet response
+/// - DNS resolution fails
+///
+/// # Note
+///
+/// **TODO**: Make timeout configurable (currently hardcoded to 5 seconds)
 pub fn request<A: ToSocketAddrs>(addr: A) -> io::Result<protocol::Packet> {
     // Create a packet for requesting from an NTP server as a client.
     let mut packet = {
