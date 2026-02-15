@@ -22,7 +22,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ntp_usg = "0.6"
+ntp_usg = "0.7"
 ```
 
 **Minimum Supported Rust Version (MSRV):** 1.93
