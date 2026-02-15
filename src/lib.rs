@@ -156,7 +156,7 @@ fn instant_to_f64(instant: &unix_time::Instant) -> f64 {
 
 /// Compute clock offset and round-trip delay from the four NTP timestamps
 /// using era-aware `Instant` values.
-fn compute_offset_delay(
+pub(crate) fn compute_offset_delay(
     t1: &unix_time::Instant,
     t2: &unix_time::Instant,
     t3: &unix_time::Instant,
@@ -197,17 +197,22 @@ pub(crate) fn build_request_packet(
     Ok((send_buf, t1))
 }
 
-/// Validate and parse an NTP server response.
+/// Parse and validate an NTP server response, performing all checks except
+/// origin timestamp verification.
 ///
-/// Records T4 (destination timestamp), performs all RFC 5905 Section 8 validations,
-/// and computes clock offset and round-trip delay.
-pub(crate) fn validate_response(
+/// Records T4 (destination timestamp) immediately, then validates source IP,
+/// packet size, mode, Kiss-o'-Death codes, transmit timestamp, and
+/// unsynchronized clock status.
+///
+/// Returns the parsed packet and the destination timestamp (T4). This is used
+/// by both the one-shot [`validate_response`] and the continuous client (which
+/// does its own origin timestamp handling for interleaved mode support).
+pub(crate) fn parse_and_validate_response(
     recv_buf: &[u8],
     recv_len: usize,
     src_addr: SocketAddr,
     resolved_addrs: &[SocketAddr],
-    t1: &protocol::TimestampFormat,
-) -> io::Result<NtpResult> {
+) -> io::Result<(protocol::Packet, protocol::TimestampFormat)> {
     // Record T4 (destination timestamp) immediately.
     let t4_instant = unix_time::Instant::now();
     let t4: protocol::TimestampFormat = t4_instant.into();
@@ -256,14 +261,6 @@ pub(crate) fn validate_response(
         ));
     }
 
-    // Validate origin timestamp matches what we sent (anti-replay, RFC 5905 Section 8).
-    if response.origin_timestamp != *t1 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "origin timestamp mismatch: response does not match our request",
-        ));
-    }
-
     // Reject unsynchronized servers (LI=Unknown with non-zero stratum).
     if response.leap_indicator == protocol::LeapIndicator::Unknown
         && response.stratum != protocol::Stratum::UNSPECIFIED
@@ -274,7 +271,34 @@ pub(crate) fn validate_response(
         ));
     }
 
+    Ok((response, t4))
+}
+
+/// Validate and parse an NTP server response (one-shot API).
+///
+/// Delegates to [`parse_and_validate_response`] for common checks, then
+/// verifies the origin timestamp (anti-replay) and computes clock offset
+/// and round-trip delay.
+pub(crate) fn validate_response(
+    recv_buf: &[u8],
+    recv_len: usize,
+    src_addr: SocketAddr,
+    resolved_addrs: &[SocketAddr],
+    t1: &protocol::TimestampFormat,
+) -> io::Result<NtpResult> {
+    let (response, t4) =
+        parse_and_validate_response(recv_buf, recv_len, src_addr, resolved_addrs)?;
+
+    // Validate origin timestamp matches what we sent (anti-replay, RFC 5905 Section 8).
+    if response.origin_timestamp != *t1 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "origin timestamp mismatch: response does not match our request",
+        ));
+    }
+
     // Convert all four timestamps to Instant for era-aware offset/delay computation.
+    let t4_instant = unix_time::Instant::from(t4);
     let t1_instant = unix_time::timestamp_to_instant(*t1, &t4_instant);
     let t2_instant = unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
     let t3_instant = unix_time::timestamp_to_instant(response.transmit_timestamp, &t4_instant);
