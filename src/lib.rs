@@ -37,6 +37,8 @@ pub mod unix_time;
 
 /// Send a blocking request to an NTP server with a hardcoded 5 second timeout.
 ///
+/// This is a convenience wrapper around [`request_with_timeout`] with a 5 second timeout.
+///
 /// # Arguments
 ///
 /// * `addr` - Any valid socket address (e.g., `"pool.ntp.org:123"` or `"192.168.1.1:123"`)
@@ -68,11 +70,46 @@ pub mod unix_time;
 /// - Network timeout (5 seconds for read/write)
 /// - Invalid NTP packet response
 /// - DNS resolution fails
-///
-/// # Note
-///
-/// **TODO**: Make timeout configurable (currently hardcoded to 5 seconds)
 pub fn request<A: ToSocketAddrs>(addr: A) -> io::Result<protocol::Packet> {
+    request_with_timeout(addr, Duration::from_secs(5))
+}
+
+/// Send a blocking request to an NTP server with a configurable timeout.
+///
+/// # Arguments
+///
+/// * `addr` - Any valid socket address (e.g., `"pool.ntp.org:123"` or `"192.168.1.1:123"`)
+/// * `timeout` - Maximum duration to wait for both sending and receiving the NTP packet
+///
+/// # Returns
+///
+/// Returns an NTP `Packet` containing the server's response, or an error if the server
+/// cannot be reached or the response is invalid.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use std::error::Error;
+/// # use std::time::Duration;
+/// # fn main() -> Result<(), Box<dyn Error>> {
+/// // Request time with a 10 second timeout
+/// let response = ntp::request_with_timeout("pool.ntp.org:123", Duration::from_secs(10))?;
+/// println!("Server time: {:?}", response.transmit_timestamp);
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Errors
+///
+/// Returns `io::Error` if:
+/// - Cannot bind to local UDP socket
+/// - Network timeout (specified duration exceeded)
+/// - Invalid NTP packet response
+/// - DNS resolution fails
+pub fn request_with_timeout<A: ToSocketAddrs>(
+    addr: A,
+    timeout: Duration,
+) -> io::Result<protocol::Packet> {
     // Create a packet for requesting from an NTP server as a client.
     let mut packet = {
         let leap_indicator = protocol::LeapIndicator::default();
@@ -112,8 +149,8 @@ pub fn request<A: ToSocketAddrs>(addr: A) -> io::Result<protocol::Packet> {
 
     // Create the socket from which we will send the packet.
     let sock = UdpSocket::bind("0.0.0.0:0")?;
-    sock.set_read_timeout(Some(Duration::from_secs(5)))?;
-    sock.set_write_timeout(Some(Duration::from_secs(5)))?;
+    sock.set_read_timeout(Some(timeout))?;
+    sock.set_write_timeout(Some(timeout))?;
 
     // Send the data.
     let sz = sock.send_to(&bytes, addr)?;
