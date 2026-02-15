@@ -17,6 +17,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         rust: [stable, beta]
+        # Exclude macOS beta due to flaky network tests
+        exclude:
+          - os: macos-latest
+            rust: beta
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@master
