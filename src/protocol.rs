@@ -533,7 +533,7 @@ where
     }
 }
 
-impl<'a, P> WriteToBytes for &'a P
+impl<P> WriteToBytes for &P
 where
     P: WriteToBytes,
 {
