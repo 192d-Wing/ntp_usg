@@ -12,15 +12,28 @@ Usage
 
 Add this to your `Cargo.toml`:
 
-```ini
+```toml
 [dependencies]
-ntp = "0.5"
+ntp = "0.6"
 ```
 
-and this to your crate root:
+**Minimum Supported Rust Version (MSRV):** 1.93
+**Edition:** 2024
+
+Example:
 
 ```rust
-extern crate ntp;
+use chrono::TimeZone;
+
+fn main() {
+    let address = "pool.ntp.org:123";
+    let response = ntp::request(address).unwrap();
+    let unix_time = ntp::unix_time::Instant::from(response.transmit_timestamp);
+    let local_time = chrono::Local
+        .timestamp_opt(unix_time.secs(), unix_time.subsec_nanos() as _)
+        .unwrap();
+    println!("Current time: {}", local_time);
+}
 ```
 
 Todo
