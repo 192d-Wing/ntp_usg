@@ -29,6 +29,10 @@ use std::net::{ToSocketAddrs, UdpSocket};
 use std::time::Duration;
 
 pub mod protocol;
+/// Unix time conversion utilities for NTP timestamps.
+///
+/// Provides the `Instant` type for converting between NTP timestamps
+/// (seconds since 1900-01-01) and Unix timestamps (seconds since 1970-01-01).
 pub mod unix_time;
 
 /// Send a blocking request to an NTP server with a hardcoded 5 second timeout.

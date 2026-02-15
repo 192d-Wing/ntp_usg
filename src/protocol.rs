@@ -37,6 +37,7 @@ pub const MAXSTRAT: u8 = 16;
 ///
 /// A blanket implementation is provided for all types that implement `byteorder::WriteBytesExt`.
 pub trait WriteBytes {
+    /// Writes an NTP protocol type to this writer in network byte order.
     fn write_bytes<P: WriteToBytes>(&mut self, protocol: P) -> io::Result<()>;
 }
 
@@ -44,6 +45,7 @@ pub trait WriteBytes {
 ///
 /// A blanket implementation is provided for all types that implement `byteorder::ReadBytesExt`.
 pub trait ReadBytes {
+    /// Reads an NTP protocol type from this reader in network byte order.
     fn read_bytes<P: ReadFromBytes>(&mut self) -> io::Result<P>;
 }
 
@@ -61,6 +63,7 @@ pub trait ReadFromBytes: Sized {
 
 /// Types that have a constant size when written to or read from bytes.
 pub trait ConstPackedSizeBytes {
+    /// The constant size in bytes when this type is packed for network transmission.
     const PACKED_SIZE_BYTES: usize;
 }
 
@@ -80,7 +83,9 @@ pub trait ConstPackedSizeBytes {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ShortFormat {
+    /// Seconds component (16-bit unsigned).
     pub seconds: u16,
+    /// Fractional seconds component (16-bit unsigned).
     pub fraction: u16,
 }
 
@@ -104,7 +109,9 @@ pub struct ShortFormat {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TimestampFormat {
+    /// Seconds since 1900-01-01 00:00:00 UTC (32-bit unsigned).
     pub seconds: u32,
+    /// Fractional seconds (32-bit unsigned, resolution of ~232 picoseconds).
     pub fraction: u32,
 }
 
@@ -131,8 +138,11 @@ pub struct TimestampFormat {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DateFormat {
+    /// Era number (signed 32-bit integer).
     pub era_number: i32,
+    /// Offset within the era in seconds (32-bit unsigned).
     pub era_offset: u32,
+    /// Fractional seconds (64-bit unsigned).
     pub fraction: u64,
 }
 
@@ -189,13 +199,21 @@ pub struct Version(u8);
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Mode {
+    /// Reserved mode (value 0).
     Reserved = 0,
+    /// Symmetric active mode (value 1).
     SymmetricActive = 1,
+    /// Symmetric passive mode (value 2).
     SymmetricPassive = 2,
+    /// Client mode (value 3).
     Client = 3,
+    /// Server mode (value 4).
     Server = 4,
+    /// Broadcast mode (value 5).
     Broadcast = 5,
+    /// NTP control message mode (value 6).
     NtpControlMessage = 6,
+    /// Reserved for private use (value 7).
     ReservedForPrivateUse = 7,
 }
 
@@ -253,6 +271,7 @@ pub struct Stratum(pub u8);
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReferenceIdentifier {
+    /// Primary reference source (stratum 1) identifier.
     PrimarySource(PrimarySource),
     /// The reference identifier of the secondary or client server. Can be used to detect timing
     /// loops.
@@ -264,6 +283,7 @@ pub enum ReferenceIdentifier {
     /// client, the Reference Identifier field appears to be a random value and a timing loop might
     /// not be detected.
     SecondaryOrClient([u8; 4]),
+    /// Kiss-o'-Death packet code (stratum 0).
     KissOfDeath(KissOfDeath),
 }
 
@@ -283,11 +303,19 @@ macro_rules! code_to_u32 {
 /// The authoritative list of Reference Identifiers is maintained by IANA; however, any string
 /// beginning with the ASCII character "X" is reserved for unregistered experimentation and
 /// development.
+///
+/// All variants represent standard reference clock identifiers as four-character ASCII codes.
+/// See the [IANA NTP Parameters](https://www.iana.org/assignments/ntp-parameters/) registry
+/// for the complete list of reference identifiers.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[allow(missing_docs)]
 pub enum PrimarySource {
+    /// Geosynchronous Orbit Environment Satellite.
     Goes = code_to_u32!(b"GOES"),
+    /// Global Position System.
     Gps = code_to_u32!(b"GPS\0"),
+    /// Code Division Multiple Access.
     Cdma = code_to_u32!(b"CDMA"),
     Gal = code_to_u32!(b"GAL\0"),
     Pps = code_to_u32!(b"PPS\0"),
@@ -490,9 +518,13 @@ impl TryFrom<u32> for KissOfDeath {
 /// ```
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Packet {
+    /// Leap indicator warning of impending leap second.
     pub leap_indicator: LeapIndicator,
+    /// NTP protocol version number (1-4).
     pub version: Version,
+    /// Association mode (client, server, broadcast, etc.).
     pub mode: Mode,
+    /// Stratum level of the time source (0-15).
     pub stratum: Stratum,
     /// 8-bit signed integer representing the maximum interval between successive messages, in log2
     /// seconds. Suggested default limits for minimum and maximum poll intervals are 6 and 10,
@@ -507,6 +539,7 @@ pub struct Packet {
     pub root_delay: ShortFormat,
     /// Total dispersion to the reference clock, in NTP short format.
     pub root_dispersion: ShortFormat,
+    /// Reference identifier (clock source or server address).
     pub reference_id: ReferenceIdentifier,
     /// Time when the system clock was last set or corrected.
     pub reference_timestamp: TimestampFormat,
@@ -531,9 +564,13 @@ impl PrimarySource {
 }
 
 impl Version {
+    /// NTP version 1.
     pub const V1: Self = Version(1);
+    /// NTP version 2.
     pub const V2: Self = Version(2);
+    /// NTP version 3.
     pub const V3: Self = Version(3);
+    /// NTP version 4 (current standard).
     pub const V4: Self = Version(4);
 
     /// Whether or not the version is a known, valid version.
