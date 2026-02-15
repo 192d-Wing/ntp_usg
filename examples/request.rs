@@ -11,10 +11,13 @@ fn local_time(timestamp: ntp::protocol::TimestampFormat) -> chrono::DateTime<chr
 
 fn main() {
     let address = "0.pool.ntp.org:123";
-    let response: ntp::protocol::Packet = ntp::request(address).unwrap();
+    let result = ntp::request(address).unwrap();
     println!("Timestamps in local time:");
-    println!("  reference: {}", local_time(response.reference_timestamp));
-    println!("  origin:    {}", local_time(response.origin_timestamp));
-    println!("  receive:   {}", local_time(response.receive_timestamp));
-    println!("  transmit:  {}", local_time(response.transmit_timestamp));
+    println!("  reference: {}", local_time(result.reference_timestamp));
+    println!("  origin:    {}", local_time(result.origin_timestamp));
+    println!("  receive:   {}", local_time(result.receive_timestamp));
+    println!("  transmit:  {}", local_time(result.transmit_timestamp));
+    println!("\nTiming:");
+    println!("  offset: {:.6} seconds", result.offset_seconds);
+    println!("  delay:  {:.6} seconds", result.delay_seconds);
 }

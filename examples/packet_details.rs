@@ -11,7 +11,8 @@ fn main() {
     println!("Requesting NTP packet from {}...\n", address);
 
     match ntp::request(address) {
-        Ok(packet) => {
+        Ok(result) => {
+            let packet = &result.packet;
             println!("=== NTP Packet Details ===\n");
 
             // Header fields
@@ -106,6 +107,11 @@ fn main() {
                 }
                 ntp::protocol::LeapIndicator::Unknown => println!("  ✗ Clock not synchronized"),
             }
+
+            // Timing information (RFC 5905 Section 8)
+            println!("\nTiming:");
+            println!("  Clock offset: {:.6} seconds", result.offset_seconds);
+            println!("  Round-trip delay: {:.6} seconds", result.delay_seconds);
         }
         Err(e) => {
             eprintln!("Error: {}", e);

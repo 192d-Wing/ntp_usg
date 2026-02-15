@@ -34,6 +34,7 @@ fn main() {
                     .unwrap();
 
                 println!("  Time: {}", local_time);
+                println!("  Offset: {:.6} seconds", response.offset_seconds);
                 successful_responses.push((server, response));
             }
             Err(e) => {

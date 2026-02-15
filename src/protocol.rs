@@ -268,7 +268,6 @@ pub struct Stratum(pub u8);
 /// The authoritative list of Reference Identifiers is maintained by IANA; however, any string
 /// beginning with the ASCII character "X" is reserved for unregistered experimentation and
 /// development.
-#[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReferenceIdentifier {
     /// Primary reference source (stratum 1) identifier.
@@ -285,6 +284,12 @@ pub enum ReferenceIdentifier {
     SecondaryOrClient([u8; 4]),
     /// Kiss-o'-Death packet code (stratum 0).
     KissOfDeath(KissOfDeath),
+    /// An unrecognized 4-byte reference identifier.
+    ///
+    /// Used for stratum 0 packets with non-standard kiss codes, stratum 1 packets with
+    /// unrecognized reference source identifiers, and stratum 16+ (unsynchronized/reserved)
+    /// packets.
+    Unknown([u8; 4]),
 }
 
 // Convert an ascii string to a big-endian u32.
@@ -556,6 +561,23 @@ pub type PacketByte1 = (LeapIndicator, Version, Mode);
 
 // Inherent implementations.
 
+impl ReferenceIdentifier {
+    /// Returns the raw 4-byte representation of the reference identifier.
+    pub fn as_bytes(&self) -> [u8; 4] {
+        match *self {
+            ReferenceIdentifier::PrimarySource(src) => src.bytes(),
+            ReferenceIdentifier::SecondaryOrClient(arr) => arr,
+            ReferenceIdentifier::KissOfDeath(kod) => be_u32_to_bytes(kod as u32),
+            ReferenceIdentifier::Unknown(arr) => arr,
+        }
+    }
+
+    /// Returns true if this is a Kiss-o'-Death reference identifier.
+    pub fn is_kiss_of_death(&self) -> bool {
+        matches!(self, ReferenceIdentifier::KissOfDeath(_))
+    }
+}
+
 impl PrimarySource {
     /// The bytestring representation of the primary source.
     pub fn bytes(&self) -> [u8; 4] {
@@ -703,6 +725,9 @@ impl WriteToBytes for ReferenceIdentifier {
             ReferenceIdentifier::SecondaryOrClient(arr) => {
                 writer.write_u32::<BE>(code_to_u32!(&arr))?;
             }
+            ReferenceIdentifier::Unknown(arr) => {
+                writer.write_u32::<BE>(code_to_u32!(&arr))?;
+            }
         }
         Ok(())
     }
@@ -823,23 +848,25 @@ impl ReadFromBytes for Packet {
         let root_dispersion = reader.read_bytes()?;
         let reference_id = {
             let u = reader.read_u32::<BE>()?;
-            if stratum == Stratum::PRIMARY {
+            let raw_bytes = be_u32_to_bytes(u);
+            if stratum == Stratum::UNSPECIFIED {
+                // Stratum 0: Kiss-o'-Death packet (RFC 5905 Section 7.4).
+                match KissOfDeath::try_from(u) {
+                    Ok(kod) => ReferenceIdentifier::KissOfDeath(kod),
+                    Err(_) => ReferenceIdentifier::Unknown(raw_bytes),
+                }
+            } else if stratum == Stratum::PRIMARY {
+                // Stratum 1: primary reference source (4-char ASCII).
                 match PrimarySource::try_from(u) {
                     Ok(src) => ReferenceIdentifier::PrimarySource(src),
-                    Err(_) => match KissOfDeath::try_from(u) {
-                        Ok(kod) => ReferenceIdentifier::KissOfDeath(kod),
-                        Err(_) => {
-                            let err_msg = "unknown reference id";
-                            return Err(io::Error::new(io::ErrorKind::InvalidData, err_msg));
-                        }
-                    },
+                    Err(_) => ReferenceIdentifier::Unknown(raw_bytes),
                 }
             } else if stratum.is_secondary() {
-                let arr = be_u32_to_bytes(u);
-                ReferenceIdentifier::SecondaryOrClient(arr)
+                // Stratum 2-15: IPv4 address or first 4 octets of MD5 hash of IPv6 address.
+                ReferenceIdentifier::SecondaryOrClient(raw_bytes)
             } else {
-                let err_msg = "unsupported stratum";
-                return Err(io::Error::new(io::ErrorKind::InvalidData, err_msg));
+                // Stratum 16 (unsynchronized) or 17-255 (reserved).
+                ReferenceIdentifier::Unknown(raw_bytes)
             }
         };
         let reference_timestamp = reader.read_bytes()?;
