@@ -30,6 +30,16 @@ use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::ops::Deref;
 use std::time::Duration;
 
+/// Select the appropriate bind address based on the target address family.
+///
+/// Returns `"0.0.0.0:0"` for IPv4 targets and `"[::]:0"` for IPv6 targets.
+pub(crate) fn bind_addr_for(target: &SocketAddr) -> &'static str {
+    match target {
+        SocketAddr::V4(_) => "0.0.0.0:0",
+        SocketAddr::V6(_) => "[::]:0",
+    }
+}
+
 pub mod protocol;
 /// Unix time conversion utilities for NTP timestamps.
 ///
@@ -385,7 +395,7 @@ pub fn request_with_timeout<A: ToSocketAddrs>(
     let (send_buf, t1) = build_request_packet()?;
 
     // Create the socket from which we will send the packet.
-    let sock = UdpSocket::bind("0.0.0.0:0")?;
+    let sock = UdpSocket::bind(bind_addr_for(&target_addr))?;
     sock.set_read_timeout(Some(timeout))?;
     sock.set_write_timeout(Some(timeout))?;
 
