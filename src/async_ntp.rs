@@ -98,8 +98,8 @@ async fn request_inner<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
     // Build packet (pure computation, shared with sync path).
     let (send_buf, t1) = build_request_packet()?;
 
-    // Create async UDP socket.
-    let sock = UdpSocket::bind("0.0.0.0:0").await?;
+    // Create async UDP socket with address family matching the target.
+    let sock = UdpSocket::bind(crate::bind_addr_for(&target_addr)).await?;
 
     // Send the request.
     let sz = sock.send_to(&send_buf, target_addr).await?;
