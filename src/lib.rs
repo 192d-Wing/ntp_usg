@@ -126,25 +126,145 @@ impl Deref for NtpResult {
     }
 }
 
-/// Convert an NTP TimestampFormat to seconds as f64.
-fn timestamp_to_f64(ts: &protocol::TimestampFormat) -> f64 {
-    ts.seconds as f64 + (ts.fraction as f64 / (u32::MAX as f64 + 1.0))
+/// Convert a Unix `Instant` to seconds as f64 (relative to Unix epoch).
+fn instant_to_f64(instant: &unix_time::Instant) -> f64 {
+    instant.secs() as f64 + (instant.subsec_nanos() as f64 / 1e9)
 }
 
-/// Compute clock offset and round-trip delay from the four NTP timestamps.
+/// Compute clock offset and round-trip delay from the four NTP timestamps
+/// using era-aware `Instant` values.
 fn compute_offset_delay(
-    t1: &protocol::TimestampFormat,
-    t2: &protocol::TimestampFormat,
-    t3: &protocol::TimestampFormat,
-    t4: &protocol::TimestampFormat,
+    t1: &unix_time::Instant,
+    t2: &unix_time::Instant,
+    t3: &unix_time::Instant,
+    t4: &unix_time::Instant,
 ) -> (f64, f64) {
-    let t1 = timestamp_to_f64(t1);
-    let t2 = timestamp_to_f64(t2);
-    let t3 = timestamp_to_f64(t3);
-    let t4 = timestamp_to_f64(t4);
+    let t1 = instant_to_f64(t1);
+    let t2 = instant_to_f64(t2);
+    let t3 = instant_to_f64(t3);
+    let t4 = instant_to_f64(t4);
     let offset = ((t2 - t1) + (t3 - t4)) / 2.0;
     let delay = (t4 - t1) - (t3 - t2);
     (offset, delay)
+}
+
+/// Build an NTP client request packet and serialize it.
+///
+/// Returns the serialized buffer and the origin timestamp (T1).
+pub(crate) fn build_request_packet(
+) -> io::Result<([u8; protocol::Packet::PACKED_SIZE_BYTES], protocol::TimestampFormat)> {
+    let packet = protocol::Packet {
+        leap_indicator: protocol::LeapIndicator::default(),
+        version: protocol::Version::V4,
+        mode: protocol::Mode::Client,
+        stratum: protocol::Stratum::UNSPECIFIED,
+        poll: 0,
+        precision: 0,
+        root_delay: protocol::ShortFormat::default(),
+        root_dispersion: protocol::ShortFormat::default(),
+        reference_id: protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Null),
+        reference_timestamp: protocol::TimestampFormat::default(),
+        origin_timestamp: protocol::TimestampFormat::default(),
+        receive_timestamp: protocol::TimestampFormat::default(),
+        transmit_timestamp: unix_time::Instant::now().into(),
+    };
+    let t1 = packet.transmit_timestamp;
+    let mut send_buf = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
+    (&mut send_buf[..]).write_bytes(packet)?;
+    Ok((send_buf, t1))
+}
+
+/// Validate and parse an NTP server response.
+///
+/// Records T4 (destination timestamp), performs all RFC 5905 Section 8 validations,
+/// and computes clock offset and round-trip delay.
+pub(crate) fn validate_response(
+    recv_buf: &[u8],
+    recv_len: usize,
+    src_addr: SocketAddr,
+    resolved_addrs: &[SocketAddr],
+    t1: &protocol::TimestampFormat,
+) -> io::Result<NtpResult> {
+    // Record T4 (destination timestamp) immediately.
+    let t4_instant = unix_time::Instant::now();
+    let t4: protocol::TimestampFormat = t4_instant.into();
+
+    // Verify the response came from one of the resolved addresses (IP only, port may differ).
+    if !resolved_addrs.iter().any(|a| a.ip() == src_addr.ip()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "response from unexpected source address",
+        ));
+    }
+
+    // Verify minimum packet size.
+    if recv_len < protocol::Packet::PACKED_SIZE_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NTP response too short",
+        ));
+    }
+
+    // Parse the first 48 bytes as an NTP packet (ignoring extension fields/MAC).
+    let response: protocol::Packet =
+        (&recv_buf[..protocol::Packet::PACKED_SIZE_BYTES]).read_bytes()?;
+
+    // Validate server mode (RFC 5905 Section 8).
+    if response.mode != protocol::Mode::Server {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "unexpected response mode (expected Server)",
+        ));
+    }
+
+    // Enforce Kiss-o'-Death codes (RFC 5905 Section 7.4).
+    if let protocol::ReferenceIdentifier::KissOfDeath(kod) = response.reference_id {
+        return Err(io::Error::new(
+            io::ErrorKind::ConnectionRefused,
+            KissOfDeathError { code: kod },
+        ));
+    }
+
+    // Validate that the server's transmit timestamp is non-zero.
+    if response.transmit_timestamp.seconds == 0 && response.transmit_timestamp.fraction == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "server transmit timestamp is zero",
+        ));
+    }
+
+    // Validate origin timestamp matches what we sent (anti-replay, RFC 5905 Section 8).
+    if response.origin_timestamp != *t1 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "origin timestamp mismatch: response does not match our request",
+        ));
+    }
+
+    // Reject unsynchronized servers (LI=Unknown with non-zero stratum).
+    if response.leap_indicator == protocol::LeapIndicator::Unknown
+        && response.stratum != protocol::Stratum::UNSPECIFIED
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "server reports unsynchronized clock",
+        ));
+    }
+
+    // Convert all four timestamps to Instant for era-aware offset/delay computation.
+    let t1_instant = unix_time::timestamp_to_instant(*t1, &t4_instant);
+    let t2_instant = unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
+    let t3_instant = unix_time::timestamp_to_instant(response.transmit_timestamp, &t4_instant);
+
+    let (offset_seconds, delay_seconds) =
+        compute_offset_delay(&t1_instant, &t2_instant, &t3_instant, &t4_instant);
+
+    Ok(NtpResult {
+        packet: response,
+        destination_timestamp: t4,
+        offset_seconds,
+        delay_seconds,
+    })
 }
 
 /// Send a blocking request to an NTP server with a hardcoded 5 second timeout.
@@ -248,29 +368,8 @@ pub fn request_with_timeout<A: ToSocketAddrs>(
     }
     let target_addr = resolved_addrs[0];
 
-    // Create a packet for requesting from an NTP server as a client.
-    let packet = protocol::Packet {
-        leap_indicator: protocol::LeapIndicator::default(),
-        version: protocol::Version::V4,
-        mode: protocol::Mode::Client,
-        stratum: protocol::Stratum::UNSPECIFIED,
-        poll: 0,
-        precision: 0,
-        root_delay: protocol::ShortFormat::default(),
-        root_dispersion: protocol::ShortFormat::default(),
-        reference_id: protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Null),
-        reference_timestamp: protocol::TimestampFormat::default(),
-        origin_timestamp: protocol::TimestampFormat::default(),
-        receive_timestamp: protocol::TimestampFormat::default(),
-        transmit_timestamp: unix_time::Instant::now().into(),
-    };
-
-    // Record T1 (our transmit timestamp) for later validation and offset computation.
-    let t1 = packet.transmit_timestamp;
-
-    // Write the packet to a send buffer.
-    let mut send_buf = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
-    (&mut send_buf[..]).write_bytes(packet)?;
+    // Build the request packet (shared with async path).
+    let (send_buf, t1) = build_request_packet()?;
 
     // Create the socket from which we will send the packet.
     let sock = UdpSocket::bind("0.0.0.0:0")?;
@@ -287,89 +386,8 @@ pub fn request_with_timeout<A: ToSocketAddrs>(
     let (recv_len, src_addr) = sock.recv_from(&mut recv_buf[..])?;
     debug!("recv: {} bytes from {:?}", recv_len, src_addr);
 
-    // Record T4 (destination timestamp) immediately after receiving.
-    let t4: protocol::TimestampFormat = unix_time::Instant::now().into();
-
-    // Verify the response came from one of the resolved addresses (IP only, port may differ).
-    if !resolved_addrs.iter().any(|a| a.ip() == src_addr.ip()) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "response from unexpected source address",
-        ));
-    }
-
-    // Verify minimum packet size.
-    if recv_len < protocol::Packet::PACKED_SIZE_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTP response too short",
-        ));
-    }
-
-    // Parse the first 48 bytes as an NTP packet (ignoring extension fields/MAC).
-    let response: protocol::Packet =
-        (&recv_buf[..protocol::Packet::PACKED_SIZE_BYTES]).read_bytes()?;
-
-    // Validate server mode (RFC 5905 Section 8).
-    if response.mode != protocol::Mode::Server {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "unexpected response mode (expected Server)",
-        ));
-    }
-
-    // Enforce Kiss-o'-Death codes (RFC 5905 Section 7.4).
-    // KoD packets have stratum 0 and carry a kiss code in the reference_id field.
-    // The RFC says "Recipients of kiss codes MUST inspect them and, in the following
-    // cases, take the actions described."
-    if let protocol::ReferenceIdentifier::KissOfDeath(kod) = response.reference_id {
-        return Err(io::Error::new(
-            io::ErrorKind::ConnectionRefused,
-            KissOfDeathError { code: kod },
-        ));
-    }
-
-    // Validate that the server's transmit timestamp is non-zero.
-    if response.transmit_timestamp.seconds == 0 && response.transmit_timestamp.fraction == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "server transmit timestamp is zero",
-        ));
-    }
-
-    // Validate origin timestamp matches what we sent (anti-replay, RFC 5905 Section 8).
-    if response.origin_timestamp != t1 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "origin timestamp mismatch: response does not match our request",
-        ));
-    }
-
-    // Reject unsynchronized servers (LI=Unknown with non-zero stratum).
-    // Stratum 0 with LI=Unknown is a valid KoD packet and is allowed through.
-    if response.leap_indicator == protocol::LeapIndicator::Unknown
-        && response.stratum != protocol::Stratum::UNSPECIFIED
-    {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "server reports unsynchronized clock",
-        ));
-    }
-
-    // Compute clock offset and round-trip delay (RFC 5905 Section 8).
-    let (offset_seconds, delay_seconds) = compute_offset_delay(
-        &t1,
-        &response.receive_timestamp,
-        &response.transmit_timestamp,
-        &t4,
-    );
-
-    Ok(NtpResult {
-        packet: response,
-        destination_timestamp: t4,
-        offset_seconds,
-        delay_seconds,
-    })
+    // Validate and parse the response (shared with async path).
+    validate_response(&recv_buf, recv_len, src_addr, &resolved_addrs, &t1)
 }
 
 #[test]
