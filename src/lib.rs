@@ -57,6 +57,13 @@ pub mod unix_time;
 /// ```
 ///
 /// See [`async_ntp::request`] and [`async_ntp::request_with_timeout`] for details.
+/// Clock sample filtering for the continuous NTP client.
+///
+/// Implements a simplified version of the RFC 5905 Section 10 clock filter
+/// algorithm.
+#[cfg(feature = "tokio")]
+pub mod filter;
+
 #[cfg(feature = "tokio")]
 pub mod async_ntp;
 
