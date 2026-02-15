@@ -168,14 +168,12 @@ pub fn request_with_timeout<A: ToSocketAddrs>(
 }
 
 #[test]
-#[ignore] // Network test - run with `cargo test -- --ignored`
 fn test_request_ntp_org() {
     let res = request("0.pool.ntp.org:123");
     let _ = res.expect("Failed to get a ntp packet from ntp.org");
 }
 
 #[test]
-#[ignore] // Network test - run with `cargo test -- --ignored`
 fn test_request_google() {
     let res = request("time.google.com:123");
     let _ = res.expect("Failed to get a ntp packet from time.google.com");
