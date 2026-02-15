@@ -5,9 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] - 2026-02-15
 
 ### Added
+
 - Configurable timeout support via `request_with_timeout()` function
 - Comprehensive documentation for all public APIs (zero missing docs warnings)
 - Three new example programs:
@@ -23,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `#![warn(missing_docs)]` lint to maintain documentation quality
 
 ### Changed
+
 - **BREAKING**: Updated to Rust Edition 2024 with MSRV 1.93
 - Removed `custom_derive` and `conv` dependencies, using standard library traits instead
 - Manually implemented `TryFrom` for all protocol enums (`LeapIndicator`, `Mode`, `PrimarySource`, `KissOfDeath`)
@@ -36,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved README with Edition 2024 usage examples and MSRV information
 
 ### Fixed
+
 - Anonymous parameter syntax in trait methods (required for Edition 2024)
 - Module imports to use crate-relative paths
 - Broken rustdoc links for RFC references
@@ -44,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - UTC to NTP timestamp conversion
 
 ### Removed
+
 - `#![recursion_limit = "1024"]` (no longer necessary)
 - Unused `#[macro_use]` attributes
 - Travis CI configuration (replaced with GitHub Actions)
@@ -53,5 +57,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Historical release information prior to the Edition 2024 migration.
 
-[Unreleased]: https://github.com/192d-Wing/ntp_usg/compare/v0.6.0...HEAD
+[0.7.0]: https://github.com/192d-Wing/ntp_usg/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/192d-Wing/ntp_usg/releases/tag/v0.6.0
