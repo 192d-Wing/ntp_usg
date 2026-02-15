@@ -37,6 +37,58 @@ pub mod protocol;
 /// (seconds since 1900-01-01) and Unix timestamps (seconds since 1970-01-01).
 pub mod unix_time;
 
+/// Error returned when the server responds with a Kiss-o'-Death (KoD) packet.
+///
+/// Per RFC 5905 Section 7.4, recipients of kiss codes MUST inspect them and take
+/// the described actions. This error is returned as the inner error of an
+/// [`io::Error`] with kind [`io::ErrorKind::ConnectionRefused`], and can be
+/// extracted via [`io::Error::get_ref`] and `downcast_ref`.
+///
+/// # Caller Responsibilities
+///
+/// - **DENY / RSTR**: The caller MUST stop sending packets to this server.
+/// - **RATE**: The caller MUST reduce its polling interval before retrying.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use std::error::Error;
+/// # fn main() -> Result<(), Box<dyn Error>> {
+/// match ntp::request("pool.ntp.org:123") {
+///     Ok(result) => println!("Offset: {:.6}s", result.offset_seconds),
+///     Err(e) => {
+///         if let Some(kod) = e.get_ref().and_then(|inner| inner.downcast_ref::<ntp::KissOfDeathError>()) {
+///             eprintln!("Kiss-o'-Death: {:?}", kod.code);
+///         }
+///     }
+/// }
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Clone, Copy, Debug)]
+pub struct KissOfDeathError {
+    /// The specific kiss code received from the server.
+    pub code: protocol::KissOfDeath,
+}
+
+impl std::fmt::Display for KissOfDeathError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.code {
+            protocol::KissOfDeath::Deny => {
+                write!(f, "server sent Kiss-o'-Death DENY: access denied, stop querying this server")
+            }
+            protocol::KissOfDeath::Rstr => {
+                write!(f, "server sent Kiss-o'-Death RSTR: access restricted, stop querying this server")
+            }
+            protocol::KissOfDeath::Rate => {
+                write!(f, "server sent Kiss-o'-Death RATE: reduce polling interval")
+            }
+        }
+    }
+}
+
+impl std::error::Error for KissOfDeathError {}
+
 /// The result of an NTP request, containing the server's response packet
 /// along with computed timing information.
 ///
@@ -135,6 +187,7 @@ fn compute_offset_delay(
 /// - Invalid NTP packet response
 /// - DNS resolution fails
 /// - Response fails validation (wrong mode, origin timestamp mismatch, etc.)
+/// - Server sent a Kiss-o'-Death packet (see [`KissOfDeathError`])
 pub fn request<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
     request_with_timeout(addr, Duration::from_secs(5))
 }
@@ -180,6 +233,7 @@ pub fn request<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
 /// - Response origin timestamp does not match our request (anti-replay)
 /// - Server responds with unexpected mode or zero transmit timestamp
 /// - Server reports unsynchronized clock (LI=Unknown with non-zero stratum)
+/// - Server sent a Kiss-o'-Death packet (see [`KissOfDeathError`])
 pub fn request_with_timeout<A: ToSocketAddrs>(
     addr: A,
     timeout: Duration,
@@ -261,6 +315,17 @@ pub fn request_with_timeout<A: ToSocketAddrs>(
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "unexpected response mode (expected Server)",
+        ));
+    }
+
+    // Enforce Kiss-o'-Death codes (RFC 5905 Section 7.4).
+    // KoD packets have stratum 0 and carry a kiss code in the reference_id field.
+    // The RFC says "Recipients of kiss codes MUST inspect them and, in the following
+    // cases, take the actions described."
+    if let protocol::ReferenceIdentifier::KissOfDeath(kod) = response.reference_id {
+        return Err(io::Error::new(
+            io::ErrorKind::ConnectionRefused,
+            KissOfDeathError { code: kod },
         ));
     }
 

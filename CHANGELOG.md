@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-02-15
+
+### Added
+
+- `NtpResult` return type with clock offset and round-trip delay computed per RFC 5905 Section 8
+  - Implements `Deref<Target = Packet>` for backward-compatible field access
+  - Exposes `offset_seconds`, `delay_seconds`, and `destination_timestamp` (T4)
+- `KissOfDeathError` type for programmatic handling of Kiss-o'-Death responses
+- `ReferenceIdentifier::Unknown([u8; 4])` variant for unrecognized reference identifiers
+- `ReferenceIdentifier::as_bytes()` and `is_kiss_of_death()` helper methods
+- Client-side response validation per RFC 5905:
+  - Origin timestamp verification (anti-replay)
+  - Source IP address verification
+  - Server mode validation
+  - Non-zero transmit timestamp check
+  - Unsynchronized clock detection (LI=Unknown with non-zero stratum)
+  - Kiss-o'-Death enforcement (DENY, RSTR, RATE)
+- Larger receive buffer (1024 bytes) to tolerate extension fields and MAC
+- 8 new protocol tests covering KoD parsing, unknown reference IDs, stratum 16, and round-trips
+
+### Changed
+
+- **BREAKING**: `request()` and `request_with_timeout()` now return `io::Result<NtpResult>` instead of `io::Result<Packet>`
+- **BREAKING**: Removed `#[repr(u32)]` from `ReferenceIdentifier` enum (required for `Unknown` variant)
+
+### Fixed
+
+- Stratum 0 (Kiss-o'-Death) packets no longer cause parse errors
+- Stratum 1 packets with unrecognized reference IDs no longer cause parse errors
+- Stratum 16 (unsynchronized) and 17-255 (reserved) packets no longer cause parse errors
+
 ## [0.7.1] - 2026-02-15
 
 ### Fixed
@@ -65,6 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Historical release information prior to the Edition 2024 migration.
 
+[0.8.0]: https://github.com/192d-Wing/ntp_usg/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/192d-Wing/ntp_usg/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/192d-Wing/ntp_usg/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/192d-Wing/ntp_usg/releases/tag/v0.6.0
