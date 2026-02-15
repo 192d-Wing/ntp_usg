@@ -1,14 +1,22 @@
-NTP USG
-------------
+# ntp_usg
 
 [![Documentation](https://docs.rs/ntp_usg/badge.svg)](https://docs.rs/ntp_usg)
 [![Crates.io](https://img.shields.io/crates/v/ntp_usg.svg?maxAge=2592000)](https://crates.io/crates/ntp_usg)
-[![License](https://img.shields.io/crates/l/ntp.svg)](https://github.com/192d-Wing/ntp_usg#license)
+[![License](https://img.shields.io/crates/l/ntp_usg.svg)](https://github.com/192d-Wing/ntp_usg#license)
+[![CI](https://github.com/192d-Wing/ntp_usg/workflows/CI/badge.svg)](https://github.com/192d-Wing/ntp_usg/actions)
 
-An ntp packet parsing library written in Rust.
+A Network Time Protocol (NTP) packet parsing and client library written in Rust.
 
-Usage
------
+## Features
+
+- 🔒 **Safe & Secure**: Zero unsafe code with `#![forbid(unsafe_code)]`
+- 📚 **Well Documented**: Comprehensive API documentation with examples
+- ⚡ **Configurable Timeouts**: Control request timeouts for different network conditions
+- 🌍 **Multi-Server Support**: Query multiple NTP servers for improved reliability
+- 🦀 **Modern Rust**: Edition 2024 with MSRV 1.93
+- ✅ **Well Tested**: CI/CD on Linux, macOS, and Windows
+
+## Installation
 
 Add this to your `Cargo.toml`:
 
@@ -20,7 +28,9 @@ ntp_usg = "0.6"
 **Minimum Supported Rust Version (MSRV):** 1.93
 **Edition:** 2024
 
-Example:
+## Usage
+
+### Basic Example
 
 ```rust
 use chrono::TimeZone;
@@ -36,23 +46,50 @@ fn main() {
 }
 ```
 
-Todo
-----
+### Custom Timeout
 
-- [ ] no-std
-- [ ] io independent parsing
-- [ ] async support
-- [ ] setting clocks
-- [ ] ntp server functionality
+```rust
+use std::time::Duration;
 
-Contributions
--------------
+let response = ntp::request_with_timeout("pool.ntp.org:123", Duration::from_secs(10))?;
+```
 
-Pull Requests and Issues welcome!
+### Multiple Servers
 
-License
--------
+See [examples/multiple_servers.rs](examples/multiple_servers.rs) for a complete example of querying multiple NTP servers.
+
+## Examples
+
+Run the included examples to see the library in action:
+
+```bash
+# Basic request example
+cargo run --example request
+
+# Custom timeout demonstration
+cargo run --example timeout
+
+# Query multiple servers
+cargo run --example multiple_servers
+
+# Detailed packet information
+cargo run --example packet_details
+```
+
+## Roadmap
+
+- [ ] no-std support
+- [ ] io-independent parsing
+- [ ] async support (tokio/async-std)
+- [ ] setting system clocks
+- [ ] NTP server functionality
+
+## Contributing
+
+Pull requests and issues are welcome! Please see our [GitHub repository](https://github.com/192d-Wing/ntp_usg) for more information.
+
+## License
 
 `ntp_usg` is distributed under the terms of both the MIT license and the Apache License (Version 2.0).
 
-See LICENSE-APACHE and LICENSE-MIT for details.
+See [LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT) for details.
