@@ -1,15 +1,25 @@
 [package]
-name = "ntp"
-version = "0.5.0"
+name = "ntp_usg"
+version = "0.6.0"
 authors = ["Jeff Belgum <jeffbelgum@gmail.com>"]
-license = "MIT/Apache-2.0"
+license = "Apache-2.0 OR MIT"
+edition = "2024"
+rust-version = "1.93"
 description = "Library for parsing and communicating over Network Time Protocol."
-documentation = "https://docs.rs/ntp/"
-homepage = "https://github.com/JeffBelgum/ntp"
-repository = "https://github.com/JeffBelgum/ntp"
+documentation = "https://docs.rs/ntp_usg/"
+homepage = "https://github.com/192d-Wing/ntp_usg"
+repository = "https://github.com/192d-Wing/ntp_usg"
 readme = "README.md"
 keywords = ["protocol", "network", "time", "parser", "binary"]
-categories = ["date-and-time", "network-programming", "parser-implementations", "encoding"]
+categories = [
+    "date-and-time",
+    "network-programming",
+    "parser-implementations",
+    "encoding",
+]
+
+[lib]
+name = "ntp"
 
 [dependencies]
 byteorder = "1.1"
