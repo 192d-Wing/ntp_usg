@@ -1,8 +1,9 @@
 name: Publish to crates.io
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*.*.*"
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,7 +17,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v3
+      - uses: Swatinem/rust-cache@v2
 
       - name: Verify version matches tag
         run: |

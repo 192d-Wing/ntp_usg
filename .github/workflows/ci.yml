@@ -22,7 +22,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-      - uses: Swatinem/rust-cache@v3
+      - uses: Swatinem/rust-cache@v2
       - name: Run tests
         run: cargo test --verbose
 
@@ -34,7 +34,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v3
+      - uses: Swatinem/rust-cache@v2
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -55,7 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v3
+      - uses: Swatinem/rust-cache@v2
       - name: Install cargo-audit
         run: cargo install cargo-audit
       - name: Run cargo audit
@@ -69,6 +69,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.93"
-      - uses: Swatinem/rust-cache@v3
+      - uses: Swatinem/rust-cache@v2
       - name: Check MSRV
         run: cargo check --verbose
