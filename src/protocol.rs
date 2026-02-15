@@ -685,11 +685,7 @@ impl ReadFromBytes for (LeapIndicator, Version, Mode) {
             },
         };
         let vn = Version(vn_u8);
-<<<<<<< HEAD
         let mode = match <Mode as conv::TryFrom<_>>::try_from(mode_u8).ok() {
-=======
-        let mode = match <Mode as std::convert::TryFrom<_>>::try_from(mode_u8).ok() {
->>>>>>> f87896c58a53de9ece2ec0680776e16b1c8574e5
             Some(mode) => mode,
             None => {
                 let err_msg = "unknown association mode";
