@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-02-15
+
+### Added
+
+- **Async support** via optional `tokio` feature flag
+  - `async_ntp::request()` and `async_ntp::request_with_timeout()` using `tokio::net::UdpSocket`
+  - Async DNS resolution via `tokio::net::lookup_host`
+  - Timeout via `tokio::time::timeout` wrapping entire operation
+  - New example: `async_request.rs` demonstrating concurrent queries
+  - 3 async integration tests gated behind `cfg(feature = "tokio")`
+- **NTP era handling (Y2036)** with pivot-based timestamp disambiguation
+  - `unix_time::ERA_SECONDS` constant (2^32 seconds per era)
+  - `unix_time::timestamp_to_instant()` for era-aware conversion with explicit pivot
+  - `From<DateFormat> for Instant` and `From<Instant> for DateFormat` conversions
+  - 8 unit tests covering era boundaries, round-trips, and negative eras
+- CI now tests with `--features tokio` alongside default tests
+
+### Changed
+
+- **BREAKING**: Offset/delay computation now uses era-aware `Instant` arithmetic instead of raw 32-bit timestamp values
+- `From<TimestampFormat> for Instant` now uses `Instant::now()` as pivot for era disambiguation (behavior unchanged for Era 0 timestamps)
+- Extracted `build_request_packet()` and `validate_response()` as `pub(crate)` helpers shared between sync and async paths
+
 ## [0.8.0] - 2026-02-15
 
 ### Added
@@ -96,6 +119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Historical release information prior to the Edition 2024 migration.
 
+[0.9.0]: https://github.com/192d-Wing/ntp_usg/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/192d-Wing/ntp_usg/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/192d-Wing/ntp_usg/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/192d-Wing/ntp_usg/compare/v0.6.0...v0.7.0
