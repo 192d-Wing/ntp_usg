@@ -1,4 +1,4 @@
-Ntplib
+NTP USG
 ------------
 
 [![Documentation](https://docs.rs/ntp_usg/badge.svg)](https://docs.rs/ntp_usg)
@@ -14,7 +14,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ntp = "0.6"
+ntp_usg = "0.6"
 ```
 
 **Minimum Supported Rust Version (MSRV):** 1.93
@@ -53,6 +53,6 @@ Pull Requests and Issues welcome!
 License
 -------
 
-`ntp` is distributed under the terms of both the MIT license and the Apache License (Version 2.0).
+`ntp_usg` is distributed under the terms of both the MIT license and the Apache License (Version 2.0).
 
 See LICENSE-APACHE and LICENSE-MIT for details.
