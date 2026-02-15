@@ -149,6 +149,7 @@ custom_derive! {
     #[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq, TryFrom(u8))]
     pub enum LeapIndicator {
         /// No leap required.
+        #[default]
         NoWarning = 0,
         /// Last minute of the day has 61 seconds.
         AddOne = 1,
