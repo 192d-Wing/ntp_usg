@@ -673,11 +673,7 @@ impl ReadFromBytes for (LeapIndicator, Version, Mode) {
         let li_u8 = li_vn_mode >> 6;
         let vn_u8 = (li_vn_mode >> 3) & 0b111;
         let mode_u8 = li_vn_mode & 0b111;
-<<<<<<< HEAD
         let li = match <LeapIndicator as conv::TryFrom<_>>::try_from(li_u8).ok() {
-=======
-        let li = match <LeapIndicator as std::convert::TryFrom<_>>::try_from(li_u8).ok() {
->>>>>>> f87896c58a53de9ece2ec0680776e16b1c8574e5
             Some(li) => li,
             None => {
                 let err_msg = "unknown leap indicator";
