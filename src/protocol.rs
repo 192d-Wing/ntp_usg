@@ -673,7 +673,7 @@ impl ReadFromBytes for (LeapIndicator, Version, Mode) {
         let li_u8 = li_vn_mode >> 6;
         let vn_u8 = (li_vn_mode >> 3) & 0b111;
         let mode_u8 = li_vn_mode & 0b111;
-        let li = match LeapIndicator::try_from(li_u8).ok() {
+        let li = match <LeapIndicator as conv::TryFrom<_>>::try_from(li_u8).ok() {
             Some(li) => li,
             None => {
                 let err_msg = "unknown leap indicator";
@@ -681,7 +681,7 @@ impl ReadFromBytes for (LeapIndicator, Version, Mode) {
             },
         };
         let vn = Version(vn_u8);
-        let mode = match Mode::try_from(mode_u8).ok() {
+        let mode = match <Mode as conv::TryFrom<_>>::try_from(mode_u8).ok() {
             Some(mode) => mode,
             None => {
                 let err_msg = "unknown association mode";
@@ -703,9 +703,9 @@ impl ReadFromBytes for Packet {
         let reference_id = {
             let u = reader.read_u32::<BE>()?;
             if stratum == Stratum::PRIMARY {
-                match PrimarySource::try_from(u) {
+                match <PrimarySource as conv::TryFrom<_>>::try_from(u) {
                     Ok(src) => ReferenceIdentifier::PrimarySource(src),
-                    Err(_) => match KissOfDeath::try_from(u) {
+                    Err(_) => match <KissOfDeath as conv::TryFrom<_>>::try_from(u) {
                         Ok(kod) => ReferenceIdentifier::KissOfDeath(kod),
                         Err(_) => {
                             let err_msg = "unknown reference id";
