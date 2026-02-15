@@ -79,7 +79,7 @@ fn packet_to_bytes() {
         },
     };
     let mut bytes = [0u8; Packet::PACKED_SIZE_BYTES];
-    (&mut bytes[..]).write_bytes(&input).unwrap();
+    (&mut bytes[..]).write_bytes(input).unwrap();
     assert_eq!(&bytes[..], &expected_output[..]);
 }
 
@@ -92,6 +92,6 @@ fn packet_conversion_roundtrip() {
     ];
     let packet = (&input[..]).read_bytes::<Packet>().unwrap();
     let mut output = [0u8; Packet::PACKED_SIZE_BYTES];
-    (&mut output[..]).write_bytes(&packet).unwrap();
+    (&mut output[..]).write_bytes(packet).unwrap();
     assert_eq!(&input[..], &output[..]);
 }
