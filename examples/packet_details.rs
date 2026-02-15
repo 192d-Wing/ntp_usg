@@ -20,39 +20,73 @@ fn main() {
             println!("  Version: {:?}", packet.version);
             println!("  Mode: {:?}", packet.mode);
             println!("  Stratum: {} ({:?})", packet.stratum.0, packet.stratum);
-            println!("  Poll Interval: {} (2^{} seconds)", 1u32 << packet.poll, packet.poll);
-            println!("  Precision: {} (2^{} seconds)", 2.0f64.powi(packet.precision.into()), packet.precision);
+            println!(
+                "  Poll Interval: {} (2^{} seconds)",
+                1u32 << packet.poll,
+                packet.poll
+            );
+            println!(
+                "  Precision: {} (2^{} seconds)",
+                2.0f64.powi(packet.precision.into()),
+                packet.precision
+            );
 
             // Reference information
             println!("\nReference Information:");
             println!("  Reference ID: {:?}", packet.reference_id);
-            println!("  Root Delay: {} sec, {} frac", packet.root_delay.seconds, packet.root_delay.fraction);
-            println!("  Root Dispersion: {} sec, {} frac", packet.root_dispersion.seconds, packet.root_dispersion.fraction);
+            println!(
+                "  Root Delay: {} sec, {} frac",
+                packet.root_delay.seconds, packet.root_delay.fraction
+            );
+            println!(
+                "  Root Dispersion: {} sec, {} frac",
+                packet.root_dispersion.seconds, packet.root_dispersion.fraction
+            );
 
             // Timestamps
             println!("\nTimestamps (NTP format):");
-            println!("  Reference:  {} . {}", packet.reference_timestamp.seconds, packet.reference_timestamp.fraction);
-            println!("  Origin:     {} . {}", packet.origin_timestamp.seconds, packet.origin_timestamp.fraction);
-            println!("  Receive:    {} . {}", packet.receive_timestamp.seconds, packet.receive_timestamp.fraction);
-            println!("  Transmit:   {} . {}", packet.transmit_timestamp.seconds, packet.transmit_timestamp.fraction);
+            println!(
+                "  Reference:  {} . {}",
+                packet.reference_timestamp.seconds, packet.reference_timestamp.fraction
+            );
+            println!(
+                "  Origin:     {} . {}",
+                packet.origin_timestamp.seconds, packet.origin_timestamp.fraction
+            );
+            println!(
+                "  Receive:    {} . {}",
+                packet.receive_timestamp.seconds, packet.receive_timestamp.fraction
+            );
+            println!(
+                "  Transmit:   {} . {}",
+                packet.transmit_timestamp.seconds, packet.transmit_timestamp.fraction
+            );
 
             // Convert timestamps to human-readable format
             println!("\nTimestamps (Human-readable):");
 
             let ref_time = ntp::unix_time::Instant::from(packet.reference_timestamp);
-            let ref_local = chrono::Local.timestamp_opt(ref_time.secs(), ref_time.subsec_nanos() as _).unwrap();
+            let ref_local = chrono::Local
+                .timestamp_opt(ref_time.secs(), ref_time.subsec_nanos() as _)
+                .unwrap();
             println!("  Reference:  {}", ref_local);
 
             let orig_time = ntp::unix_time::Instant::from(packet.origin_timestamp);
-            let orig_local = chrono::Local.timestamp_opt(orig_time.secs(), orig_time.subsec_nanos() as _).unwrap();
+            let orig_local = chrono::Local
+                .timestamp_opt(orig_time.secs(), orig_time.subsec_nanos() as _)
+                .unwrap();
             println!("  Origin:     {}", orig_local);
 
             let recv_time = ntp::unix_time::Instant::from(packet.receive_timestamp);
-            let recv_local = chrono::Local.timestamp_opt(recv_time.secs(), recv_time.subsec_nanos() as _).unwrap();
+            let recv_local = chrono::Local
+                .timestamp_opt(recv_time.secs(), recv_time.subsec_nanos() as _)
+                .unwrap();
             println!("  Receive:    {}", recv_local);
 
             let trans_time = ntp::unix_time::Instant::from(packet.transmit_timestamp);
-            let trans_local = chrono::Local.timestamp_opt(trans_time.secs(), trans_time.subsec_nanos() as _).unwrap();
+            let trans_local = chrono::Local
+                .timestamp_opt(trans_time.secs(), trans_time.subsec_nanos() as _)
+                .unwrap();
             println!("  Transmit:   {}", trans_local);
 
             // Quality indicators
@@ -67,7 +101,9 @@ fn main() {
             match packet.leap_indicator {
                 ntp::protocol::LeapIndicator::NoWarning => println!("  ✓ No leap second warning"),
                 ntp::protocol::LeapIndicator::AddOne => println!("  ⚠ Leap second will be added"),
-                ntp::protocol::LeapIndicator::SubOne => println!("  ⚠ Leap second will be subtracted"),
+                ntp::protocol::LeapIndicator::SubOne => {
+                    println!("  ⚠ Leap second will be subtracted")
+                }
                 ntp::protocol::LeapIndicator::Unknown => println!("  ✗ Clock not synchronized"),
             }
         }

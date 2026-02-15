@@ -45,14 +45,25 @@ fn main() {
 
     // Report results
     println!("Summary:");
-    println!("  Successful queries: {}/{}", successful_responses.len(), ntp_servers.len());
+    println!(
+        "  Successful queries: {}/{}",
+        successful_responses.len(),
+        ntp_servers.len()
+    );
 
     if !successful_responses.is_empty() {
-        println!("\nBest practice: Use responses from Stratum 1 or 2 servers for highest accuracy.");
+        println!(
+            "\nBest practice: Use responses from Stratum 1 or 2 servers for highest accuracy."
+        );
 
         // Find the server with the lowest stratum (most accurate)
-        if let Some((server, response)) = successful_responses.iter().min_by_key(|(_, r)| r.stratum.0) {
-            println!("  Lowest stratum server: {} (Stratum {})", server, response.stratum.0);
+        if let Some((server, response)) =
+            successful_responses.iter().min_by_key(|(_, r)| r.stratum.0)
+        {
+            println!(
+                "  Lowest stratum server: {} (Stratum {})",
+                server, response.stratum.0
+            );
         }
     }
 }
