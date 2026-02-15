@@ -146,7 +146,7 @@ custom_derive! {
     /// As the only constructors are via associated constants, it should be impossible to create an
     /// invalid `LeapIndicator`.
     #[repr(u8)]
-    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, TryFrom(u8))]
+    #[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq, TryFrom(u8))]
     pub enum LeapIndicator {
         /// No leap required.
         NoWarning = 0,
@@ -673,7 +673,11 @@ impl ReadFromBytes for (LeapIndicator, Version, Mode) {
         let li_u8 = li_vn_mode >> 6;
         let vn_u8 = (li_vn_mode >> 3) & 0b111;
         let mode_u8 = li_vn_mode & 0b111;
+<<<<<<< HEAD
         let li = match <LeapIndicator as conv::TryFrom<_>>::try_from(li_u8).ok() {
+=======
+        let li = match <LeapIndicator as std::convert::TryFrom<_>>::try_from(li_u8).ok() {
+>>>>>>> f87896c58a53de9ece2ec0680776e16b1c8574e5
             Some(li) => li,
             None => {
                 let err_msg = "unknown leap indicator";
@@ -681,7 +685,11 @@ impl ReadFromBytes for (LeapIndicator, Version, Mode) {
             },
         };
         let vn = Version(vn_u8);
+<<<<<<< HEAD
         let mode = match <Mode as conv::TryFrom<_>>::try_from(mode_u8).ok() {
+=======
+        let mode = match <Mode as std::convert::TryFrom<_>>::try_from(mode_u8).ok() {
+>>>>>>> f87896c58a53de9ece2ec0680776e16b1c8574e5
             Some(mode) => mode,
             None => {
                 let err_msg = "unknown association mode";
@@ -703,9 +711,15 @@ impl ReadFromBytes for Packet {
         let reference_id = {
             let u = reader.read_u32::<BE>()?;
             if stratum == Stratum::PRIMARY {
+<<<<<<< HEAD
                 match <PrimarySource as conv::TryFrom<_>>::try_from(u) {
                     Ok(src) => ReferenceIdentifier::PrimarySource(src),
                     Err(_) => match <KissOfDeath as conv::TryFrom<_>>::try_from(u) {
+=======
+                match <PrimarySource as std::convert::TryFrom<_>>::try_from(u) {
+                    Ok(src) => ReferenceIdentifier::PrimarySource(src),
+                    Err(_) => match <KissOfDeath as std::convert::TryFrom<_>>::try_from(u) {
+>>>>>>> f87896c58a53de9ece2ec0680776e16b1c8574e5
                         Ok(kod) => ReferenceIdentifier::KissOfDeath(kod),
                         Err(_) => {
                             let err_msg = "unknown reference id";
@@ -744,12 +758,6 @@ impl ReadFromBytes for Packet {
 }
 
 // Manual default implementations.
-
-impl Default for LeapIndicator {
-    fn default() -> Self {
-        LeapIndicator::NoWarning
-    }
-}
 
 // Display implementations.
 
