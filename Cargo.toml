@@ -22,8 +22,8 @@ categories = [
 name = "ntp"
 
 [dependencies]
-byteorder = "1.1"
-log = "0.3.6"
+byteorder = "1.5"
+log = "0.4"
 
 [dev-dependencies]
-chrono = "0.4.4"
+chrono = "0.4"
