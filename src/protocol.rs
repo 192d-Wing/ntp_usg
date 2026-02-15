@@ -711,15 +711,9 @@ impl ReadFromBytes for Packet {
         let reference_id = {
             let u = reader.read_u32::<BE>()?;
             if stratum == Stratum::PRIMARY {
-<<<<<<< HEAD
                 match <PrimarySource as conv::TryFrom<_>>::try_from(u) {
                     Ok(src) => ReferenceIdentifier::PrimarySource(src),
                     Err(_) => match <KissOfDeath as conv::TryFrom<_>>::try_from(u) {
-=======
-                match <PrimarySource as std::convert::TryFrom<_>>::try_from(u) {
-                    Ok(src) => ReferenceIdentifier::PrimarySource(src),
-                    Err(_) => match <KissOfDeath as std::convert::TryFrom<_>>::try_from(u) {
->>>>>>> f87896c58a53de9ece2ec0680776e16b1c8574e5
                         Ok(kod) => ReferenceIdentifier::KissOfDeath(kod),
                         Err(_) => {
                             let err_msg = "unknown reference id";
