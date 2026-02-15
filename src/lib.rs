@@ -20,6 +20,7 @@ fn main() {
 */
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 use log::debug;
 use protocol::{ConstPackedSizeBytes, ReadBytes, WriteBytes};
