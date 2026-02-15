@@ -1,5 +1,3 @@
-extern crate ntp;
-
 use ntp::protocol::{
     ConstPackedSizeBytes, LeapIndicator, Mode, Packet, PrimarySource, ReadBytes,
     ReferenceIdentifier, ShortFormat, Stratum, TimestampFormat, Version, WriteBytes,

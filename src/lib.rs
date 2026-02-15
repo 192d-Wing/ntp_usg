@@ -19,12 +19,7 @@ fn main() {
 ```
 */
 
-#![recursion_limit = "1024"]
-
-#[macro_use]
-extern crate log;
-extern crate byteorder;
-
+use log::debug;
 use protocol::{ConstPackedSizeBytes, ReadBytes, WriteBytes};
 use std::io;
 use std::net::{ToSocketAddrs, UdpSocket};

@@ -1,8 +1,5 @@
 //! How to request an NTP packet from an NTP server.
 
-extern crate chrono;
-extern crate ntp;
-
 use chrono::TimeZone;
 
 fn local_time(timestamp: ntp::protocol::TimestampFormat) -> chrono::DateTime<chrono::Local> {
