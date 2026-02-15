@@ -13,11 +13,13 @@ fn main() {
     let address = "0.pool.ntp.org:123";
     let response = ntp::request(address).unwrap();
     let unix_time = ntp::unix_time::Instant::from(response.transmit_timestamp);
-    let local_time = chrono::Local.timestamp(unix_time.secs(), unix_time.subsec_nanos() as _);
+    let local_time = chrono::Local.timestamp_opt(unix_time.secs(), unix_time.subsec_nanos() as _).unwrap();
     println!("{}", local_time);
 }
 ```
 */
+
+#![forbid(unsafe_code)]
 
 use log::debug;
 use protocol::{ConstPackedSizeBytes, ReadBytes, WriteBytes};

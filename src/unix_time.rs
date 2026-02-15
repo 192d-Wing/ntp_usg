@@ -1,5 +1,5 @@
 use crate::protocol;
-use std::{self, time};
+use std::time;
 
 /// The number of seconds from 1st January 1900 UTC to the start of the Unix epoch.
 pub const EPOCH_DELTA: i64 = 2_208_988_800;
