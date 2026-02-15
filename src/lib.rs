@@ -78,7 +78,7 @@ pub fn request<A: ToSocketAddrs>(addr: A) -> io::Result<protocol::Packet> {
 
     // Write the packet to a slice of bytes.
     let mut bytes = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
-    (&mut bytes[..]).write_bytes(&packet)?;
+    (&mut bytes[..]).write_bytes(packet)?;
 
     // Create the socket from which we will send the packet.
     let sock = UdpSocket::bind("0.0.0.0:0")?;
