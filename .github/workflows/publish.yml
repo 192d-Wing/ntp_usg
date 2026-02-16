@@ -72,12 +72,6 @@ jobs:
           done
         continue-on-error: true
 
-      - name: Publish deprecated ntp_usg stub to crates.io
-        run: cargo publish -p ntp_usg --token ${{ secrets.CRATES_IO }}
-
-      - name: Wait for crates.io index update
-        run: sleep 30
-
       - name: Publish ntp_usg-proto to crates.io
         run: cargo publish -p ntp_usg-proto --token ${{ secrets.CRATES_IO }}
 
@@ -92,3 +86,9 @@ jobs:
 
       - name: Publish ntp_usg-server to crates.io
         run: cargo publish -p ntp_usg-server --token ${{ secrets.CRATES_IO }}
+
+      - name: Wait for crates.io index update
+        run: sleep 30
+
+      - name: Publish deprecated ntp_usg stub to crates.io
+        run: cargo publish -p ntp_usg --token ${{ secrets.CRATES_IO }}
