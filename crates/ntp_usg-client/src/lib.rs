@@ -94,6 +94,13 @@ pub mod symmetric;
 #[cfg(feature = "broadcast")]
 pub mod broadcast_client;
 
+/// Reference clock abstraction layer for hardware time sources.
+///
+/// Provides a unified interface for GPS receivers, PPS signals, and other
+/// precision time sources that can serve as Stratum 1 references.
+#[cfg(any(feature = "refclock", feature = "gps", feature = "pps"))]
+pub mod refclock;
+
 /// Simple Network Time Protocol (SNTP) client per RFC 4330.
 ///
 /// SNTP is a simplified subset of NTP for clients that perform single-shot
