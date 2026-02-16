@@ -5,6 +5,8 @@
 ![Crates.io Total Downloads](https://img.shields.io/crates/d/ntp_usg?style=for-the-badge&logo=rust)
 [![License](https://img.shields.io/crates/l/ntp_usg.svg?style=for-the-badge)](https://github.com/192d-Wing/ntp_usg#license)
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/192d-Wing/ntp_usg/ci.yml?branch=master&style=for-the-badge&logo=github)
+![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/192d-Wing/ntp_usg?style=for-the-badge&logo=github)
+![GitHub Issues or Pull Requests](https://img.shields.io/github/issues-pr/192d-Wing/ntp_usg?style=for-the-badge&logo=github)
 
 A Network Time Protocol (NTP) packet parsing and client library written in Rust.
 
