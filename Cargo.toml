@@ -27,16 +27,17 @@ name = "ntp"
 [features]
 default = []
 tokio = ["dep:tokio"]
-nts = ["dep:rustls", "dep:tokio-rustls", "dep:aes-siv", "dep:rand", "tokio"]
+nts = ["dep:rustls", "dep:tokio-rustls", "dep:webpki-roots", "dep:aes-siv", "dep:rand", "tokio"]
 
 [dependencies]
 byteorder = "1.5"
 log = "0.4"
-tokio = { version = "1", features = ["net", "time", "sync"], optional = true }
+tokio = { version = "1", features = ["net", "time", "sync", "io-util"], optional = true }
 rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "tls12"] }
 tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["tls12"] }
 aes-siv = { version = "0.7", optional = true }
 rand = { version = "0.8", optional = true }
+webpki-roots = { version = "0.26", optional = true }
 
 [[example]]
 name = "async_request"

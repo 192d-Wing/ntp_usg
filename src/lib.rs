@@ -70,6 +70,18 @@ pub mod filter;
 #[cfg(feature = "tokio")]
 pub mod client;
 
+/// Network Time Security (NTS) client (RFC 8915).
+///
+/// Provides authenticated NTP using TLS 1.3 key establishment and AEAD
+/// per-packet authentication. Enable with the `nts` feature flag:
+///
+/// ```toml
+/// [dependencies]
+/// ntp_usg = { version = "0.9", features = ["nts"] }
+/// ```
+#[cfg(feature = "nts")]
+pub mod nts;
+
 /// Async NTP client functions using the Tokio runtime.
 ///
 /// Enable with the `tokio` feature flag:
