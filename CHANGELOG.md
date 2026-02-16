@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-02-15
+
+### Added
+
+- **IPv6 dual-stack support**: Automatic socket binding based on target address family
+- **Continuous NTP client** (`client` module, requires `tokio` feature)
+  - `NtpClient::builder()` with multi-server support and configurable poll intervals
+  - Adaptive poll interval management per RFC 5905 Section 7.3
+  - 8-bit reachability shift register for peer health tracking
+  - `NtpSyncState` published via `tokio::sync::watch` channel
+  - Kiss-o'-Death handling (RATE reduces poll, DENY/RSTR demobilizes peer)
+- **Interleaved mode** (RFC 9769) in continuous client for improved timestamp accuracy
+- **Clock sample filter** (`filter` module, requires `tokio` feature)
+  - Circular buffer of 8 samples per RFC 5905 Section 10
+  - Best sample selection by minimum delay, jitter computation
+- **NTP extension field parsing** (`extension` module)
+  - Generic `ExtensionField` type with `parse_extension_fields` / `write_extension_fields`
+  - NTS-specific types: `UniqueIdentifier`, `NtsCookie`, `NtsCookiePlaceholder`, `NtsAuthenticator`
+- **Network Time Security (NTS)** (`nts` module, requires `nts` feature)
+  - NTS Key Establishment over TLS 1.3 (`nts_ke()`)
+  - `NtsSession` for AEAD-authenticated NTP requests
+  - Automatic cookie replenishment from server responses
+  - Supports AEAD_AES_SIV_CMAC_256 and AEAD_AES_SIV_CMAC_512
+  - Dependencies: `rustls`, `tokio-rustls`, `ring`, `aes-siv`, `rand`, `webpki-roots`
+- New examples: `continuous.rs`, `nts_request.rs`
+- CI now tests `--features nts` alongside tokio and default features
+
+### Changed
+
+- Extracted `parse_and_validate_response()` from `validate_response()` for reuse by continuous client
+- Made `compute_offset_delay()` and `build_request_packet()` `pub(crate)` for module reuse
+- Added `io-util` to tokio features for NTS TLS stream handling
+
 ## [0.9.0] - 2026-02-15
 
 ### Added
@@ -119,6 +152,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Historical release information prior to the Edition 2024 migration.
 
+[1.0.0]: https://github.com/192d-Wing/ntp_usg/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/192d-Wing/ntp_usg/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/192d-Wing/ntp_usg/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/192d-Wing/ntp_usg/compare/v0.7.0...v0.7.1
