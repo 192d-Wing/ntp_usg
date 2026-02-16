@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # NTP server for integration testing
+  ntp-server:
+    build:
+      context: .
+      dockerfile: ntp-server.Dockerfile
+    container_name: ntp-test-server
+    ports:
+      - "8123:123/udp"  # Map to 8123 to avoid requiring root on host
+    networks:
+      - ntp-test-net
+    environment:
+      - RUST_LOG=info
+    healthcheck:
+      test: ["CMD", "nc", "-vuz", "localhost", "123"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # NTS server for integration testing
+  nts-server:
+    build:
+      context: .
+      dockerfile: nts-server.Dockerfile
+    container_name: nts-test-server
+    ports:
+      - "8123:123/udp"
+      - "4460:4460/tcp"  # NTS-KE port
+    networks:
+      - ntp-test-net
+    environment:
+      - RUST_LOG=info
+    volumes:
+      - ./certs:/etc/ntp/certs:ro
+    depends_on:
+      - generate-certs
+    healthcheck:
+      test: ["CMD", "nc", "-vz", "localhost", "4460"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # Certificate generation service
+  generate-certs:
+    image: alpine:latest
+    container_name: cert-generator
+    volumes:
+      - ./certs:/certs
+    command: >
+      sh -c "
+        if [ ! -f /certs/server.crt ]; then
+          apk add --no-cache openssl &&
+          openssl req -x509 -newkey rsa:4096 -nodes \
+            -keyout /certs/server.key \
+            -out /certs/server.crt \
+            -days 365 \
+            -subj '/CN=nts-test-server/O=NTP USG Test/C=US' \
+            -addext 'subjectAltName=DNS:nts-test-server,DNS:localhost,IP:127.0.0.1';
+          echo 'Certificates generated successfully';
+        else
+          echo 'Certificates already exist';
+        fi
+      "
+    networks:
+      - ntp-test-net
+
+  # Test runner container
+  test-runner:
+    build:
+      context: ..
+      dockerfile: docker/test-runner.Dockerfile
+    container_name: ntp-test-runner
+    depends_on:
+      ntp-server:
+        condition: service_healthy
+      nts-server:
+        condition: service_healthy
+    networks:
+      - ntp-test-net
+    environment:
+      - NTP_TEST_SERVER=ntp-server:123
+      - NTS_TEST_SERVER=nts-test-server
+      - RUST_LOG=debug
+    command: >
+      sh -c "
+        echo 'Running integration tests against local servers...' &&
+        cargo test --test integration --features ntp_usg-client/tokio -- --nocapture &&
+        cargo test --test nts_integration --features ntp_usg-client/nts -- --nocapture
+      "
+
+networks:
+  ntp-test-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  certs:

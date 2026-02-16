@@ -1,0 +1,47 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Build artifacts
+target/
+**/target/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation (not needed in container)
+*.md
+docs/
+*.txt
+LICENSE*
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Docker
+docker/
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Certificates (will be mounted)
+certs/
+*.pem
+*.crt
+*.key
+
+# Test outputs
+*.profraw
+*.profdata
+flamegraph.svg
+perf.data*
