@@ -2,7 +2,7 @@ FROM rust:1-trixie
 
 # Keep OS packages current and install gh CLI for GitHub releases
 RUN apt-get update && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends gh \
+    && apt-get install -y --no-install-recommends gh libudev-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Toolchain components
