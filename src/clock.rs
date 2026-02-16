@@ -23,6 +23,9 @@
 //!
 //! - **Linux**: Uses `clock_adjtime(2)` for slew and `clock_settime(2)` for step.
 //! - **macOS**: Uses `adjtime(2)` for slew and `settimeofday(2)` for step.
+//! - **Windows**: Uses `SetSystemTimeAdjustment` for slew and `SetSystemTime` for step.
+//!   Note: Windows slew adjusts the tick rate and remains in effect until reset.
+//!   Call `slew_clock(0.0)` to restore the default tick rate.
 //! - **Other platforms**: Returns [`ClockError::Unsupported`].
 
 #![allow(unsafe_code)]
@@ -74,6 +77,9 @@ pub enum CorrectionMethod {
 ///
 /// - **Linux**: Uses `clock_adjtime(CLOCK_REALTIME, ...)` with `ADJ_OFFSET`.
 /// - **macOS**: Uses `adjtime(&delta, NULL)`.
+/// - **Windows**: Uses `SetSystemTimeAdjustment` to adjust the tick rate.
+///   The adjustment remains in effect until reset. Pass `0.0` to restore the
+///   default tick rate.
 ///
 /// # Errors
 ///
@@ -92,6 +98,7 @@ pub fn slew_clock(offset_seconds: f64) -> Result<(), ClockError> {
 ///
 /// - **Linux**: Uses `clock_settime(CLOCK_REALTIME, ...)`.
 /// - **macOS**: Uses `settimeofday(...)`.
+/// - **Windows**: Uses `GetSystemTimeAsFileTime` + `SetSystemTime`.
 ///
 /// # Errors
 ///
@@ -216,7 +223,100 @@ mod platform {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(target_os = "windows")]
+mod platform {
+    use super::*;
+    use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
+    use windows_sys::Win32::System::SystemInformation::{
+        GetSystemTimeAdjustment, GetSystemTimeAsFileTime, SetSystemTime, SetSystemTimeAdjustment,
+    };
+    use windows_sys::Win32::System::Time::FileTimeToSystemTime;
+
+    /// Slew convergence period in seconds.
+    const SLEW_DURATION_SECS: f64 = 30.0;
+
+    /// Windows `ERROR_ACCESS_DENIED` (0x5).
+    const ERROR_ACCESS_DENIED: i32 = 5;
+
+    fn os_error() -> ClockError {
+        let code = std::io::Error::last_os_error()
+            .raw_os_error()
+            .unwrap_or(-1);
+        if code == ERROR_ACCESS_DENIED {
+            ClockError::PermissionDenied
+        } else {
+            ClockError::OsError(code)
+        }
+    }
+
+    pub fn slew(offset_seconds: f64) -> Result<(), ClockError> {
+        if offset_seconds.abs() < 1e-9 {
+            // Reset to default system tick rate.
+            let ret = unsafe { SetSystemTimeAdjustment(0, 1) };
+            if ret == 0 {
+                return Err(os_error());
+            }
+            return Ok(());
+        }
+
+        let mut adjustment: u32 = 0;
+        let mut increment: u32 = 0;
+        let mut disabled: i32 = 0;
+        let ret = unsafe {
+            GetSystemTimeAdjustment(&mut adjustment, &mut increment, &mut disabled)
+        };
+        if ret == 0 {
+            return Err(os_error());
+        }
+
+        // Calculate adjusted tick rate to converge over SLEW_DURATION_SECS.
+        // increment = normal 100ns intervals per tick (e.g. 156250 for 15.625ms).
+        let offset_100ns = offset_seconds * 10_000_000.0;
+        let ticks_per_second = 10_000_000.0 / increment as f64;
+        let total_ticks = ticks_per_second * SLEW_DURATION_SECS;
+        let extra_per_tick = offset_100ns / total_ticks;
+        let new_adjustment = ((increment as f64) + extra_per_tick).round().max(1.0) as u32;
+
+        let ret = unsafe { SetSystemTimeAdjustment(new_adjustment, 0) };
+        if ret == 0 {
+            return Err(os_error());
+        }
+        Ok(())
+    }
+
+    pub fn step(offset_seconds: f64) -> Result<(), ClockError> {
+        // Get current time as FILETIME (100ns intervals since 1601-01-01).
+        let mut ft = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        unsafe { GetSystemTimeAsFileTime(&mut ft) };
+
+        // Combine into u64 and apply offset.
+        let current = ((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64;
+        let offset_100ns = (offset_seconds * 10_000_000.0) as i64;
+        let new_time = (current as i64 + offset_100ns) as u64;
+
+        ft.dwLowDateTime = new_time as u32;
+        ft.dwHighDateTime = (new_time >> 32) as u32;
+
+        // Convert FILETIME to SYSTEMTIME.
+        let mut st: SYSTEMTIME = unsafe { std::mem::zeroed() };
+        let ret = unsafe { FileTimeToSystemTime(&ft, &mut st) };
+        if ret == 0 {
+            return Err(os_error());
+        }
+
+        // Set the system time.
+        let ret = unsafe { SetSystemTime(&st) };
+        if ret == 0 {
+            return Err(os_error());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 mod platform {
     use super::*;
 
