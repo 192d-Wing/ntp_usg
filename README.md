@@ -12,15 +12,17 @@ A Network Time Protocol (NTP) packet parsing and client library written in Rust.
 
 ## Features
 
-- 🔒 **Safe & Secure**: Zero unsafe code with `#![forbid(unsafe_code)]`
+- 🔒 **Safe & Secure**: `#![deny(unsafe_code)]` crate-wide; only platform FFI in the optional `clock` module uses unsafe
 - 📚 **Well Documented**: Comprehensive API documentation with examples
 - ⚡ **Configurable Timeouts**: Control request timeouts for different network conditions
-- 🔄 **Async Ready**: Optional async support via Tokio (`features = ["tokio"]`)
+- 🔄 **Async Ready**: Optional async support via Tokio or async-std
 - 🕐 **Y2036 Safe**: Era-aware timestamp handling for the NTP 32-bit rollover
 - 🌍 **Multi-Server Support**: Query multiple NTP servers for improved reliability
-- 🔐 **Network Time Security**: NTS (RFC 8915) with TLS 1.3 key establishment and AEAD authentication (`features = ["nts"]`)
-- 📡 **Continuous Client**: Adaptive poll interval, multi-peer, and interleaved mode (RFC 9769) (`features = ["tokio"]`)
+- 🔐 **Network Time Security**: NTS (RFC 8915) with TLS 1.3 key establishment and AEAD authentication
+- 📡 **Continuous Client**: Adaptive poll interval, multi-peer, and interleaved mode (RFC 9769)
 - 🌐 **IPv6 Dual-Stack**: Automatic IPv4/IPv6 socket binding
+- 🧩 **`no_std` Support**: Core parsing works without `std` or `alloc`
+- ⏱️ **Clock Adjustment**: Platform-native slew/step correction (Unix)
 - 🦀 **Modern Rust**: Edition 2024 with MSRV 1.93
 - ✅ **Well Tested**: CI/CD on Linux, macOS, and Windows
 
@@ -30,11 +32,31 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ntp_usg = "1.0"
+ntp_usg = "1.2"
 ```
 
 **Minimum Supported Rust Version (MSRV):** 1.93
 **Edition:** 2024
+
+### Feature Flags
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `std` | Yes | Full I/O, networking, and `byteorder`-based APIs |
+| `alloc` | No | `Vec`-based extension field types without full `std` |
+| `tokio` | No | Async NTP client using Tokio |
+| `async-std-runtime` | No | Async NTP client using async-std |
+| `nts` | No | NTS authentication (Tokio + rustls) |
+| `nts-async-std` | No | NTS authentication (async-std + futures-rustls) |
+| `clock` | No | System clock slew/step adjustment (Unix only) |
+
+For `no_std` environments, disable default features:
+
+```toml
+[dependencies]
+ntp_usg = { version = "1.2", default-features = false }          # core parsing only
+ntp_usg = { version = "1.2", default-features = false, features = ["alloc"] }  # + Vec-based types
+```
 
 ## Usage
 
@@ -68,7 +90,7 @@ Enable the `tokio` feature:
 
 ```toml
 [dependencies]
-ntp_usg = { version = "1.0", features = ["tokio"] }
+ntp_usg = { version = "1.2", features = ["tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -114,7 +136,7 @@ Enable the `nts` feature for authenticated NTP:
 
 ```toml
 [dependencies]
-ntp_usg = { version = "1.0", features = ["nts"] }
+ntp_usg = { version = "1.2", features = ["nts"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -156,6 +178,74 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### Async with async-std
+
+Enable the `async-std-runtime` feature:
+
+```toml
+[dependencies]
+ntp_usg = { version = "1.2", features = ["async-std-runtime"] }
+async-std = { version = "1", features = ["attributes"] }
+```
+
+```rust
+use std::time::Duration;
+
+#[async_std::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let result = ntp::async_std_ntp::request_with_timeout(
+        "pool.ntp.org:123",
+        Duration::from_secs(5),
+    ).await?;
+    println!("Offset: {:.6} seconds", result.offset_seconds);
+    Ok(())
+}
+```
+
+The async-std continuous client uses `Arc<RwLock<NtpSyncState>>` for state sharing:
+
+```rust
+use ntp::async_std_client::NtpClient;
+
+#[async_std::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let (client, state) = NtpClient::builder()
+        .server("pool.ntp.org:123")
+        .build()
+        .await?;
+
+    async_std::task::spawn(client.run());
+
+    loop {
+        async_std::task::sleep(std::time::Duration::from_secs(5)).await;
+        let s = state.read().unwrap();
+        println!("Offset: {:.6}s, Delay: {:.6}s", s.offset, s.delay);
+    }
+}
+```
+
+### Clock Adjustment (Unix)
+
+Enable the `clock` feature to correct the system clock based on NTP measurements:
+
+```toml
+[dependencies]
+ntp_usg = { version = "1.2", features = ["clock", "tokio"] }
+```
+
+```rust
+use ntp::clock;
+
+// Gradual correction (slew) for small offsets
+clock::slew_clock(0.05)?;
+
+// Immediate correction (step) for large offsets
+clock::step_clock(-1.5)?;
+
+// Automatic: slew if |offset| <= 128ms, step otherwise
+let method = clock::apply_correction(offset)?;
+```
+
 ### Multiple Servers
 
 See [examples/multiple_servers.rs](examples/multiple_servers.rs) for a complete example of querying multiple NTP servers.
@@ -188,6 +278,15 @@ cargo run --example nts_request --features nts
 
 # NTS continuous client (requires nts feature)
 cargo run --example nts_continuous --features nts
+
+# Async-std one-shot request
+cargo run --example async_std_request --features async-std-runtime
+
+# Async-std continuous client
+cargo run --example async_std_continuous --features async-std-runtime
+
+# Clock adjustment (requires root/sudo on Unix)
+cargo run --example clock_adjust --features "clock tokio"
 ```
 
 ## Roadmap
@@ -198,10 +297,10 @@ cargo run --example nts_continuous --features nts
 - [x] Continuous client with adaptive polling
 - [x] Interleaved mode (RFC 9769)
 - [x] Network Time Security (RFC 8915)
-- [ ] no-std support
-- [ ] io-independent parsing
-- [ ] async-std support
-- [ ] setting system clocks
+- [x] IO-independent parsing (`FromBytes`/`ToBytes` traits)
+- [x] `no_std` support (with optional `alloc`)
+- [x] async-std support (one-shot, continuous, and NTS)
+- [x] System clock adjustment (slew/step on Unix)
 - [ ] NTP server functionality
 
 ## Contributing

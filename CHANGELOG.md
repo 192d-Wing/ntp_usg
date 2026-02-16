@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-02-15
+
+### Added
+
+- **IO-independent parsing** (always available, no feature flag required)
+  - `FromBytes` / `ToBytes` traits for buffer-based parsing decoupled from `std::io`
+  - Implementations for all protocol types: `Packet`, `TimestampFormat`, `ShortFormat`, `DateFormat`, `Stratum`, `PacketByte1`, `ReferenceIdentifier`
+  - Custom `ParseError` enum with `BufferTooShort`, `InvalidField`, `InvalidExtensionLength`, `ExtensionOverflow` variants
+  - `parse_extension_fields_buf()` / `write_extension_fields_buf()` for buffer-based extension field handling
+  - Zero-allocation extension field iterator: `iter_extension_fields()` returning `ExtensionFieldIter` / `ExtensionFieldRef`
+- **System clock adjustment** (requires `clock` feature, Unix only)
+  - `slew_clock()` for gradual offset correction via `adjtime` (macOS) / `clock_adjtime` (Linux)
+  - `step_clock()` for immediate clock step via `settimeofday` (macOS) / `clock_settime` (Linux)
+  - `apply_correction()` with ntpd convention: |offset| <= 128ms slews, otherwise steps
+  - `NtpClient::run_with_clock_correction()` for automatic clock discipline in continuous client
+  - New example: `clock_adjust.rs`
+- **`no_std` support** (use `default-features = false`)
+  - Core parsing (`FromBytes`/`ToBytes`, `Packet`, timestamps) works without `std` or `alloc`
+  - `alloc` feature enables `Vec`-based types (`ExtensionField`, NTS types)
+  - `std` feature (default) enables full I/O, networking, and `byteorder`-based APIs
+- **async-std runtime support** (requires `async-std-runtime` feature)
+  - `async_std_ntp::request()` / `request_with_timeout()` for one-shot queries
+  - `async_std_client::NtpClient` continuous client with `Arc<RwLock<NtpSyncState>>` state sharing
+  - New examples: `async_std_request.rs`, `async_std_continuous.rs`
+- **NTS over async-std** (requires `nts-async-std` feature)
+  - `async_std_nts::NtsSession` using `futures-rustls` for TLS
+  - Full NTS-KE and AEAD authentication, mirroring the tokio-based NTS module
+
+### Changed
+
+- `#![forbid(unsafe_code)]` relaxed to `#![deny(unsafe_code)]` at crate level to allow platform FFI in the `clock` module
+- `filter` module now available with either `tokio` or `async-std-runtime` features
+- `NtsAuthenticator::to_extension_field` uses `to_be_bytes()` instead of `byteorder::WriteBytesExt`
+- `byteorder` dependency is now optional (only pulled in by `std` feature)
+
+### New Feature Flags
+
+| Feature | Description |
+|---------|-------------|
+| `alloc` | Enables `Vec`-based extension field types without full `std` |
+| `clock` | System clock slew/step adjustment (Unix only) |
+| `async-std-runtime` | async-std one-shot and continuous NTP client |
+| `nts-async-std` | NTS authentication over async-std runtime |
+
+### New Dependencies (all optional)
+
+- `async-std` 1.x (for `async-std-runtime`)
+- `futures-rustls` 0.26 (for `nts-async-std`)
+- `futures-lite` 2.x (for `nts-async-std`)
+- `libc` 0.2 (for `clock`, Unix only)
+
 ## [1.1.0] - 2026-02-15
 
 ### Added
@@ -169,6 +220,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Historical release information prior to the Edition 2024 migration.
 
+[1.2.0]: https://github.com/192d-Wing/ntp_usg/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/192d-Wing/ntp_usg/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/192d-Wing/ntp_usg/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/192d-Wing/ntp_usg/compare/v0.8.0...v0.9.0

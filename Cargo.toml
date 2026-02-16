@@ -1,6 +1,6 @@
 [package]
 name = "ntp_usg"
-version = "1.1.0"
+version = "1.2.0"
 authors = [
     "Jeff Belgum <jeffbelgum@gmail.com>",
     "John Willman <john.willman.1@us.af.mil>",
