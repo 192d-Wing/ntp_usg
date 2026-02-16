@@ -15,9 +15,14 @@ jobs:
   publish:
     name: Release & Publish
     runs-on: ubuntu-latest
-    container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@cargo-nextest
 
       - name: Verify version matches tag
         run: |
