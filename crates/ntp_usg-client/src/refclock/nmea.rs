@@ -341,7 +341,7 @@ mod tests {
 
     #[test]
     fn test_parse_gga() {
-        let sentence = "$GPGGA,123519.000,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
+        let sentence = "$GPGGA,123519.000,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*59";
         let fix = parse_sentence(sentence).unwrap().unwrap();
 
         assert_eq!(fix.time, (12, 35, 19.0));
@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn test_parse_rmc() {
-        let sentence = "$GPRMC,123519.000,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
+        let sentence = "$GPRMC,123519.000,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*74";
         let fix = parse_sentence(sentence).unwrap().unwrap();
 
         assert_eq!(fix.time, (12, 35, 19.0));
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_parse_zda() {
-        let sentence = "$GPZDA,123519.000,23,03,1994,00,00*57";
+        let sentence = "$GPZDA,123519.000,23,03,1994,00,00*5C";
         let fix = parse_sentence(sentence).unwrap().unwrap();
 
         assert_eq!(fix.time, (12, 35, 19.0));

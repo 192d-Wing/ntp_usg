@@ -9,7 +9,6 @@
 
 use std::io;
 use std::mem;
-use std::os::unix::io::AsRawFd;
 use std::time::Duration;
 
 /// Hardware timestamping capabilities (from <linux/net_tstamp.h>)

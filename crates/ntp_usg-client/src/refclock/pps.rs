@@ -147,10 +147,7 @@ impl PpsReceiver {
     pub fn new(config: PpsConfig) -> io::Result<Self> {
         // Open PPS device
         let device = File::open(&config.device).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to open PPS device: {}", e),
-            )
+            io::Error::other(format!("Failed to open PPS device: {}", e))
         })?;
 
         // Get PPS capabilities
@@ -158,10 +155,7 @@ impl PpsReceiver {
             let mut caps: u32 = 0;
             let ret = libc::ioctl(device.as_raw_fd(), PPS_GETCAP, &mut caps as *mut u32);
             if ret != 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "Device does not support PPS API",
-                ));
+                return Err(io::Error::other("Device does not support PPS API"));
             }
             caps
         };
@@ -171,13 +165,10 @@ impl PpsReceiver {
         // Verify requested capture mode is supported
         let requested_mode = config.capture_mode.to_kernel_mode();
         if (capabilities & requested_mode) != requested_mode {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "PPS device does not support requested capture mode: {:?}",
-                    config.capture_mode
-                ),
-            ));
+            return Err(io::Error::other(format!(
+                "PPS device does not support requested capture mode: {:?}",
+                config.capture_mode
+            )));
         }
 
         Ok(Self {
@@ -251,7 +242,7 @@ impl RefClock for PpsReceiver {
             Ok((timestamp, sequence))
         })
         .await
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Task join error: {}", e)))?;
+        .map_err(|e| io::Error::other(format!("Task join error: {}", e)))?;
 
         let (pps_time, sequence) = result?;
         self.last_sequence = sequence;

@@ -206,9 +206,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let pps_future = pps.read_sample();
 
         // Wait for both with timeout
-        let results =
-            tokio::time::timeout(Duration::from_secs(3), tokio::join!(gps_future, pps_future))
-                .await;
+        let results = tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::join!(gps_future, pps_future)
+        })
+        .await;
 
         match results {
             Ok((gps_result, pps_result)) => {

@@ -98,10 +98,7 @@ impl GpsReceiver {
             .timeout(Duration::from_millis(100))
             .open()
             .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to open GPS serial port: {}", e),
-                )
+                io::Error::other(format!("Failed to open GPS serial port: {}", e))
             })?;
 
         let (sample_tx, sample_rx) = mpsc::unbounded_channel();
@@ -195,40 +192,34 @@ impl RefClock for GpsReceiver {
         let fix = self
             .last_fix
             .as_ref()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "GPS receiver channel closed"))?;
+            .ok_or_else(|| io::Error::other("GPS receiver channel closed"))?;
 
         // Check if fix is valid
         if !fix.quality.is_valid() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("GPS fix quality insufficient: {:?}", fix.quality),
-            ));
+            return Err(io::Error::other(format!(
+                "GPS fix quality insufficient: {:?}",
+                fix.quality
+            )));
         }
 
         if (fix.quality as u8) < (self.config.min_quality as u8) {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "GPS fix quality {:?} below minimum {:?}",
-                    fix.quality, self.config.min_quality
-                ),
-            ));
+            return Err(io::Error::other(format!(
+                "GPS fix quality {:?} below minimum {:?}",
+                fix.quality, self.config.min_quality
+            )));
         }
 
         if fix.satellites < self.config.min_satellites {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "GPS satellite count {} below minimum {}",
-                    fix.satellites, self.config.min_satellites
-                ),
-            ));
+            return Err(io::Error::other(format!(
+                "GPS satellite count {} below minimum {}",
+                fix.satellites, self.config.min_satellites
+            )));
         }
 
         // Convert GPS time to Unix timestamp
-        let gps_timestamp = fix.to_unix_timestamp().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::Other, "GPS fix missing date information")
-        })?;
+        let gps_timestamp = fix
+            .to_unix_timestamp()
+            .ok_or_else(|| io::Error::other("GPS fix missing date information"))?;
 
         // Get current system time for offset calculation
         let now = unix_time::Instant::now();
