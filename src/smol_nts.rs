@@ -1,16 +1,16 @@
 // Copyright 2026 U.S. Federal Government (in countries where recognized)
 // SPDX-License-Identifier: Apache-2.0
 
-//! Network Time Security (NTS) client using the async-std runtime (RFC 8915).
+//! Network Time Security (NTS) client using the smol runtime (RFC 8915).
 //!
 //! This module provides the same NTS functionality as [`crate::nts`] but using
-//! async-std and futures-rustls instead of tokio and tokio-rustls.
+//! smol and futures-rustls instead of tokio and tokio-rustls.
 //!
 //! # Example
 //!
 //! ```no_run
 //! # async fn example() -> std::io::Result<()> {
-//! use ntp::async_std_nts::NtsSession;
+//! use ntp::smol_nts::NtsSession;
 //!
 //! let mut session = NtsSession::from_ke("time.cloudflare.com").await?;
 //! let result = session.request().await?;
@@ -27,11 +27,11 @@ use std::time::Duration;
 use aes_siv::aead::Aead;
 use aes_siv::aead::KeyInit;
 use aes_siv::{Aes128SivAead, Aes256SivAead};
-use async_std::net::{TcpStream, ToSocketAddrs, UdpSocket};
 use futures_lite::io::{AsyncReadExt, AsyncWriteExt};
 use futures_rustls::TlsConnector;
 use log::debug;
 use rustls::pki_types::ServerName;
+use smol::net::{TcpStream, UdpSocket};
 
 use crate::extension::{
     self, ExtensionField, NtsAuthenticator, NtsCookie, NtsCookiePlaceholder, UNIQUE_IDENTIFIER,
@@ -347,7 +347,7 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
     })
 }
 
-/// An NTS session for sending authenticated NTP requests using async-std.
+/// An NTS session for sending authenticated NTP requests using smol.
 pub struct NtsSession {
     c2s_key: Vec<u8>,
     s2c_key: Vec<u8>,
@@ -367,7 +367,7 @@ impl NtsSession {
     /// Create an NTS session from a previously obtained [`NtsKeResult`].
     pub async fn from_ke_result(ke: NtsKeResult) -> io::Result<Self> {
         let addr_str = format!("{}:{}", ke.ntp_server, ke.ntp_port);
-        let resolved_addrs: Vec<SocketAddr> = addr_str.as_str().to_socket_addrs().await?.collect();
+        let resolved_addrs: Vec<SocketAddr> = smol::net::resolve(&addr_str).await?;
         if resolved_addrs.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -398,9 +398,14 @@ impl NtsSession {
 
     /// Send an NTS-protected NTP request with the given timeout.
     pub async fn request_with_timeout(&mut self, timeout: Duration) -> io::Result<NtpResult> {
-        async_std::future::timeout(timeout, self.request_inner())
-            .await
-            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTS request timed out"))?
+        futures_lite::future::or(self.request_inner(), async {
+            smol::Timer::after(timeout).await;
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "NTS request timed out",
+            ))
+        })
+        .await
     }
 
     async fn request_inner(&mut self) -> io::Result<NtpResult> {
