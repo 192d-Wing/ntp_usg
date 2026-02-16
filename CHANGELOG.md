@@ -15,9 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Custom `ParseError` enum with `BufferTooShort`, `InvalidField`, `InvalidExtensionLength`, `ExtensionOverflow` variants
   - `parse_extension_fields_buf()` / `write_extension_fields_buf()` for buffer-based extension field handling
   - Zero-allocation extension field iterator: `iter_extension_fields()` returning `ExtensionFieldIter` / `ExtensionFieldRef`
-- **System clock adjustment** (requires `clock` feature, Unix only)
-  - `slew_clock()` for gradual offset correction via `adjtime` (macOS) / `clock_adjtime` (Linux)
-  - `step_clock()` for immediate clock step via `settimeofday` (macOS) / `clock_settime` (Linux)
+- **System clock adjustment** (requires `clock` feature)
+  - `slew_clock()` for gradual offset correction via `adjtime` (macOS) / `clock_adjtime` (Linux) / `SetSystemTimeAdjustment` (Windows)
+  - `step_clock()` for immediate clock step via `settimeofday` (macOS) / `clock_settime` (Linux) / `SetSystemTime` (Windows)
   - `apply_correction()` with ntpd convention: |offset| <= 128ms slews, otherwise steps
   - `NtpClient::run_with_clock_correction()` for automatic clock discipline in continuous client
   - New example: `clock_adjust.rs`
@@ -45,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | Feature | Description |
 |---------|-------------|
 | `alloc` | Enables `Vec`-based extension field types without full `std` |
-| `clock` | System clock slew/step adjustment (Unix only) |
+| `clock` | System clock slew/step adjustment (Linux, macOS, Windows) |
 | `async-std-runtime` | async-std one-shot and continuous NTP client |
 | `nts-async-std` | NTS authentication over async-std runtime |
 
@@ -54,7 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `async-std` 1.x (for `async-std-runtime`)
 - `futures-rustls` 0.26 (for `nts-async-std`)
 - `futures-lite` 2.x (for `nts-async-std`)
-- `libc` 0.2 (for `clock`, Unix only)
+- `libc` 0.2 (for `clock`, Unix)
+- `windows-sys` 0.59 (for `clock`, Windows)
 
 ## [1.1.0] - 2026-02-15
 
