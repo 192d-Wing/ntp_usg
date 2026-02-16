@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-02-15
+
+### Breaking Changes
+
+- **`async-std` replaced with `smol`** — Resolves RUSTSEC-2025-0052 (async-std unmaintained)
+  - Feature `async-std-runtime` renamed to `smol-runtime`
+  - Feature `nts-async-std` renamed to `nts-smol`
+  - Module `async_std_ntp` renamed to `smol_ntp`
+  - Module `async_std_client` renamed to `smol_client`
+  - Module `async_std_nts` renamed to `smol_nts`
+  - `async-std` dependency replaced with `smol` 2.x
+  - Examples `async_std_request` / `async_std_continuous` renamed to `smol_request` / `smol_continuous`
+
+### Migration Guide
+
+Replace in your `Cargo.toml`:
+```diff
+- ntp_usg = { version = "1.2", features = ["async-std-runtime"] }
++ ntp_usg = { version = "2.0", features = ["smol-runtime"] }
+```
+
+Replace in your code:
+```diff
+- use ntp::async_std_ntp;
++ use ntp::smol_ntp;
+- use ntp::async_std_client::NtpClient;
++ use ntp::smol_client::NtpClient;
+- use ntp::async_std_nts::NtsSession;
++ use ntp::smol_nts::NtsSession;
+```
+
 ## [1.2.0] - 2026-02-15
 
 ### Added
@@ -25,18 +56,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Core parsing (`FromBytes`/`ToBytes`, `Packet`, timestamps) works without `std` or `alloc`
   - `alloc` feature enables `Vec`-based types (`ExtensionField`, NTS types)
   - `std` feature (default) enables full I/O, networking, and `byteorder`-based APIs
-- **smol runtime support** (requires `smol-runtime` feature)
-  - `smol_ntp::request()` / `request_with_timeout()` for one-shot queries
-  - `smol_client::NtpClient` continuous client with `Arc<RwLock<NtpSyncState>>` state sharing
-  - New examples: `smol_request.rs`, `smol_continuous.rs`
-- **NTS over smol** (requires `nts-smol` feature)
-  - `smol_nts::NtsSession` using `futures-rustls` for TLS
+- **async-std runtime support** (requires `async-std-runtime` feature)
+  - `async_std_ntp::request()` / `request_with_timeout()` for one-shot queries
+  - `async_std_client::NtpClient` continuous client with `Arc<RwLock<NtpSyncState>>` state sharing
+  - New examples: `async_std_request.rs`, `async_std_continuous.rs`
+- **NTS over async-std** (requires `nts-async-std` feature)
+  - `async_std_nts::NtsSession` using `futures-rustls` for TLS
   - Full NTS-KE and AEAD authentication, mirroring the tokio-based NTS module
 
 ### Changed
 
 - `#![forbid(unsafe_code)]` relaxed to `#![deny(unsafe_code)]` at crate level to allow platform FFI in the `clock` module
-- `filter` module now available with either `tokio` or `smol-runtime` features
+- `filter` module now available with either `tokio` or `async-std-runtime` features
 - `NtsAuthenticator::to_extension_field` uses `to_be_bytes()` instead of `byteorder::WriteBytesExt`
 - `byteorder` dependency is now optional (only pulled in by `std` feature)
 
@@ -46,14 +77,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 |---------|-------------|
 | `alloc` | Enables `Vec`-based extension field types without full `std` |
 | `clock` | System clock slew/step adjustment (Linux, macOS, Windows) |
-| `smol-runtime` | smol one-shot and continuous NTP client |
-| `nts-smol` | NTS authentication over smol runtime |
+| `async-std-runtime` | async-std one-shot and continuous NTP client |
+| `nts-async-std` | NTS authentication over async-std runtime |
 
 ### New Dependencies (all optional)
 
-- `smol` 2.x (for `smol-runtime`)
-- `futures-lite` 2.x (for `smol-runtime`)
-- `futures-rustls` 0.26 (for `nts-smol`)
+- `async-std` 1.x (for `async-std-runtime`)
+- `futures-lite` 2.x (for `nts-async-std`)
+- `futures-rustls` 0.26 (for `nts-async-std`)
 - `libc` 0.2 (for `clock`, Unix)
 - `windows-sys` 0.59 (for `clock`, Windows)
 
@@ -221,6 +252,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Historical release information prior to the Edition 2024 migration.
 
+[2.0.0]: https://github.com/192d-Wing/ntp_usg/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/192d-Wing/ntp_usg/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/192d-Wing/ntp_usg/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/192d-Wing/ntp_usg/compare/v0.9.0...v1.0.0
