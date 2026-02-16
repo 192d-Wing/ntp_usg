@@ -49,6 +49,9 @@ jobs:
           echo "$NOTES" > /tmp/release-notes.md
           echo "notes_file=/tmp/release-notes.md" >> "$GITHUB_OUTPUT"
 
+      - name: Install gh CLI (if not in image)
+        run: command -v gh || (apt-get update && apt-get install -y --no-install-recommends gh && rm -rf /var/lib/apt/lists/*)
+
       - name: Create GitHub Release
         run: |
           gh release create "$GITHUB_REF_NAME" \

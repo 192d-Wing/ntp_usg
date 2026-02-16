@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI container jobs failing due to missing `packages: read` permission for GHCR
 - Clock tests failing on Windows CI runners that have admin privileges
 - Publish workflow now uses CI container image (drops manual toolchain install)
+- Added `gh` CLI to CI Docker image for GitHub release creation
+- Fixed clippy `assign_op_pattern` lint in protocol tests
 
 ### Changed
 

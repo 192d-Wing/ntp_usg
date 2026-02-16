@@ -1,7 +1,9 @@
 FROM rust:1-trixie
 
-# Keep OS packages current
-RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+# Keep OS packages current and install gh CLI for GitHub releases
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
 
 # Toolchain components
 RUN rustup component add clippy rustfmt llvm-tools-preview
@@ -17,7 +19,8 @@ RUN cargo nextest --version \
     && cargo audit --version \
     && cargo deny --version \
     && cargo fmt --version \
-    && cargo clippy --version
+    && cargo clippy --version \
+    && gh --version
 
 # Clean up caches to reduce image size
 RUN rm -rf /usr/local/cargo/registry /usr/local/cargo/git /tmp/*
