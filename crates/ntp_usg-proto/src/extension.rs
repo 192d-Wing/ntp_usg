@@ -382,6 +382,141 @@ impl NtsAuthenticator {
     }
 }
 
+// ============================================================================
+// Generic extension field registry and dispatch (RFC 7822)
+// ============================================================================
+
+/// A handler trait for processing extension fields.
+///
+/// Implement this trait to create custom extension field handlers that can
+/// be registered in an [`ExtensionRegistry`].
+pub trait ExtensionHandler: Send + Sync {
+    /// Return the extension field type code this handler processes.
+    fn field_type(&self) -> u16;
+
+    /// Process an extension field value.
+    ///
+    /// Returns `Ok(())` if the field was successfully processed, or an error
+    /// describing why processing failed.
+    #[cfg(feature = "std")]
+    fn handle(&self, value: &[u8]) -> io::Result<()>;
+}
+
+/// A registry for extension field handlers per RFC 7822.
+///
+/// This allows applications to register custom handlers for non-NTS extension
+/// field types. The registry dispatches incoming extension fields to the
+/// appropriate handler based on field type.
+///
+/// # Examples
+///
+/// ```
+/// use ntp_proto::extension::{ExtensionRegistry, ExtensionHandler, ExtensionField};
+/// # #[cfg(feature = "std")] {
+/// use std::io;
+///
+/// // Define a custom handler
+/// struct MyHandler;
+///
+/// impl ExtensionHandler for MyHandler {
+///     fn field_type(&self) -> u16 {
+///         0x4000  // Custom field type
+///     }
+///
+///     fn handle(&self, value: &[u8]) -> io::Result<()> {
+///         println!("Received extension field with {} bytes", value.len());
+///         Ok(())
+///     }
+/// }
+///
+/// // Create registry and register handler
+/// let mut registry = ExtensionRegistry::new();
+/// registry.register(Box::new(MyHandler));
+///
+/// // Dispatch an extension field
+/// let field = ExtensionField {
+///     field_type: 0x4000,
+///     value: vec![1, 2, 3, 4],
+/// };
+/// registry.dispatch(&field).unwrap();
+/// # }
+/// ```
+#[cfg(feature = "std")]
+#[derive(Default)]
+pub struct ExtensionRegistry {
+    handlers: Vec<Box<dyn ExtensionHandler>>,
+}
+
+#[cfg(feature = "std")]
+impl ExtensionRegistry {
+    /// Create a new empty extension field registry.
+    pub fn new() -> Self {
+        ExtensionRegistry {
+            handlers: Vec::new(),
+        }
+    }
+
+    /// Register a handler for a specific extension field type.
+    ///
+    /// If a handler for this field type is already registered, it will be
+    /// replaced.
+    pub fn register(&mut self, handler: Box<dyn ExtensionHandler>) {
+        let field_type = handler.field_type();
+        // Remove any existing handler for this type
+        self.handlers.retain(|h| h.field_type() != field_type);
+        self.handlers.push(handler);
+    }
+
+    /// Dispatch an extension field to the registered handler.
+    ///
+    /// Returns `Ok(())` if a handler was found and successfully processed the
+    /// field. Returns an error if no handler is registered for this field type
+    /// or if the handler returns an error.
+    pub fn dispatch(&self, field: &ExtensionField) -> io::Result<()> {
+        for handler in &self.handlers {
+            if handler.field_type() == field.field_type {
+                return handler.handle(&field.value);
+            }
+        }
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            format!("no handler registered for extension field type 0x{:04X}", field.field_type),
+        ))
+    }
+
+    /// Dispatch all extension fields in a list.
+    ///
+    /// Processes each field in sequence. Stops and returns an error on the
+    /// first failure. Ignores fields with no registered handler unless
+    /// `require_handlers` is true.
+    pub fn dispatch_all(&self, fields: &[ExtensionField], require_handlers: bool) -> io::Result<()> {
+        for field in fields {
+            if let Err(e) = self.dispatch(field) {
+                if require_handlers || e.kind() != io::ErrorKind::Unsupported {
+                    return Err(e);
+                }
+                // Ignore "no handler" errors if require_handlers is false
+            }
+        }
+        Ok(())
+    }
+
+    /// Check if a handler is registered for the given field type.
+    pub fn has_handler(&self, field_type: u16) -> bool {
+        self.handlers.iter().any(|h| h.field_type() == field_type)
+    }
+
+    /// Return the number of registered handlers.
+    pub fn len(&self) -> usize {
+        self.handlers.len()
+    }
+
+    /// Return true if no handlers are registered.
+    pub fn is_empty(&self) -> bool {
+        self.handlers.is_empty()
+    }
+}
+
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
@@ -451,6 +586,196 @@ mod tests {
         let back = NtsCookie::from_extension_field(&ef).unwrap();
         assert_eq!(back.0, vec![0xDE, 0xAD, 0xBE, 0xEF]);
     }
+
+    // ── ExtensionRegistry tests ───────────────────────────────────
+
+    struct TestHandler {
+        field_type: u16,
+        call_count: std::sync::Arc<std::sync::Mutex<usize>>,
+    }
+
+    impl ExtensionHandler for TestHandler {
+        fn field_type(&self) -> u16 {
+            self.field_type
+        }
+
+        fn handle(&self, _value: &[u8]) -> io::Result<()> {
+            *self.call_count.lock().unwrap() += 1;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_registry_register_and_dispatch() {
+        let call_count = std::sync::Arc::new(std::sync::Mutex::new(0));
+        let mut registry = ExtensionRegistry::new();
+
+        registry.register(Box::new(TestHandler {
+            field_type: 0x1234,
+            call_count: call_count.clone(),
+        }));
+
+        let field = ExtensionField {
+            field_type: 0x1234,
+            value: vec![1, 2, 3],
+        };
+
+        registry.dispatch(&field).unwrap();
+        assert_eq!(*call_count.lock().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_registry_no_handler() {
+        let registry = ExtensionRegistry::new();
+        let field = ExtensionField {
+            field_type: 0x9999,
+            value: vec![],
+        };
+
+        let result = registry.dispatch(&field);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Unsupported);
+    }
+
+    #[test]
+    fn test_registry_has_handler() {
+        let mut registry = ExtensionRegistry::new();
+        assert!(!registry.has_handler(0x4000));
+
+        registry.register(Box::new(TestHandler {
+            field_type: 0x4000,
+            call_count: std::sync::Arc::new(std::sync::Mutex::new(0)),
+        }));
+
+        assert!(registry.has_handler(0x4000));
+        assert!(!registry.has_handler(0x4001));
+    }
+
+    #[test]
+    fn test_registry_replace_handler() {
+        let count1 = std::sync::Arc::new(std::sync::Mutex::new(0));
+        let count2 = std::sync::Arc::new(std::sync::Mutex::new(0));
+
+        let mut registry = ExtensionRegistry::new();
+        registry.register(Box::new(TestHandler {
+            field_type: 0x5000,
+            call_count: count1.clone(),
+        }));
+        registry.register(Box::new(TestHandler {
+            field_type: 0x5000,
+            call_count: count2.clone(),
+        }));
+
+        let field = ExtensionField {
+            field_type: 0x5000,
+            value: vec![],
+        };
+
+        registry.dispatch(&field).unwrap();
+
+        // Only the second handler should be called
+        assert_eq!(*count1.lock().unwrap(), 0);
+        assert_eq!(*count2.lock().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_registry_dispatch_all() {
+        let count1 = std::sync::Arc::new(std::sync::Mutex::new(0));
+        let count2 = std::sync::Arc::new(std::sync::Mutex::new(0));
+
+        let mut registry = ExtensionRegistry::new();
+        registry.register(Box::new(TestHandler {
+            field_type: 0x6000,
+            call_count: count1.clone(),
+        }));
+        registry.register(Box::new(TestHandler {
+            field_type: 0x6001,
+            call_count: count2.clone(),
+        }));
+
+        let fields = vec![
+            ExtensionField {
+                field_type: 0x6000,
+                value: vec![1],
+            },
+            ExtensionField {
+                field_type: 0x6001,
+                value: vec![2],
+            },
+        ];
+
+        registry.dispatch_all(&fields, false).unwrap();
+        assert_eq!(*count1.lock().unwrap(), 1);
+        assert_eq!(*count2.lock().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_registry_dispatch_all_ignores_unknown() {
+        let count = std::sync::Arc::new(std::sync::Mutex::new(0));
+        let mut registry = ExtensionRegistry::new();
+        registry.register(Box::new(TestHandler {
+            field_type: 0x7000,
+            call_count: count.clone(),
+        }));
+
+        let fields = vec![
+            ExtensionField {
+                field_type: 0x7000,
+                value: vec![1],
+            },
+            ExtensionField {
+                field_type: 0x9999, // Unknown field
+                value: vec![2],
+            },
+        ];
+
+        // Should succeed (ignore unknown fields when require_handlers = false)
+        registry.dispatch_all(&fields, false).unwrap();
+        assert_eq!(*count.lock().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_registry_dispatch_all_requires_handlers() {
+        let count = std::sync::Arc::new(std::sync::Mutex::new(0));
+        let mut registry = ExtensionRegistry::new();
+        registry.register(Box::new(TestHandler {
+            field_type: 0x8000,
+            call_count: count.clone(),
+        }));
+
+        let fields = vec![
+            ExtensionField {
+                field_type: 0x8000,
+                value: vec![1],
+            },
+            ExtensionField {
+                field_type: 0x9999, // Unknown field
+                value: vec![2],
+            },
+        ];
+
+        // Should fail (unknown field when require_handlers = true)
+        let result = registry.dispatch_all(&fields, true);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Unsupported);
+    }
+
+    #[test]
+    fn test_registry_len_and_is_empty() {
+        let mut registry = ExtensionRegistry::new();
+        assert!(registry.is_empty());
+        assert_eq!(registry.len(), 0);
+
+        registry.register(Box::new(TestHandler {
+            field_type: 0xA000,
+            call_count: std::sync::Arc::new(std::sync::Mutex::new(0)),
+        }));
+
+        assert!(!registry.is_empty());
+        assert_eq!(registry.len(), 1);
+    }
+
+    // ──────────────────────────────────────────────────────────────
 
     #[test]
     fn test_nts_authenticator_roundtrip() {

@@ -94,6 +94,15 @@ pub mod symmetric;
 #[cfg(feature = "broadcast")]
 pub mod broadcast_client;
 
+/// Simple Network Time Protocol (SNTP) client per RFC 4330.
+///
+/// SNTP is a simplified subset of NTP for clients that perform single-shot
+/// time queries without the full NTP discipline algorithms. This module provides
+/// an RFC 4330 compliant SNTP API that wraps the underlying NTP implementation.
+///
+/// See [`sntp`] module documentation for usage examples.
+pub mod sntp;
+
 /// Async NTP client functions using the Tokio runtime.
 ///
 /// See [`async_ntp::request`] and [`async_ntp::request_with_timeout`] for details.
