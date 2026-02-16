@@ -8,42 +8,82 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CI_IMAGE: ghcr.io/${{ github.repository }}-ci:latest
 
 jobs:
-  test:
-    name: Test
-    runs-on: ${{ matrix.os }}
+  test-linux:
+    name: Test (Linux, ${{ matrix.rust }})
+    runs-on: ubuntu-latest
+    container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        rust: [stable, beta]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install beta toolchain
+        if: matrix.rust == 'beta'
+        run: rustup toolchain install beta && rustup default beta
+      - name: Run tests (default)
+        run: cargo nextest run --verbose
+      - name: Run tests (tokio)
+        run: cargo nextest run --verbose --features tokio
+      - name: Run tests (nts)
+        run: cargo nextest run --verbose --features nts
+      - name: Run tests (smol-runtime)
+        run: cargo nextest run --verbose --features smol-runtime
+      - name: Run tests (nts-smol)
+        run: cargo nextest run --verbose --features nts-smol
+      - name: Run tests (clock)
+        run: cargo nextest run --verbose --features clock
+
+  test-windows:
+    name: Test (Windows, ${{ matrix.rust }})
+    runs-on: windows-latest
+    strategy:
+      matrix:
         rust: [stable, beta]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
+      - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
       - name: Run tests (default)
-        run: cargo test --verbose
+        run: cargo nextest run --verbose
       - name: Run tests (tokio)
-        run: cargo test --verbose --features tokio
+        run: cargo nextest run --verbose --features tokio
       - name: Run tests (nts)
-        run: cargo test --verbose --features nts
+        run: cargo nextest run --verbose --features nts
       - name: Run tests (smol-runtime)
-        run: cargo test --verbose --features smol-runtime
+        run: cargo nextest run --verbose --features smol-runtime
       - name: Run tests (nts-smol)
-        run: cargo test --verbose --features nts-smol
+        run: cargo nextest run --verbose --features nts-smol
       - name: Run tests (clock)
-        if: runner.os == 'Linux' || runner.os == 'Windows'
-        run: cargo test --verbose --features clock
+        run: cargo nextest run --verbose --features clock
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Generate coverage (all features)
+        run: cargo llvm-cov nextest --all-features --lcov --output-path lcov.info
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./lcov.info
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: 192d-Wing/ntp_usg
 
   no-std:
     name: no_std
     runs-on: ubuntu-latest
+    container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - name: Check no_std (no features)
         run: cargo check --no-default-features --verbose
       - name: Check no_std + alloc
@@ -52,46 +92,37 @@ jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
   fmt:
     name: Format
     runs-on: ubuntu-latest
+    container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
       - name: Check formatting
         run: cargo fmt --all -- --check
 
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
+    container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
       - name: Run cargo audit
         run: cargo audit
 
   msrv:
     name: MSRV (1.93)
     runs-on: ubuntu-latest
+    container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.93"
-      - uses: Swatinem/rust-cache@v2
+      - name: Install MSRV toolchain
+        run: rustup toolchain install 1.93 && rustup default 1.93
       - name: Check MSRV
         run: cargo check --verbose
