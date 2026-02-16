@@ -278,7 +278,7 @@ mod tests {
         assert_eq!(duration.subsec_nanos(), 123456789);
 
         let secs_f64 = ts.as_secs_f64();
-        assert!((secs_f64 - 1234567890.123456789).abs() < 1e-9);
+        assert!((secs_f64 - 1_234_567_890.123_456_7).abs() < 1e-9);
     }
 
     #[test]
