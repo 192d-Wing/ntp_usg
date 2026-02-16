@@ -145,7 +145,7 @@ fn os_error_from_errno() -> ClockError {
 mod platform {
     use super::*;
 
-    pub fn slew(offset_seconds: f64) -> Result<(), ClockError> {
+    pub(super) fn slew(offset_seconds: f64) -> Result<(), ClockError> {
         // Convert offset to microseconds for ADJ_OFFSET.
         let offset_usec = (offset_seconds * 1_000_000.0) as i64;
 
@@ -160,7 +160,7 @@ mod platform {
         Ok(())
     }
 
-    pub fn step(offset_seconds: f64) -> Result<(), ClockError> {
+    pub(super) fn step(offset_seconds: f64) -> Result<(), ClockError> {
         // Get current time.
         let mut tp: libc::timespec = unsafe { std::mem::zeroed() };
         let ret = unsafe { libc::clock_gettime(libc::CLOCK_REALTIME, &mut tp) };
@@ -186,7 +186,7 @@ mod platform {
 mod platform {
     use super::*;
 
-    pub fn slew(offset_seconds: f64) -> Result<(), ClockError> {
+    pub(super) fn slew(offset_seconds: f64) -> Result<(), ClockError> {
         let secs = offset_seconds.trunc() as libc::time_t;
         let usecs = (offset_seconds.fract() * 1_000_000.0) as libc::suseconds_t;
         let delta = libc::timeval {
@@ -201,7 +201,7 @@ mod platform {
         Ok(())
     }
 
-    pub fn step(offset_seconds: f64) -> Result<(), ClockError> {
+    pub(super) fn step(offset_seconds: f64) -> Result<(), ClockError> {
         // Get current time.
         let mut tv: libc::timeval = unsafe { std::mem::zeroed() };
         let ret = unsafe { libc::gettimeofday(&mut tv, std::ptr::null_mut()) };
@@ -247,7 +247,7 @@ mod platform {
         }
     }
 
-    pub fn slew(offset_seconds: f64) -> Result<(), ClockError> {
+    pub(super) fn slew(offset_seconds: f64) -> Result<(), ClockError> {
         if offset_seconds.abs() < 1e-9 {
             // Reset to default system tick rate.
             let ret = unsafe { SetSystemTimeAdjustment(0, 1) };
@@ -281,7 +281,7 @@ mod platform {
         Ok(())
     }
 
-    pub fn step(offset_seconds: f64) -> Result<(), ClockError> {
+    pub(super) fn step(offset_seconds: f64) -> Result<(), ClockError> {
         // Get current time as FILETIME (100ns intervals since 1601-01-01).
         let mut ft = FILETIME {
             dwLowDateTime: 0,
@@ -317,11 +317,11 @@ mod platform {
 mod platform {
     use super::*;
 
-    pub fn slew(_offset_seconds: f64) -> Result<(), ClockError> {
+    pub(super) fn slew(_offset_seconds: f64) -> Result<(), ClockError> {
         Err(ClockError::Unsupported)
     }
 
-    pub fn step(_offset_seconds: f64) -> Result<(), ClockError> {
+    pub(super) fn step(_offset_seconds: f64) -> Result<(), ClockError> {
         Err(ClockError::Unsupported)
     }
 }

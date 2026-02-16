@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-02-15
+
+### Changed
+
+- Extracted `nts_common` module to eliminate ~400 lines of duplicated NTS code between tokio and smol variants
+- Extracted `client_common` module to share `NtpSyncState` and `classify_and_compute` between client variants
+- Fixed stale version strings in `lib.rs` doc comments (now reference 2.0)
+- Added `#![warn(unreachable_pub)]` lint and fixed all warnings
+- Added unit tests for `smol_client` (poll interval, reachability, builder validation)
+- Improved `smol_ntp` documentation (differences from `async_ntp`)
+
 ## [2.0.0] - 2026-02-15
 
 ### Breaking Changes
@@ -252,6 +263,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[2.0.1]: https://github.com/192d-Wing/ntp_usg/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/192d-Wing/ntp_usg/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/192d-Wing/ntp_usg/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/192d-Wing/ntp_usg/compare/v1.0.0...v1.1.0

@@ -1,0 +1,524 @@
+// Copyright 2026 U.S. Federal Government (in countries where recognized)
+// SPDX-License-Identifier: Apache-2.0
+
+//! Shared NTS constants, types, and pure functions used by both the tokio-based
+//! [`crate::nts`] and smol-based [`crate::smol_nts`] modules.
+
+use std::io;
+
+use aes_siv::aead::Aead;
+use aes_siv::aead::KeyInit;
+use aes_siv::{Aes128SivAead, Aes256SivAead};
+
+use crate::extension::{
+    self, ExtensionField, NtsAuthenticator, NtsCookie, NtsCookiePlaceholder, UNIQUE_IDENTIFIER,
+    UniqueIdentifier,
+};
+use crate::protocol::{self, ConstPackedSizeBytes, WriteBytes};
+use crate::unix_time;
+
+// NTS-KE record types (RFC 8915 Section 4).
+
+/// End of Message NTS-KE record type.
+pub(crate) const NTS_KE_END_OF_MESSAGE: u16 = 0;
+/// NTS Next Protocol Negotiation record type.
+pub(crate) const NTS_KE_NEXT_PROTOCOL: u16 = 1;
+/// Error record type.
+pub(crate) const NTS_KE_ERROR: u16 = 2;
+/// Warning record type.
+pub(crate) const NTS_KE_WARNING: u16 = 3;
+/// AEAD Algorithm Negotiation record type.
+pub(crate) const NTS_KE_AEAD_ALGORITHM: u16 = 4;
+/// New Cookie for NTPv4 record type.
+pub(crate) const NTS_KE_NEW_COOKIE: u16 = 5;
+/// NTPv4 Server Negotiation record type.
+pub(crate) const NTS_KE_SERVER: u16 = 6;
+/// NTPv4 Port Negotiation record type.
+pub(crate) const NTS_KE_PORT: u16 = 7;
+
+/// NTPv4 protocol ID for NTS Next Protocol Negotiation.
+pub(crate) const NTS_PROTOCOL_NTPV4: u16 = 0;
+
+/// Default NTS-KE port (RFC 8915 Section 4).
+pub(crate) const NTS_KE_DEFAULT_PORT: u16 = 4460;
+
+/// AEAD_AES_SIV_CMAC_256 algorithm ID (RFC 8915 Section 5.1).
+pub(crate) const AEAD_AES_SIV_CMAC_256: u16 = 15;
+
+/// AEAD_AES_SIV_CMAC_512 algorithm ID.
+pub(crate) const AEAD_AES_SIV_CMAC_512: u16 = 17;
+
+/// TLS exporter label for NTS (RFC 8915 Section 4.2).
+pub(crate) const NTS_EXPORTER_LABEL: &str = "EXPORTER-network-time-security";
+
+/// Number of cookie placeholders to include in NTS requests.
+pub(crate) const COOKIE_PLACEHOLDER_COUNT: usize = 7;
+
+/// Cookie count threshold below which re-keying should be attempted.
+pub(crate) const COOKIE_REKEY_THRESHOLD: usize = 2;
+
+/// Result of NTS Key Establishment.
+#[derive(Clone, Debug)]
+pub struct NtsKeResult {
+    /// Client-to-server AEAD key.
+    pub c2s_key: Vec<u8>,
+    /// Server-to-client AEAD key.
+    pub s2c_key: Vec<u8>,
+    /// Cookies for NTP requests (each used exactly once).
+    pub cookies: Vec<Vec<u8>>,
+    /// Negotiated AEAD algorithm ID.
+    pub aead_algorithm: u16,
+    /// NTP server hostname (may differ from NTS-KE server).
+    pub ntp_server: String,
+    /// NTP server port (default 123).
+    pub ntp_port: u16,
+}
+
+/// NTS-KE record as read from the TLS stream.
+pub(crate) struct NtsKeRecord {
+    pub(crate) critical: bool,
+    pub(crate) record_type: u16,
+    pub(crate) body: Vec<u8>,
+}
+
+/// Write a single NTS-KE record to a buffer.
+pub(crate) fn write_ke_record(buf: &mut Vec<u8>, critical: bool, record_type: u16, body: &[u8]) {
+    let raw_type = if critical {
+        record_type | 0x8000
+    } else {
+        record_type
+    };
+    buf.extend_from_slice(&raw_type.to_be_bytes());
+    buf.extend_from_slice(&(body.len() as u16).to_be_bytes());
+    buf.extend_from_slice(body);
+}
+
+/// Read a big-endian u16 from a byte slice of length >= 2.
+pub(crate) fn read_be_u16(data: &[u8]) -> u16 {
+    u16::from_be_bytes([data[0], data[1]])
+}
+
+/// Get the AEAD key length for the given algorithm.
+pub(crate) fn aead_key_length(algorithm: u16) -> io::Result<usize> {
+    match algorithm {
+        AEAD_AES_SIV_CMAC_256 => Ok(32),
+        AEAD_AES_SIV_CMAC_512 => Ok(64),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("unsupported AEAD algorithm: {}", algorithm),
+        )),
+    }
+}
+
+/// Build an NTS-authenticated NTP request packet.
+///
+/// Constructs the NTP header with extension fields (Unique Identifier, NTS Cookie,
+/// cookie placeholders) and an AEAD authenticator.
+///
+/// Returns `(send_buf, t1, uid_data)` where:
+/// - `send_buf` is the complete serialized packet ready to send
+/// - `t1` is the origin timestamp
+/// - `uid_data` is the Unique Identifier bytes for response validation
+pub(crate) fn build_nts_request(
+    c2s_key: &[u8],
+    aead_algorithm: u16,
+    cookie: Vec<u8>,
+) -> io::Result<(Vec<u8>, protocol::TimestampFormat, Vec<u8>)> {
+    let cookie_len = cookie.len();
+
+    // Build the NTP header.
+    let packet = protocol::Packet {
+        leap_indicator: protocol::LeapIndicator::default(),
+        version: protocol::Version::V4,
+        mode: protocol::Mode::Client,
+        stratum: protocol::Stratum::UNSPECIFIED,
+        poll: 0,
+        precision: 0,
+        root_delay: protocol::ShortFormat::default(),
+        root_dispersion: protocol::ShortFormat::default(),
+        reference_id: protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Null),
+        reference_timestamp: protocol::TimestampFormat::default(),
+        origin_timestamp: protocol::TimestampFormat::default(),
+        receive_timestamp: protocol::TimestampFormat::default(),
+        transmit_timestamp: unix_time::Instant::now().into(),
+    };
+    let t1 = packet.transmit_timestamp;
+
+    let mut header_buf = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
+    (&mut header_buf[..]).write_bytes(packet)?;
+
+    // Build extension fields (unencrypted).
+    let mut uid_data = vec![0u8; 32];
+    rand::fill(&mut uid_data[..]);
+    let uid = UniqueIdentifier::new(uid_data.clone());
+    let nts_cookie = NtsCookie::new(cookie);
+
+    // Build extension fields before the authenticator (these are AAD).
+    let mut pre_auth_fields = vec![uid.to_extension_field(), nts_cookie.to_extension_field()];
+
+    // Add cookie placeholders so the server sends replacement cookies.
+    for _ in 0..COOKIE_PLACEHOLDER_COUNT {
+        let placeholder = NtsCookiePlaceholder::new(cookie_len);
+        pre_auth_fields.push(placeholder.to_extension_field());
+    }
+
+    let pre_auth_bytes = extension::write_extension_fields(&pre_auth_fields)?;
+
+    // Build AAD = NTP header + all extension fields before authenticator.
+    let mut aad = Vec::with_capacity(header_buf.len() + pre_auth_bytes.len());
+    aad.extend_from_slice(&header_buf);
+    aad.extend_from_slice(&pre_auth_bytes);
+
+    // AEAD encrypt (plaintext is empty for basic NTS client — no encrypted extensions).
+    let (nonce, ciphertext) = aead_encrypt(aead_algorithm, c2s_key, &aad, &[])?;
+
+    // Build the NTS Authenticator extension field.
+    let authenticator = NtsAuthenticator::new(nonce, ciphertext);
+    let auth_ef = authenticator.to_extension_field();
+    let auth_bytes = extension::write_extension_fields(&[auth_ef])?;
+
+    // Assemble the complete packet.
+    let mut send_buf = Vec::with_capacity(aad.len() + auth_bytes.len());
+    send_buf.extend_from_slice(&aad);
+    send_buf.extend_from_slice(&auth_bytes);
+
+    Ok((send_buf, t1, uid_data))
+}
+
+/// Validate NTS extension fields in an NTP response.
+///
+/// Verifies the Unique Identifier matches, authenticates the response via AEAD,
+/// and extracts new cookies from the server.
+///
+/// Returns the list of new cookies provided by the server.
+pub(crate) fn validate_nts_response(
+    s2c_key: &[u8],
+    aead_algorithm: u16,
+    uid_data: &[u8],
+    recv_buf: &[u8],
+    recv_len: usize,
+) -> io::Result<Vec<Vec<u8>>> {
+    // Parse extension fields from the response.
+    if recv_len <= protocol::Packet::PACKED_SIZE_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NTS: response has no extension fields",
+        ));
+    }
+    let ext_data = &recv_buf[protocol::Packet::PACKED_SIZE_BYTES..recv_len];
+    let ext_fields = extension::parse_extension_fields(ext_data)?;
+
+    // Find the Unique Identifier and verify it matches.
+    let resp_uid = ext_fields
+        .iter()
+        .find(|ef| ef.field_type == UNIQUE_IDENTIFIER)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "NTS: response missing Unique Identifier",
+            )
+        })?;
+    if resp_uid.value != uid_data {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NTS: Unique Identifier mismatch",
+        ));
+    }
+
+    // Find the NTS Authenticator.
+    let auth_ef = ext_fields
+        .iter()
+        .find(|ef| ef.field_type == extension::NTS_AUTHENTICATOR)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "NTS: response missing NTS Authenticator",
+            )
+        })?;
+    let resp_auth = NtsAuthenticator::from_extension_field(auth_ef)?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NTS: failed to parse NTS Authenticator",
+        )
+    })?;
+
+    // Build AAD for response verification: NTP header + extension fields before authenticator.
+    let auth_ef_start = find_authenticator_offset(ext_data, &ext_fields)?;
+    let mut resp_aad = Vec::new();
+    resp_aad.extend_from_slice(&recv_buf[..protocol::Packet::PACKED_SIZE_BYTES]);
+    resp_aad.extend_from_slice(&ext_data[..auth_ef_start]);
+
+    // AEAD decrypt/verify.
+    let _plaintext = aead_decrypt(
+        aead_algorithm,
+        s2c_key,
+        &resp_aad,
+        &resp_auth.nonce,
+        &resp_auth.ciphertext,
+    )?;
+
+    // Extract new cookies from the response.
+    let mut new_cookies = Vec::new();
+    for ef in &ext_fields {
+        if let Some(cookie) = NtsCookie::from_extension_field(ef) {
+            new_cookies.push(cookie.0);
+        }
+    }
+
+    Ok(new_cookies)
+}
+
+/// Find the byte offset of the NTS Authenticator extension field within the
+/// extension data (relative to the start of the extension data, not the packet).
+fn find_authenticator_offset(ext_data: &[u8], ext_fields: &[ExtensionField]) -> io::Result<usize> {
+    let mut offset = 0usize;
+    for ef in ext_fields {
+        if ef.field_type == extension::NTS_AUTHENTICATOR {
+            return Ok(offset);
+        }
+        let field_length = 4 + ef.value.len();
+        let padded = (field_length + 3) & !3;
+        offset += padded;
+        if offset > ext_data.len() {
+            break;
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::InvalidData,
+        "NTS: could not locate authenticator offset",
+    ))
+}
+
+/// AEAD encrypt using the negotiated algorithm.
+///
+/// Returns `(nonce, ciphertext)`.
+pub(crate) fn aead_encrypt(
+    algorithm: u16,
+    key: &[u8],
+    aad: &[u8],
+    plaintext: &[u8],
+) -> io::Result<(Vec<u8>, Vec<u8>)> {
+    match algorithm {
+        AEAD_AES_SIV_CMAC_256 => {
+            let cipher = Aes128SivAead::new_from_slice(key).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("AES-SIV key error: {}", e),
+                )
+            })?;
+            let mut nonce_bytes = [0u8; 16];
+            rand::fill(&mut nonce_bytes);
+
+            let payload = aes_siv::aead::Payload {
+                msg: plaintext,
+                aad,
+            };
+            let nonce = aes_siv::Nonce::from_slice(&nonce_bytes);
+            let ciphertext = cipher
+                .encrypt(nonce, payload)
+                .map_err(|e| io::Error::other(format!("AEAD encrypt failed: {}", e)))?;
+
+            Ok((nonce_bytes.to_vec(), ciphertext))
+        }
+        AEAD_AES_SIV_CMAC_512 => {
+            let cipher = Aes256SivAead::new_from_slice(key).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("AES-SIV key error: {}", e),
+                )
+            })?;
+            let mut nonce_bytes = [0u8; 16];
+            rand::fill(&mut nonce_bytes);
+
+            let payload = aes_siv::aead::Payload {
+                msg: plaintext,
+                aad,
+            };
+            let nonce = aes_siv::Nonce::from_slice(&nonce_bytes);
+            let ciphertext = cipher
+                .encrypt(nonce, payload)
+                .map_err(|e| io::Error::other(format!("AEAD encrypt failed: {}", e)))?;
+
+            Ok((nonce_bytes.to_vec(), ciphertext))
+        }
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("unsupported AEAD algorithm: {}", algorithm),
+        )),
+    }
+}
+
+/// AEAD decrypt using the negotiated algorithm.
+pub(crate) fn aead_decrypt(
+    algorithm: u16,
+    key: &[u8],
+    aad: &[u8],
+    nonce: &[u8],
+    ciphertext: &[u8],
+) -> io::Result<Vec<u8>> {
+    match algorithm {
+        AEAD_AES_SIV_CMAC_256 => {
+            let cipher = Aes128SivAead::new_from_slice(key).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("AES-SIV key error: {}", e),
+                )
+            })?;
+            let payload = aes_siv::aead::Payload {
+                msg: ciphertext,
+                aad,
+            };
+            let nonce = aes_siv::Nonce::from_slice(nonce);
+            cipher.decrypt(nonce, payload).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "NTS: AEAD authentication failed — response may be tampered",
+                )
+            })
+        }
+        AEAD_AES_SIV_CMAC_512 => {
+            let cipher = Aes256SivAead::new_from_slice(key).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("AES-SIV key error: {}", e),
+                )
+            })?;
+            let payload = aes_siv::aead::Payload {
+                msg: ciphertext,
+                aad,
+            };
+            let nonce = aes_siv::Nonce::from_slice(nonce);
+            cipher.decrypt(nonce, payload).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "NTS: AEAD authentication failed — response may be tampered",
+                )
+            })
+        }
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("unsupported AEAD algorithm: {}", algorithm),
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_aead_key_length() {
+        assert_eq!(aead_key_length(AEAD_AES_SIV_CMAC_256).unwrap(), 32);
+        assert_eq!(aead_key_length(AEAD_AES_SIV_CMAC_512).unwrap(), 64);
+        assert!(aead_key_length(99).is_err());
+    }
+
+    #[test]
+    fn test_aead_roundtrip_256() {
+        let key = vec![0x42u8; 32];
+        let aad = b"test associated data";
+        let plaintext = b"hello NTS";
+
+        let (nonce, ciphertext) =
+            aead_encrypt(AEAD_AES_SIV_CMAC_256, &key, aad, plaintext).unwrap();
+        let decrypted =
+            aead_decrypt(AEAD_AES_SIV_CMAC_256, &key, aad, &nonce, &ciphertext).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_aead_roundtrip_512() {
+        let key = vec![0x42u8; 64];
+        let aad = b"test associated data";
+        let plaintext = b"hello NTS 512";
+
+        let (nonce, ciphertext) =
+            aead_encrypt(AEAD_AES_SIV_CMAC_512, &key, aad, plaintext).unwrap();
+        let decrypted =
+            aead_decrypt(AEAD_AES_SIV_CMAC_512, &key, aad, &nonce, &ciphertext).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_aead_tampered_ciphertext() {
+        let key = vec![0x42u8; 32];
+        let aad = b"test aad";
+        let plaintext = b"secret";
+
+        let (nonce, mut ciphertext) =
+            aead_encrypt(AEAD_AES_SIV_CMAC_256, &key, aad, plaintext).unwrap();
+        // Tamper with the ciphertext.
+        if let Some(b) = ciphertext.first_mut() {
+            *b ^= 0xFF;
+        }
+        let result = aead_decrypt(AEAD_AES_SIV_CMAC_256, &key, aad, &nonce, &ciphertext);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_aead_wrong_aad() {
+        let key = vec![0x42u8; 32];
+        let aad = b"correct aad";
+        let plaintext = b"secret";
+
+        let (nonce, ciphertext) =
+            aead_encrypt(AEAD_AES_SIV_CMAC_256, &key, aad, plaintext).unwrap();
+        let result = aead_decrypt(
+            AEAD_AES_SIV_CMAC_256,
+            &key,
+            b"wrong aad",
+            &nonce,
+            &ciphertext,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_write_ke_record() {
+        let mut buf = Vec::new();
+        write_ke_record(&mut buf, true, NTS_KE_NEXT_PROTOCOL, &[0x00, 0x00]);
+        // Critical bit set: 0x8001, body length 2.
+        assert_eq!(buf, [0x80, 0x01, 0x00, 0x02, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn test_write_ke_record_non_critical() {
+        let mut buf = Vec::new();
+        write_ke_record(&mut buf, false, NTS_KE_AEAD_ALGORITHM, &[0x00, 0x0F]);
+        // No critical bit: 0x0004, body length 2.
+        assert_eq!(buf, [0x00, 0x04, 0x00, 0x02, 0x00, 0x0F]);
+    }
+
+    #[test]
+    fn test_find_authenticator_offset() {
+        let fields = vec![
+            ExtensionField {
+                field_type: UNIQUE_IDENTIFIER,
+                value: vec![0u8; 32],
+            },
+            ExtensionField {
+                field_type: extension::NTS_COOKIE,
+                value: vec![0u8; 100],
+            },
+            ExtensionField {
+                field_type: extension::NTS_AUTHENTICATOR,
+                value: vec![0u8; 48],
+            },
+        ];
+        let ext_data = extension::write_extension_fields(&fields).unwrap();
+        let offset = find_authenticator_offset(&ext_data, &fields).unwrap();
+        // First field: 4 + 32 = 36 bytes. Second field: 4 + 100 = 104 bytes.
+        assert_eq!(offset, 36 + 104);
+    }
+
+    #[test]
+    fn test_aead_empty_plaintext() {
+        let key = vec![0x42u8; 32];
+        let aad = b"NTP header + extension fields";
+
+        let (nonce, ciphertext) = aead_encrypt(AEAD_AES_SIV_CMAC_256, &key, aad, &[]).unwrap();
+        let decrypted =
+            aead_decrypt(AEAD_AES_SIV_CMAC_256, &key, aad, &nonce, &ciphertext).unwrap();
+        assert!(decrypted.is_empty());
+    }
+}

@@ -43,51 +43,15 @@ use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
+pub use crate::client_common::NtpSyncState;
+use crate::client_common::classify_and_compute;
 use crate::filter::{ClockSample, SampleFilter};
-use crate::{
-    KissOfDeathError, build_request_packet, compute_offset_delay, parse_and_validate_response,
-    protocol, unix_time,
-};
+use crate::{KissOfDeathError, build_request_packet, parse_and_validate_response, protocol};
 
 #[cfg(feature = "nts-smol")]
+use crate::nts_common;
+#[cfg(feature = "nts-smol")]
 use crate::smol_nts;
-
-/// The current synchronization state, available to consumers via
-/// `Arc<RwLock<NtpSyncState>>`.
-#[derive(Clone, Debug)]
-pub struct NtpSyncState {
-    /// Best estimated clock offset in seconds (positive = local clock behind server).
-    pub offset: f64,
-    /// Best estimated round-trip delay in seconds.
-    pub delay: f64,
-    /// RMS jitter of recent samples in seconds.
-    pub jitter: f64,
-    /// Stratum of the best peer.
-    pub stratum: u8,
-    /// Whether interleaved mode is active for the best peer.
-    pub interleaved: bool,
-    /// When this state was last updated.
-    pub last_update: std::time::Instant,
-    /// Number of successful responses received across all peers.
-    pub total_responses: u64,
-    /// Whether the best peer is using NTS authentication.
-    pub nts_authenticated: bool,
-}
-
-impl Default for NtpSyncState {
-    fn default() -> Self {
-        NtpSyncState {
-            offset: 0.0,
-            delay: 0.0,
-            jitter: 0.0,
-            stratum: protocol::MAXSTRAT,
-            interleaved: false,
-            last_update: std::time::Instant::now(),
-            total_responses: 0,
-            nts_authenticated: false,
-        }
-    }
-}
 
 /// Result of polling a single peer.
 enum PollResult {
@@ -214,61 +178,6 @@ impl PeerState {
             Some(s) => s.delay.abs() / 2.0 + self.filter.jitter(),
             None => f64::MAX,
         }
-    }
-}
-
-/// Classify a response as basic or interleaved mode and compute the clock sample.
-fn classify_and_compute(
-    response: &protocol::Packet,
-    t4: protocol::TimestampFormat,
-    current_t1: protocol::TimestampFormat,
-    prev_t1: Option<protocol::TimestampFormat>,
-    prev_t4: Option<protocol::TimestampFormat>,
-) -> io::Result<(ClockSample, bool)> {
-    if response.origin_timestamp == current_t1 {
-        let t4_instant = unix_time::Instant::from(t4);
-        let t1_instant = unix_time::timestamp_to_instant(current_t1, &t4_instant);
-        let t2_instant = unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
-        let t3_instant = unix_time::timestamp_to_instant(response.transmit_timestamp, &t4_instant);
-        let (offset, delay) =
-            compute_offset_delay(&t1_instant, &t2_instant, &t3_instant, &t4_instant);
-        Ok((
-            ClockSample {
-                offset,
-                delay,
-                age: 0.0,
-            },
-            false,
-        ))
-    } else if let (Some(pt1), Some(pt4)) = (prev_t1, prev_t4) {
-        if response.origin_timestamp == pt1 {
-            let t4_instant = unix_time::Instant::from(pt4);
-            let t1_instant = unix_time::timestamp_to_instant(pt1, &t4_instant);
-            let t2_instant =
-                unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
-            let t3_instant =
-                unix_time::timestamp_to_instant(response.transmit_timestamp, &t4_instant);
-            let (offset, delay) =
-                compute_offset_delay(&t1_instant, &t2_instant, &t3_instant, &t4_instant);
-            Ok((
-                ClockSample {
-                    offset,
-                    delay,
-                    age: 0.0,
-                },
-                true,
-            ))
-        } else {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "origin timestamp mismatch: neither basic nor interleaved",
-            ))
-        }
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "origin timestamp mismatch: response does not match our request",
-        ))
     }
 }
 
@@ -573,7 +482,7 @@ impl NtpClient {
         nts_state: &mut NtsPeerState,
     ) -> io::Result<PollResult> {
         // Replenish cookies if running low.
-        if nts_state.cookies.len() <= smol_nts::COOKIE_REKEY_THRESHOLD {
+        if nts_state.cookies.len() <= nts_common::COOKIE_REKEY_THRESHOLD {
             debug!(
                 "peer {}: {} cookies remaining, attempting NTS-KE re-key",
                 peer.addr,
@@ -604,7 +513,7 @@ impl NtpClient {
             .ok_or_else(|| io::Error::other("no NTS cookies remaining"))?;
 
         let (send_buf, t1, uid_data) =
-            smol_nts::build_nts_request(&nts_state.c2s_key, nts_state.aead_algorithm, cookie)?;
+            nts_common::build_nts_request(&nts_state.c2s_key, nts_state.aead_algorithm, cookie)?;
         peer.current_t1 = Some(t1);
 
         let bind_addr = crate::bind_addr_for(&peer.addr);
@@ -648,7 +557,7 @@ impl NtpClient {
                 Err(e)
             }
             Ok((response, t4)) => {
-                let new_cookies = smol_nts::validate_nts_response(
+                let new_cookies = nts_common::validate_nts_response(
                     &nts_state.s2c_key,
                     nts_state.aead_algorithm,
                     &uid_data,
@@ -704,5 +613,80 @@ impl NtpClient {
                 *guard = state;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_peer_state_poll_interval() {
+        let peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
+        assert_eq!(peer.poll_interval(), Duration::from_secs(16));
+    }
+
+    #[test]
+    fn test_peer_state_increase_poll() {
+        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MAXPOLL);
+        peer.increase_poll(protocol::MAXPOLL);
+        assert_eq!(peer.poll_exponent, protocol::MAXPOLL);
+    }
+
+    #[test]
+    fn test_peer_state_decrease_poll() {
+        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
+        peer.decrease_poll(protocol::MINPOLL);
+        assert_eq!(peer.poll_exponent, protocol::MINPOLL);
+    }
+
+    #[test]
+    fn test_reachability_register() {
+        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
+        assert_eq!(peer.reachability, 0);
+
+        peer.reach_success();
+        assert_eq!(peer.reachability, 0b0000_0001);
+
+        peer.reach_success();
+        assert_eq!(peer.reachability, 0b0000_0011);
+
+        peer.reach_failure();
+        assert_eq!(peer.reachability, 0b0000_0110);
+
+        // After 8 failures, register should be zero.
+        for _ in 0..8 {
+            peer.reach_failure();
+        }
+        assert_eq!(peer.reachability, 0);
+    }
+
+    #[test]
+    fn test_builder_rejects_empty_servers() {
+        smol::block_on(async {
+            let result = NtpClient::builder().build().await;
+            assert!(result.is_err());
+        });
+    }
+
+    #[test]
+    fn test_adjust_poll_large_offset() {
+        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), 10);
+        peer.filter.add(0.5, 0.050);
+        peer.filter.add(0.5, 0.060);
+        peer.filter.add(0.5, 0.070);
+        peer.filter.add(0.5, 0.080);
+        peer.adjust_poll(protocol::MINPOLL, protocol::MAXPOLL);
+        assert!(peer.poll_exponent < 10);
+    }
+
+    #[test]
+    fn test_adjust_poll_stable() {
+        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), 6);
+        for i in 0..4 {
+            peer.filter.add(0.001 + i as f64 * 0.0001, 0.050);
+        }
+        peer.adjust_poll(protocol::MINPOLL, protocol::MAXPOLL);
+        assert!(peer.poll_exponent > 6);
     }
 }

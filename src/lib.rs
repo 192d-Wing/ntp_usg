@@ -23,6 +23,7 @@ fn main() {
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
+#![warn(unreachable_pub)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -48,13 +49,21 @@ pub mod unix_time;
 #[cfg(any(feature = "tokio", feature = "smol-runtime"))]
 pub mod filter;
 
+/// Shared types and logic for the continuous NTP client.
+#[cfg(any(feature = "tokio", feature = "smol-runtime"))]
+pub mod client_common;
+
+/// Shared NTS logic used by both tokio and smol NTS modules.
+#[cfg(any(feature = "nts", feature = "nts-smol"))]
+pub(crate) mod nts_common;
+
 /// Continuous NTP client with adaptive poll interval management and interleaved mode.
 ///
 /// Enable with the `tokio` feature flag:
 ///
 /// ```toml
 /// [dependencies]
-/// ntp_usg = { version = "0.9", features = ["tokio"] }
+/// ntp_usg = { version = "2.0", features = ["tokio"] }
 /// ```
 #[cfg(feature = "tokio")]
 pub mod client;
@@ -66,7 +75,7 @@ pub mod client;
 ///
 /// ```toml
 /// [dependencies]
-/// ntp_usg = { version = "0.9", features = ["nts"] }
+/// ntp_usg = { version = "2.0", features = ["nts"] }
 /// ```
 #[cfg(feature = "nts")]
 pub mod nts;
@@ -80,7 +89,7 @@ pub mod nts;
 ///
 /// ```toml
 /// [dependencies]
-/// ntp_usg = { version = "1.1", features = ["clock"] }
+/// ntp_usg = { version = "2.0", features = ["clock"] }
 /// ```
 #[cfg(feature = "clock")]
 pub mod clock;
@@ -91,7 +100,7 @@ pub mod clock;
 ///
 /// ```toml
 /// [dependencies]
-/// ntp_usg = { version = "0.9", features = ["tokio"] }
+/// ntp_usg = { version = "2.0", features = ["tokio"] }
 /// ```
 ///
 /// See [`async_ntp::request`] and [`async_ntp::request_with_timeout`] for details.
@@ -104,7 +113,7 @@ pub mod async_ntp;
 ///
 /// ```toml
 /// [dependencies]
-/// ntp_usg = { version = "1.2", features = ["smol-runtime"] }
+/// ntp_usg = { version = "2.0", features = ["smol-runtime"] }
 /// ```
 ///
 /// See [`smol_ntp::request`] and [`smol_ntp::request_with_timeout`] for details.
@@ -117,7 +126,7 @@ pub mod smol_ntp;
 ///
 /// ```toml
 /// [dependencies]
-/// ntp_usg = { version = "1.2", features = ["smol-runtime"] }
+/// ntp_usg = { version = "2.0", features = ["smol-runtime"] }
 /// ```
 #[cfg(feature = "smol-runtime")]
 pub mod smol_client;
@@ -131,7 +140,7 @@ pub mod smol_client;
 ///
 /// ```toml
 /// [dependencies]
-/// ntp_usg = { version = "1.2", features = ["nts-smol"] }
+/// ntp_usg = { version = "2.0", features = ["nts-smol"] }
 /// ```
 #[cfg(feature = "nts-smol")]
 pub mod smol_nts;

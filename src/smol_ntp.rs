@@ -12,6 +12,11 @@
 //! These functions must be called from within a smol runtime context
 //! (e.g., inside `smol::block_on` or a `smol::spawn`ed task).
 //!
+//! # Differences from [`crate::async_ntp`]
+//!
+//! The `addr` parameter is `&str` rather than Tokio's generic `ToSocketAddrs`,
+//! because smol uses `smol::net::resolve()` which takes a string slice.
+//!
 //! # Examples
 //!
 //! ```no_run
