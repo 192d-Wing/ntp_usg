@@ -30,7 +30,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let state = state_rx.borrow();
         println!(
             "Offset: {:+.6}s | Delay: {:.6}s | Jitter: {:.6}s | Stratum: {} | NTS: {} | Responses: {}",
-            state.offset, state.delay, state.jitter, state.stratum, state.nts_authenticated, state.total_responses
+            state.offset,
+            state.delay,
+            state.jitter,
+            state.stratum,
+            state.nts_authenticated,
+            state.total_responses
         );
     }
 }

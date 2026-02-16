@@ -38,7 +38,10 @@ async fn test_nts_request_cloudflare() {
         Ok(ntp_result) => {
             assert!(ntp_result.offset_seconds.is_finite());
             assert!(ntp_result.delay_seconds.is_finite());
-            assert!(session.cookie_count() > 0, "should have replenished cookies");
+            assert!(
+                session.cookie_count() > 0,
+                "should have replenished cookies"
+            );
         }
         Err(e) => {
             eprintln!("NTS request test skipped (network error): {}", e);

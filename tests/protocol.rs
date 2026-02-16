@@ -123,17 +123,41 @@ fn make_test_packet(stratum: u8, ref_id: [u8; 4]) -> [u8; 48] {
     buf[15] = ref_id[3];
     // Bytes 16-47: timestamps (set non-zero so they're valid)
     // reference timestamp
-    buf[16] = 0xD7; buf[17] = 0xBC; buf[18] = 0x80; buf[19] = 0x69;
-    buf[20] = 0x00; buf[21] = 0x00; buf[22] = 0x00; buf[23] = 0x01;
+    buf[16] = 0xD7;
+    buf[17] = 0xBC;
+    buf[18] = 0x80;
+    buf[19] = 0x69;
+    buf[20] = 0x00;
+    buf[21] = 0x00;
+    buf[22] = 0x00;
+    buf[23] = 0x01;
     // origin timestamp
-    buf[24] = 0xD7; buf[25] = 0xBB; buf[26] = 0xB1; buf[27] = 0xC2;
-    buf[28] = 0x00; buf[29] = 0x00; buf[30] = 0x00; buf[31] = 0x01;
+    buf[24] = 0xD7;
+    buf[25] = 0xBB;
+    buf[26] = 0xB1;
+    buf[27] = 0xC2;
+    buf[28] = 0x00;
+    buf[29] = 0x00;
+    buf[30] = 0x00;
+    buf[31] = 0x01;
     // receive timestamp
-    buf[32] = 0xD7; buf[33] = 0xBC; buf[34] = 0x80; buf[35] = 0x71;
-    buf[36] = 0x00; buf[37] = 0x00; buf[38] = 0x00; buf[39] = 0x01;
+    buf[32] = 0xD7;
+    buf[33] = 0xBC;
+    buf[34] = 0x80;
+    buf[35] = 0x71;
+    buf[36] = 0x00;
+    buf[37] = 0x00;
+    buf[38] = 0x00;
+    buf[39] = 0x01;
     // transmit timestamp
-    buf[40] = 0xD7; buf[41] = 0xBC; buf[42] = 0x80; buf[43] = 0x71;
-    buf[44] = 0x00; buf[45] = 0x00; buf[46] = 0x00; buf[47] = 0x02;
+    buf[40] = 0xD7;
+    buf[41] = 0xBC;
+    buf[42] = 0x80;
+    buf[43] = 0x71;
+    buf[44] = 0x00;
+    buf[45] = 0x00;
+    buf[46] = 0x00;
+    buf[47] = 0x02;
     buf
 }
 

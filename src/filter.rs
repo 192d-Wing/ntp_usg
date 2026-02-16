@@ -57,10 +57,11 @@ impl SampleFilter {
 
     /// Returns the best sample (minimum delay) if any samples exist.
     pub fn best_sample(&self) -> Option<&ClockSample> {
-        self.samples
-            .iter()
-            .flatten()
-            .min_by(|a, b| a.delay.partial_cmp(&b.delay).unwrap_or(std::cmp::Ordering::Equal))
+        self.samples.iter().flatten().min_by(|a, b| {
+            a.delay
+                .partial_cmp(&b.delay)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     }
 
     /// Compute the peer jitter: RMS of offset differences from the best sample.
@@ -166,7 +167,10 @@ mod tests {
         // sum_sq = 0 + 0.01^2 + 0.01^2 + 0.02^2 = 0 + 0.0001 + 0.0001 + 0.0004 = 0.0006
         // jitter = sqrt(0.0006 / 3) = sqrt(0.0002) ≈ 0.01414
         let expected = (0.0006_f64 / 3.0).sqrt();
-        assert!((jitter - expected).abs() < 1e-10, "jitter={jitter}, expected={expected}");
+        assert!(
+            (jitter - expected).abs() < 1e-10,
+            "jitter={jitter}, expected={expected}"
+        );
     }
 
     #[test]

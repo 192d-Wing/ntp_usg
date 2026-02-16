@@ -42,8 +42,8 @@ use tokio::net::UdpSocket;
 
 use crate::filter::{ClockSample, SampleFilter};
 use crate::{
-    build_request_packet, compute_offset_delay, parse_and_validate_response, protocol, unix_time,
-    KissOfDeathError,
+    KissOfDeathError, build_request_packet, compute_offset_delay, parse_and_validate_response,
+    protocol, unix_time,
 };
 
 #[cfg(feature = "nts")]
@@ -256,10 +256,8 @@ fn classify_and_compute(
         // Basic mode: all timestamps from the same exchange.
         let t4_instant = unix_time::Instant::from(t4);
         let t1_instant = unix_time::timestamp_to_instant(current_t1, &t4_instant);
-        let t2_instant =
-            unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
-        let t3_instant =
-            unix_time::timestamp_to_instant(response.transmit_timestamp, &t4_instant);
+        let t2_instant = unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
+        let t3_instant = unix_time::timestamp_to_instant(response.transmit_timestamp, &t4_instant);
         let (offset, delay) =
             compute_offset_delay(&t1_instant, &t2_instant, &t3_instant, &t4_instant);
         Ok((
@@ -365,10 +363,7 @@ impl NtpClientBuilder {
     /// Returns the client (to be spawned) and a watch receiver for state updates.
     pub async fn build(
         self,
-    ) -> io::Result<(
-        NtpClient,
-        tokio::sync::watch::Receiver<NtpSyncState>,
-    )> {
+    ) -> io::Result<(NtpClient, tokio::sync::watch::Receiver<NtpSyncState>)> {
         #[cfg(feature = "nts")]
         let has_nts = !self.nts_servers.is_empty();
         #[cfg(not(feature = "nts"))]
@@ -394,8 +389,7 @@ impl NtpClientBuilder {
 
         let mut peers = Vec::new();
         for server in &self.servers {
-            let addrs: Vec<SocketAddr> =
-                tokio::net::lookup_host(server.as_str()).await?.collect();
+            let addrs: Vec<SocketAddr> = tokio::net::lookup_host(server.as_str()).await?.collect();
             if let Some(&addr) = addrs.first() {
                 peers.push(PeerState::new(addr, initial_poll));
             } else {
@@ -529,10 +523,7 @@ impl NtpClient {
                 }
                 Ok(PollResult::DenyKissCode) => {
                     self.peers[idx].demobilized = true;
-                    warn!(
-                        "peer {} sent DENY/RSTR, demobilizing",
-                        self.peers[idx].addr
-                    );
+                    warn!("peer {} sent DENY/RSTR, demobilizing", self.peers[idx].addr);
                 }
                 Err(e) => {
                     self.peers[idx].reach_failure();
@@ -541,8 +532,7 @@ impl NtpClient {
             }
 
             // Schedule next poll for this peer.
-            next_poll[idx] =
-                tokio::time::Instant::now() + self.peers[idx].poll_interval();
+            next_poll[idx] = tokio::time::Instant::now() + self.peers[idx].poll_interval();
         }
     }
 
@@ -573,16 +563,12 @@ impl NtpClient {
 
         // Receive with timeout.
         let mut recv_buf = [0u8; 1024];
-        let (recv_len, src_addr) =
-            tokio::time::timeout(timeout, sock.recv_from(&mut recv_buf))
-                .await
-                .map_err(|_| {
-                    io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out")
-                })??;
+        let (recv_len, src_addr) = tokio::time::timeout(timeout, sock.recv_from(&mut recv_buf))
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out"))??;
 
         // Parse and validate (without origin timestamp check).
-        let parse_result =
-            parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
+        let parse_result = parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
 
         match parse_result {
             Err(e) => {
@@ -605,13 +591,8 @@ impl NtpClient {
                 peer.stratum = Some(response.stratum);
 
                 // Classify as basic or interleaved and compute sample.
-                let (sample, interleaved) = classify_and_compute(
-                    &response,
-                    t4,
-                    t1,
-                    peer.prev_t1,
-                    peer.prev_t4,
-                )?;
+                let (sample, interleaved) =
+                    classify_and_compute(&response, t4, t1, peer.prev_t1, peer.prev_t4)?;
 
                 // Rotate timestamps for next exchange.
                 peer.prev_t1 = peer.current_t1;
@@ -641,8 +622,7 @@ impl NtpClient {
                     nts_state.s2c_key = ke.s2c_key;
                     nts_state.cookies = ke.cookies;
                     nts_state.aead_algorithm = ke.aead_algorithm;
-                    nts_state.cookie_len =
-                        nts_state.cookies.first().map_or(0, |c| c.len());
+                    nts_state.cookie_len = nts_state.cookies.first().map_or(0, |c| c.len());
                     debug!(
                         "peer {}: NTS-KE re-key successful, {} cookies",
                         peer.addr,
@@ -650,19 +630,17 @@ impl NtpClient {
                     );
                 }
                 Err(e) => {
-                    warn!(
-                        "peer {}: NTS-KE re-key failed: {}",
-                        peer.addr, e
-                    );
+                    warn!("peer {}: NTS-KE re-key failed: {}", peer.addr, e);
                     // Continue with remaining cookies; will error at zero.
                 }
             }
         }
 
         // Pop a cookie.
-        let cookie = nts_state.cookies.pop().ok_or_else(|| {
-            io::Error::other("no NTS cookies remaining")
-        })?;
+        let cookie = nts_state
+            .cookies
+            .pop()
+            .ok_or_else(|| io::Error::other("no NTS cookies remaining"))?;
 
         // Build NTS-authenticated request packet.
         let (send_buf, t1, uid_data) =
@@ -680,16 +658,12 @@ impl NtpClient {
 
         // Receive with timeout (larger buffer for NTS extension fields).
         let mut recv_buf = [0u8; 2048];
-        let (recv_len, src_addr) =
-            tokio::time::timeout(timeout, sock.recv_from(&mut recv_buf))
-                .await
-                .map_err(|_| {
-                    io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out")
-                })??;
+        let (recv_len, src_addr) = tokio::time::timeout(timeout, sock.recv_from(&mut recv_buf))
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out"))??;
 
         // Parse and validate the NTP header.
-        let parse_result =
-            parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
+        let parse_result = parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
 
         match parse_result {
             Err(e) => {
@@ -721,13 +695,8 @@ impl NtpClient {
                 peer.stratum = Some(response.stratum);
 
                 // Classify as basic or interleaved and compute sample.
-                let (sample, interleaved) = classify_and_compute(
-                    &response,
-                    t4,
-                    t1,
-                    peer.prev_t1,
-                    peer.prev_t4,
-                )?;
+                let (sample, interleaved) =
+                    classify_and_compute(&response, t4, t1, peer.prev_t1, peer.prev_t4)?;
 
                 // Rotate timestamps for next exchange.
                 peer.prev_t1 = peer.current_t1;
@@ -851,8 +820,7 @@ mod tests {
             },
         };
 
-        let (sample, interleaved) =
-            classify_and_compute(&response, t4, t1, None, None).unwrap();
+        let (sample, interleaved) = classify_and_compute(&response, t4, t1, None, None).unwrap();
         assert!(!interleaved);
         // Offset and delay should be finite values.
         assert!(sample.offset.is_finite());
@@ -899,14 +867,8 @@ mod tests {
             },
         };
 
-        let (sample, interleaved) = classify_and_compute(
-            &response,
-            t4,
-            current_t1,
-            Some(prev_t1),
-            Some(prev_t4),
-        )
-        .unwrap();
+        let (sample, interleaved) =
+            classify_and_compute(&response, t4, current_t1, Some(prev_t1), Some(prev_t4)).unwrap();
         assert!(interleaved);
         assert!(sample.offset.is_finite());
         assert!(sample.delay.is_finite());

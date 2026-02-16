@@ -39,7 +39,11 @@ async fn main() {
     match session.request_with_timeout(Duration::from_secs(10)).await {
         Ok(result) => {
             let unix_time = ntp::unix_time::Instant::from(result.transmit_timestamp);
-            println!("Server time (Unix): {}.{:09}", unix_time.secs(), unix_time.subsec_nanos());
+            println!(
+                "Server time (Unix): {}.{:09}",
+                unix_time.secs(),
+                unix_time.subsec_nanos()
+            );
             println!("Stratum: {:?}", result.stratum);
             println!("Offset:  {:.6} seconds", result.offset_seconds);
             println!("Delay:   {:.6} seconds", result.delay_seconds);

@@ -40,17 +40,17 @@ pub(crate) fn bind_addr_for(target: &SocketAddr) -> &'static str {
     }
 }
 
+/// NTP extension field parsing and NTS extension types.
+///
+/// Provides types for parsing and serializing NTP extension fields (RFC 7822)
+/// and NTS-specific extension field types (RFC 8915).
+pub mod extension;
 pub mod protocol;
 /// Unix time conversion utilities for NTP timestamps.
 ///
 /// Provides the `Instant` type for converting between NTP timestamps
 /// (seconds since 1900-01-01) and Unix timestamps (seconds since 1970-01-01).
 pub mod unix_time;
-/// NTP extension field parsing and NTS extension types.
-///
-/// Provides types for parsing and serializing NTP extension fields (RFC 7822)
-/// and NTS-specific extension field types (RFC 8915).
-pub mod extension;
 
 /// Clock sample filtering for the continuous NTP client.
 ///
@@ -133,10 +133,16 @@ impl std::fmt::Display for KissOfDeathError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.code {
             protocol::KissOfDeath::Deny => {
-                write!(f, "server sent Kiss-o'-Death DENY: access denied, stop querying this server")
+                write!(
+                    f,
+                    "server sent Kiss-o'-Death DENY: access denied, stop querying this server"
+                )
             }
             protocol::KissOfDeath::Rstr => {
-                write!(f, "server sent Kiss-o'-Death RSTR: access restricted, stop querying this server")
+                write!(
+                    f,
+                    "server sent Kiss-o'-Death RSTR: access restricted, stop querying this server"
+                )
             }
             protocol::KissOfDeath::Rate => {
                 write!(f, "server sent Kiss-o'-Death RATE: reduce polling interval")
@@ -209,8 +215,10 @@ pub(crate) fn compute_offset_delay(
 /// Build an NTP client request packet and serialize it.
 ///
 /// Returns the serialized buffer and the origin timestamp (T1).
-pub(crate) fn build_request_packet(
-) -> io::Result<([u8; protocol::Packet::PACKED_SIZE_BYTES], protocol::TimestampFormat)> {
+pub(crate) fn build_request_packet() -> io::Result<(
+    [u8; protocol::Packet::PACKED_SIZE_BYTES],
+    protocol::TimestampFormat,
+)> {
     let packet = protocol::Packet {
         leap_indicator: protocol::LeapIndicator::default(),
         version: protocol::Version::V4,
@@ -321,8 +329,7 @@ pub(crate) fn validate_response(
     resolved_addrs: &[SocketAddr],
     t1: &protocol::TimestampFormat,
 ) -> io::Result<NtpResult> {
-    let (response, t4) =
-        parse_and_validate_response(recv_buf, recv_len, src_addr, resolved_addrs)?;
+    let (response, t4) = parse_and_validate_response(recv_buf, recv_len, src_addr, resolved_addrs)?;
 
     // Validate origin timestamp matches what we sent (anti-replay, RFC 5905 Section 8).
     if response.origin_timestamp != *t1 {
@@ -436,10 +443,7 @@ pub fn request<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
 /// - Server responds with unexpected mode or zero transmit timestamp
 /// - Server reports unsynchronized clock (LI=Unknown with non-zero stratum)
 /// - Server sent a Kiss-o'-Death packet (see [`KissOfDeathError`])
-pub fn request_with_timeout<A: ToSocketAddrs>(
-    addr: A,
-    timeout: Duration,
-) -> io::Result<NtpResult> {
+pub fn request_with_timeout<A: ToSocketAddrs>(addr: A, timeout: Duration) -> io::Result<NtpResult> {
     // Resolve the target address eagerly so we can verify the response source.
     let resolved_addrs: Vec<SocketAddr> = addr.to_socket_addrs()?.collect();
     if resolved_addrs.is_empty() {

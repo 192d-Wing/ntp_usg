@@ -45,11 +45,13 @@ use tokio::net::{TcpStream, UdpSocket};
 use tokio_rustls::TlsConnector;
 
 use crate::extension::{
-    self, ExtensionField, NtsAuthenticator, NtsCookie, NtsCookiePlaceholder, UniqueIdentifier,
-    UNIQUE_IDENTIFIER,
+    self, ExtensionField, NtsAuthenticator, NtsCookie, NtsCookiePlaceholder, UNIQUE_IDENTIFIER,
+    UniqueIdentifier,
 };
 use crate::protocol::{self, ConstPackedSizeBytes, WriteBytes};
-use crate::{NtpResult, bind_addr_for, compute_offset_delay, parse_and_validate_response, unix_time};
+use crate::{
+    NtpResult, bind_addr_for, compute_offset_delay, parse_and_validate_response, unix_time,
+};
 
 // NTS-KE record types (RFC 8915 Section 4).
 
@@ -204,9 +206,8 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
     debug!("NTS-KE connecting to {}", addr);
 
     // Configure TLS 1.3 client.
-    let root_store = rustls::RootCertStore::from_iter(
-        webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
-    );
+    let root_store =
+        rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(root_store)
         .with_no_client_auth();
@@ -215,7 +216,10 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
     // Connect TCP + TLS.
     let tcp_stream = TcpStream::connect(&addr).await?;
     let server_name = ServerName::try_from(hostname.to_string()).map_err(|e| {
-        io::Error::new(io::ErrorKind::InvalidInput, format!("invalid server name: {}", e))
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid server name: {}", e),
+        )
     })?;
     let mut tls_stream = connector.connect(server_name, tcp_stream).await?;
 
@@ -307,10 +311,9 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
                 cookies.push(record.body);
             }
             NTS_KE_SERVER => {
-                ntp_server =
-                    String::from_utf8(record.body).map_err(|_| {
-                        io::Error::new(io::ErrorKind::InvalidData, "NTS-KE: invalid server name")
-                    })?;
+                ntp_server = String::from_utf8(record.body).map_err(|_| {
+                    io::Error::new(io::ErrorKind::InvalidData, "NTS-KE: invalid server name")
+                })?;
                 debug!("NTS-KE: NTP server = {}", ntp_server);
             }
             NTS_KE_PORT => {
@@ -361,12 +364,20 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
 
     let mut c2s_key = vec![0u8; key_len];
     tls_conn
-        .export_keying_material(&mut c2s_key, NTS_EXPORTER_LABEL.as_bytes(), Some(&[0x00, 0x00]))
+        .export_keying_material(
+            &mut c2s_key,
+            NTS_EXPORTER_LABEL.as_bytes(),
+            Some(&[0x00, 0x00]),
+        )
         .map_err(|e| io::Error::other(format!("TLS key export failed: {}", e)))?;
 
     let mut s2c_key = vec![0u8; key_len];
     tls_conn
-        .export_keying_material(&mut s2c_key, NTS_EXPORTER_LABEL.as_bytes(), Some(&[0x00, 0x01]))
+        .export_keying_material(
+            &mut s2c_key,
+            NTS_EXPORTER_LABEL.as_bytes(),
+            Some(&[0x00, 0x01]),
+        )
         .map_err(|e| io::Error::other(format!("TLS key export failed: {}", e)))?;
 
     debug!(
@@ -428,8 +439,7 @@ impl NtsSession {
     /// Create an NTS session from a previously obtained [`NtsKeResult`].
     pub async fn from_ke_result(ke: NtsKeResult) -> io::Result<Self> {
         let addr_str = format!("{}:{}", ke.ntp_server, ke.ntp_port);
-        let resolved_addrs: Vec<SocketAddr> =
-            tokio::net::lookup_host(&addr_str).await?.collect();
+        let resolved_addrs: Vec<SocketAddr> = tokio::net::lookup_host(&addr_str).await?.collect();
         if resolved_addrs.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -473,9 +483,10 @@ impl NtsSession {
 
     async fn request_inner(&mut self) -> io::Result<NtpResult> {
         // Pop a cookie.
-        let cookie = self.cookies.pop().ok_or_else(|| {
-            io::Error::other("no NTS cookies remaining")
-        })?;
+        let cookie = self
+            .cookies
+            .pop()
+            .ok_or_else(|| io::Error::other("no NTS cookies remaining"))?;
 
         // Build the NTS-authenticated request packet.
         let (send_buf, t1, uid_data) =
@@ -519,10 +530,8 @@ impl NtsSession {
         // Compute offset and delay.
         let t4_instant = unix_time::Instant::from(t4);
         let t1_instant = unix_time::timestamp_to_instant(t1, &t4_instant);
-        let t2_instant =
-            unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
-        let t3_instant =
-            unix_time::timestamp_to_instant(response.transmit_timestamp, &t4_instant);
+        let t2_instant = unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
+        let t3_instant = unix_time::timestamp_to_instant(response.transmit_timestamp, &t4_instant);
 
         let (offset_seconds, delay_seconds) =
             compute_offset_delay(&t1_instant, &t2_instant, &t3_instant, &t4_instant);
@@ -562,9 +571,7 @@ pub(crate) fn build_nts_request(
         precision: 0,
         root_delay: protocol::ShortFormat::default(),
         root_dispersion: protocol::ShortFormat::default(),
-        reference_id: protocol::ReferenceIdentifier::PrimarySource(
-            protocol::PrimarySource::Null,
-        ),
+        reference_id: protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Null),
         reference_timestamp: protocol::TimestampFormat::default(),
         origin_timestamp: protocol::TimestampFormat::default(),
         receive_timestamp: protocol::TimestampFormat::default(),
@@ -663,13 +670,12 @@ pub(crate) fn validate_nts_response(
                 "NTS: response missing NTS Authenticator",
             )
         })?;
-    let resp_auth = NtsAuthenticator::from_extension_field(auth_ef)?
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "NTS: failed to parse NTS Authenticator",
-            )
-        })?;
+    let resp_auth = NtsAuthenticator::from_extension_field(auth_ef)?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NTS: failed to parse NTS Authenticator",
+        )
+    })?;
 
     // Build AAD for response verification: NTP header + extension fields before authenticator.
     let auth_ef_start = find_authenticator_offset(ext_data, &ext_fields)?;
@@ -699,10 +705,7 @@ pub(crate) fn validate_nts_response(
 
 /// Find the byte offset of the NTS Authenticator extension field within the
 /// extension data (relative to the start of the extension data, not the packet).
-fn find_authenticator_offset(
-    ext_data: &[u8],
-    ext_fields: &[ExtensionField],
-) -> io::Result<usize> {
+fn find_authenticator_offset(ext_data: &[u8], ext_fields: &[ExtensionField]) -> io::Result<usize> {
     let mut offset = 0usize;
     for ef in ext_fields {
         if ef.field_type == extension::NTS_AUTHENTICATOR {
@@ -733,7 +736,10 @@ fn aead_encrypt(
     match algorithm {
         AEAD_AES_SIV_CMAC_256 => {
             let cipher = Aes128SivAead::new_from_slice(key).map_err(|e| {
-                io::Error::new(io::ErrorKind::InvalidData, format!("AES-SIV key error: {}", e))
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("AES-SIV key error: {}", e),
+                )
             })?;
             // AES-SIV uses a synthetic nonce (SIV mode), so we provide an empty nonce.
             // The actual "nonce" for NTS is random data included as AAD.
@@ -747,15 +753,18 @@ fn aead_encrypt(
                 aad,
             };
             let nonce = aes_siv::Nonce::from_slice(&nonce_bytes);
-            let ciphertext = cipher.encrypt(nonce, payload).map_err(|e| {
-                io::Error::other(format!("AEAD encrypt failed: {}", e))
-            })?;
+            let ciphertext = cipher
+                .encrypt(nonce, payload)
+                .map_err(|e| io::Error::other(format!("AEAD encrypt failed: {}", e)))?;
 
             Ok((nonce_bytes.to_vec(), ciphertext))
         }
         AEAD_AES_SIV_CMAC_512 => {
             let cipher = Aes256SivAead::new_from_slice(key).map_err(|e| {
-                io::Error::new(io::ErrorKind::InvalidData, format!("AES-SIV key error: {}", e))
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("AES-SIV key error: {}", e),
+                )
             })?;
             let mut nonce_bytes = [0u8; 16];
             rand::fill(&mut nonce_bytes);
@@ -765,9 +774,9 @@ fn aead_encrypt(
                 aad,
             };
             let nonce = aes_siv::Nonce::from_slice(&nonce_bytes);
-            let ciphertext = cipher.encrypt(nonce, payload).map_err(|e| {
-                io::Error::other(format!("AEAD encrypt failed: {}", e))
-            })?;
+            let ciphertext = cipher
+                .encrypt(nonce, payload)
+                .map_err(|e| io::Error::other(format!("AEAD encrypt failed: {}", e)))?;
 
             Ok((nonce_bytes.to_vec(), ciphertext))
         }
@@ -789,7 +798,10 @@ fn aead_decrypt(
     match algorithm {
         AEAD_AES_SIV_CMAC_256 => {
             let cipher = Aes128SivAead::new_from_slice(key).map_err(|e| {
-                io::Error::new(io::ErrorKind::InvalidData, format!("AES-SIV key error: {}", e))
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("AES-SIV key error: {}", e),
+                )
             })?;
             let payload = aes_siv::aead::Payload {
                 msg: ciphertext,
@@ -805,7 +817,10 @@ fn aead_decrypt(
         }
         AEAD_AES_SIV_CMAC_512 => {
             let cipher = Aes256SivAead::new_from_slice(key).map_err(|e| {
-                io::Error::new(io::ErrorKind::InvalidData, format!("AES-SIV key error: {}", e))
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("AES-SIV key error: {}", e),
+                )
             })?;
             let payload = aes_siv::aead::Payload {
                 msg: ciphertext,
@@ -887,8 +902,13 @@ mod tests {
 
         let (nonce, ciphertext) =
             aead_encrypt(AEAD_AES_SIV_CMAC_256, &key, aad, plaintext).unwrap();
-        let result =
-            aead_decrypt(AEAD_AES_SIV_CMAC_256, &key, b"wrong aad", &nonce, &ciphertext);
+        let result = aead_decrypt(
+            AEAD_AES_SIV_CMAC_256,
+            &key,
+            b"wrong aad",
+            &nonce,
+            &ciphertext,
+        );
         assert!(result.is_err());
     }
 
@@ -935,8 +955,7 @@ mod tests {
         let key = vec![0x42u8; 32];
         let aad = b"NTP header + extension fields";
 
-        let (nonce, ciphertext) =
-            aead_encrypt(AEAD_AES_SIV_CMAC_256, &key, aad, &[]).unwrap();
+        let (nonce, ciphertext) = aead_encrypt(AEAD_AES_SIV_CMAC_256, &key, aad, &[]).unwrap();
         let decrypted =
             aead_decrypt(AEAD_AES_SIV_CMAC_256, &key, aad, &nonce, &ciphertext).unwrap();
         assert!(decrypted.is_empty());

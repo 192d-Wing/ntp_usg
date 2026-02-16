@@ -28,7 +28,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::{ToSocketAddrs, UdpSocket};
 
-use crate::{build_request_packet, validate_response, NtpResult};
+use crate::{NtpResult, build_request_packet, validate_response};
 
 /// Send an async request to an NTP server with a hardcoded 5 second timeout.
 ///
