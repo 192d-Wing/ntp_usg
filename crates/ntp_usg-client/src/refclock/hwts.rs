@@ -49,7 +49,6 @@ const SOF_TIMESTAMPING_SOFTWARE: u32 = 1 << 4;
 const SOF_TIMESTAMPING_RAW_HARDWARE: u32 = 1 << 6;
 
 const SO_TIMESTAMPING: i32 = 37;
-const SO_TIMESTAMPNS: i32 = 35;
 
 /// Hardware timestamp from kernel (from struct timespec)
 #[repr(C)]
@@ -151,7 +150,7 @@ pub fn enable_timestamping(fd: i32, mode: TimestampMode) -> io::Result<()> {
 /// ```
 pub fn get_timestamping_capabilities(
     fd: i32,
-    interface: &str,
+    _interface: &str,
 ) -> io::Result<HwTimestampCapabilities> {
     // This is a simplified implementation. Full implementation would use
     // SIOCETHTOOL ioctl with ETHTOOL_GET_TS_INFO to query NIC capabilities.
@@ -202,8 +201,10 @@ pub unsafe fn extract_timestamp(cmsg_data: &[u8]) -> Option<HwTimestamp> {
 
     // Hardware timestamp is at index 2
     let hw_ts_offset = mem::size_of::<HwTimestamp>() * 2;
-    let ts_ptr = cmsg_data.as_ptr().add(hw_ts_offset) as *const HwTimestamp;
-    let hw_ts = *ts_ptr;
+    let hw_ts = unsafe {
+        let ts_ptr = cmsg_data.as_ptr().add(hw_ts_offset) as *const HwTimestamp;
+        *ts_ptr
+    };
 
     // Check if timestamp is non-zero (zero means not available)
     if hw_ts.sec == 0 && hw_ts.nsec == 0 {

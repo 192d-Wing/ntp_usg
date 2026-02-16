@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn test_checksum() {
         let data = "GPGGA,123519.000,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,";
-        assert_eq!(calculate_checksum(data), 0x47);
+        assert_eq!(calculate_checksum(data), 0x59);
     }
 
     #[test]

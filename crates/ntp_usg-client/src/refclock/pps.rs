@@ -9,18 +9,15 @@
 use super::{RefClock, RefClockSample};
 use crate::unix_time;
 use async_trait::async_trait;
-use log::{debug, warn};
+use log::debug;
 use std::fs::File;
-use std::io::{self, Read};
+use std::io;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::task;
-use tokio::time::sleep;
 
 // Linux PPS API constants (from <linux/pps.h>)
-const PPS_GETPARAMS: u64 = 0x800470a1;
-const PPS_SETPARAMS: u64 = 0x400470a2;
 const PPS_GETCAP: u64 = 0x800470a3;
 const PPS_FETCH: u64 = 0xc00470a4;
 
@@ -194,64 +191,6 @@ impl PpsReceiver {
     /// Get PPS device capabilities
     pub fn capabilities(&self) -> u32 {
         self.capabilities
-    }
-
-    /// Fetch a PPS event from the kernel
-    fn fetch_pps_event(&mut self, timeout_secs: u64) -> io::Result<PpsTimespec> {
-        let mut fetch_data = PpsFetchData {
-            info: PpsInfo {
-                assert_sequence: 0,
-                clear_sequence: 0,
-                assert_tu: PpsTimespec { sec: 0, nsec: 0 },
-                clear_tu: PpsTimespec { sec: 0, nsec: 0 },
-                current_mode: 0,
-            },
-            timeout: PpsTimespec {
-                sec: timeout_secs as i64,
-                nsec: 0,
-            },
-        };
-
-        unsafe {
-            let ret = libc::ioctl(
-                self.device.as_raw_fd(),
-                PPS_FETCH,
-                &mut fetch_data as *mut PpsFetchData,
-            );
-            if ret != 0 {
-                return Err(io::Error::last_os_error());
-            }
-        }
-
-        // Select timestamp based on capture mode
-        let (timestamp, sequence) = match self.config.capture_mode {
-            PpsCaptureMode::Assert => (fetch_data.info.assert_tu, fetch_data.info.assert_sequence),
-            PpsCaptureMode::Clear => (fetch_data.info.clear_tu, fetch_data.info.clear_sequence),
-            PpsCaptureMode::Both => {
-                // Use whichever edge occurred more recently
-                if fetch_data.info.assert_sequence > fetch_data.info.clear_sequence {
-                    (fetch_data.info.assert_tu, fetch_data.info.assert_sequence)
-                } else {
-                    (fetch_data.info.clear_tu, fetch_data.info.clear_sequence)
-                }
-            }
-        };
-
-        // Check for new event
-        if sequence <= self.last_sequence {
-            return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "No new PPS event received",
-            ));
-        }
-
-        self.last_sequence = sequence;
-        debug!(
-            "PPS event #{}: {}.{:09}",
-            sequence, timestamp.sec, timestamp.nsec
-        );
-
-        Ok(timestamp)
     }
 }
 
