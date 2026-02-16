@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE: ghcr.io/${{ github.repository }}-ci
+  IMAGE: ghcr.io/192d-wing/ntp_usg-ci
 
 jobs:
   build:
