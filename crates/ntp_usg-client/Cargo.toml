@@ -83,6 +83,10 @@ name = "continuous"
 required-features = ["tokio"]
 
 [[example]]
+name = "multi_peer_deployment"
+required-features = ["tokio"]
+
+[[example]]
 name = "nts_request"
 required-features = ["nts"]
 
