@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-02-16
+
+### Breaking Changes
+
+- **Workspace restructure**: The monolithic `ntp_usg` crate has been split into three crates:
+  - `ntp_usg-proto` (lib: `ntp_proto`) — Protocol types, extension fields, NTS crypto primitives
+  - `ntp_usg-client` (lib: `ntp_client`) — Sync/async NTP client, NTS, clock adjustment
+  - `ntp_usg-server` (lib: `ntp_server`) — NTP server, NTS-KE (tokio/smol)
+- **All import paths changed**: `ntp::` → `ntp_client::`, `ntp_server::`, or `ntp_proto::`
+- Feature flags are now per-crate (e.g., `ntp_usg-client/tokio` instead of `ntp_usg/tokio`)
+
+### Migration Guide
+
+Replace in your `Cargo.toml`:
+```diff
+- ntp_usg = { version = "2.0", features = ["tokio"] }
++ ntp_usg-client = { version = "3.0", features = ["tokio"] }
+```
+
+Replace in your code:
+```diff
+- use ntp::request;
+- use ntp::async_ntp;
+- use ntp::client::NtpClient;
+- use ntp::nts::NtsSession;
++ use ntp_client::request;
++ use ntp_client::async_ntp;
++ use ntp_client::client::NtpClient;
++ use ntp_client::nts::NtsSession;
+```
+
+For server code:
+```diff
+- use ntp::server::NtpServer;
+- use ntp::protocol::Stratum;
++ use ntp_server::server::NtpServer;
++ use ntp_server::protocol::Stratum;
+```
+
+For protocol types only (including `no_std`):
+```diff
+- ntp_usg = { version = "2.0", default-features = false }
++ ntp_usg-proto = { version = "3.0", default-features = false }
+```
+
+### Changed
+
+- `nts_common` module items changed from `pub(crate)` to `pub` for cross-crate access
+- CI workflows updated for workspace-level feature testing (`-F <package>/<feature>`)
+- Publish workflow now publishes crates in dependency order: proto → client → server
+
 ## [2.0.3] - 2026-02-16
 
 ### Fixed
@@ -294,6 +345,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[3.0.0]: https://github.com/192d-Wing/ntp_usg/compare/v2.0.3...v3.0.0
 [2.0.3]: https://github.com/192d-Wing/ntp_usg/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/192d-Wing/ntp_usg/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/192d-Wing/ntp_usg/compare/v2.0.0...v2.0.1

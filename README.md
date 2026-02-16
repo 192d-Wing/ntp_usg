@@ -1,15 +1,21 @@
 # ntp_usg
 
-[![docs.rs](https://img.shields.io/docsrs/ntp_usg?style=for-the-badge&logo=rust)](https://docs.rs/ntp-usg/latest/ntp_usg)
-[![Crates.io](https://img.shields.io/crates/v/ntp_usg.svg?style=for-the-badge&logo=rust)](https://crates.io/crates/ntp_usg)
-![Crates.io Total Downloads](https://img.shields.io/crates/d/ntp_usg?style=for-the-badge&logo=rust)
-[![License](https://img.shields.io/crates/l/ntp_usg.svg?style=for-the-badge)](https://github.com/192d-Wing/ntp_usg#license)
+[![Crates.io](https://img.shields.io/crates/v/ntp_usg-proto.svg?style=for-the-badge&logo=rust&label=proto)](https://crates.io/crates/ntp_usg-proto)
+[![Crates.io](https://img.shields.io/crates/v/ntp_usg-client.svg?style=for-the-badge&logo=rust&label=client)](https://crates.io/crates/ntp_usg-client)
+[![Crates.io](https://img.shields.io/crates/v/ntp_usg-server.svg?style=for-the-badge&logo=rust&label=server)](https://crates.io/crates/ntp_usg-server)
+[![License](https://img.shields.io/crates/l/ntp_usg-proto.svg?style=for-the-badge)](https://github.com/192d-Wing/ntp_usg#license)
 [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/192d-Wing/ntp_usg/ci.yml?branch=master&style=for-the-badge&logo=github)](https://github.com/192d-Wing/ntp_usg/actions/workflows/ci.yml)
 [![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/192d-Wing/ntp_usg?style=for-the-badge&logo=github)](https://github.com/192d-Wing/ntp_usg/issues)
 [![GitHub Issues or Pull Requests](https://img.shields.io/github/issues-pr/192d-Wing/ntp_usg?style=for-the-badge&logo=github)](https://github.com/192d-Wing/ntp_usg/pulls)
 [![Codecov](https://img.shields.io/codecov/c/github/192d-Wing/ntp_usg?style=for-the-badge&logo=codecov)](https://codecov.io/github/192d-Wing/ntp_usg)
 
-A Network Time Protocol (NTP) packet parsing and client library written in Rust.
+A Network Time Protocol (NTP) library written in Rust, organized as a Cargo workspace with three crates:
+
+| Crate | Lib name | Description |
+|-------|----------|-------------|
+| [`ntp_usg-proto`](crates/ntp_usg-proto) | `ntp_proto` | Protocol types, extension fields, and NTS cryptographic primitives |
+| [`ntp_usg-client`](crates/ntp_usg-client) | `ntp_client` | NTP client (sync, async tokio/smol, NTS, clock adjustment) |
+| [`ntp_usg-server`](crates/ntp_usg-server) | `ntp_server` | NTP server (tokio/smol, NTS-KE) |
 
 ## Features
 
@@ -22,18 +28,26 @@ A Network Time Protocol (NTP) packet parsing and client library written in Rust.
 - 🔐 **Network Time Security**: NTS (RFC 8915) with TLS 1.3 key establishment and AEAD authentication
 - 📡 **Continuous Client**: Adaptive poll interval, multi-peer, and interleaved mode (RFC 9769)
 - 🌐 **IPv6 Dual-Stack**: Automatic IPv4/IPv6 socket binding
-- 🧩 **`no_std` Support**: Core parsing works without `std` or `alloc`
+- 🧩 **`no_std` Support**: Core protocol parsing works without `std` or `alloc`
 - ⏱️ **Clock Adjustment**: Platform-native slew/step correction (Linux, macOS, Windows)
+- 📡 **NTP Server**: Full NTPv4 server with rate limiting, access control, and interleaved mode
 - 🦀 **Modern Rust**: Edition 2024 with MSRV 1.93
 - ✅ **Well Tested**: CI/CD on Linux, macOS, and Windows
 
 ## Installation
 
-Add this to your `Cargo.toml`:
+Add the crate(s) you need to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ntp_usg = "2.0"
+# Protocol types only (also supports no_std)
+ntp_usg-proto = "3.0"
+
+# NTP client
+ntp_usg-client = { version = "3.0", features = ["tokio"] }
+
+# NTP server
+ntp_usg-server = { version = "3.0", features = ["tokio"] }
 ```
 
 **Minimum Supported Rust Version (MSRV):** 1.93
@@ -41,22 +55,39 @@ ntp_usg = "2.0"
 
 ### Feature Flags
 
+#### ntp_usg-proto
+
 | Feature | Default | Description |
 |---------|---------|-------------|
-| `std` | Yes | Full I/O, networking, and `byteorder`-based APIs |
+| `std` | Yes | Full I/O and `byteorder`-based APIs |
 | `alloc` | No | `Vec`-based extension field types without full `std` |
+| `nts` | No | NTS cryptographic primitives (AEAD, cookie handling) |
+
+#### ntp_usg-client
+
+| Feature | Default | Description |
+|---------|---------|-------------|
 | `tokio` | No | Async NTP client using Tokio |
 | `smol-runtime` | No | Async NTP client using smol |
 | `nts` | No | NTS authentication (Tokio + rustls) |
 | `nts-smol` | No | NTS authentication (smol + futures-rustls) |
 | `clock` | No | System clock slew/step adjustment (Linux, macOS, Windows) |
 
-For `no_std` environments, disable default features:
+#### ntp_usg-server
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `tokio` | No | NTP server using Tokio |
+| `smol-runtime` | No | NTP server using smol |
+| `nts` | No | NTS-KE server (Tokio + rustls) |
+| `nts-smol` | No | NTS-KE server (smol + futures-rustls) |
+
+For `no_std` environments, use the proto crate with default features disabled:
 
 ```toml
 [dependencies]
-ntp_usg = { version = "2.0", default-features = false }          # core parsing only
-ntp_usg = { version = "2.0", default-features = false, features = ["alloc"] }  # + Vec-based types
+ntp_usg-proto = { version = "3.0", default-features = false }          # core parsing only
+ntp_usg-proto = { version = "3.0", default-features = false, features = ["alloc"] }  # + Vec-based types
 ```
 
 ## Usage
@@ -68,8 +99,8 @@ use chrono::TimeZone;
 
 fn main() {
     let address = "time.nist.gov:123";
-    let response = ntp::request(address).unwrap();
-    let unix_time = ntp::unix_time::Instant::from(response.transmit_timestamp);
+    let response = ntp_client::request(address).unwrap();
+    let unix_time = ntp_client::unix_time::Instant::from(response.transmit_timestamp);
     let local_time = chrono::Local
         .timestamp_opt(unix_time.secs(), unix_time.subsec_nanos() as _)
         .unwrap();
@@ -82,7 +113,7 @@ fn main() {
 ```rust
 use std::time::Duration;
 
-let response = ntp::request_with_timeout("time.nist.gov:123", Duration::from_secs(10))?;
+let response = ntp_client::request_with_timeout("time.nist.gov:123", Duration::from_secs(10))?;
 ```
 
 ### Async with Tokio
@@ -91,14 +122,14 @@ Enable the `tokio` feature:
 
 ```toml
 [dependencies]
-ntp_usg = { version = "2.0", features = ["tokio"] }
+ntp_usg-client = { version = "3.0", features = ["tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
 ```rust
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let result = ntp::async_ntp::request("time.nist.gov:123").await?;
+    let result = ntp_client::async_ntp::request("time.nist.gov:123").await?;
     println!("Offset: {:.6} seconds", result.offset_seconds);
     Ok(())
 }
@@ -109,7 +140,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 The continuous client polls servers with adaptive intervals and supports interleaved mode (RFC 9769):
 
 ```rust
-use ntp::client::NtpClient;
+use ntp_client::client::NtpClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -137,12 +168,12 @@ Enable the `nts` feature for authenticated NTP:
 
 ```toml
 [dependencies]
-ntp_usg = { version = "2.0", features = ["nts"] }
+ntp_usg-client = { version = "3.0", features = ["nts"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
 ```rust
-use ntp::nts::NtsSession;
+use ntp_client::nts::NtsSession;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -158,7 +189,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 Combine NTS authentication with the continuous polling client:
 
 ```rust
-use ntp::client::NtpClient;
+use ntp_client::client::NtpClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -185,7 +216,7 @@ Enable the `smol-runtime` feature:
 
 ```toml
 [dependencies]
-ntp_usg = { version = "2.0", features = ["smol-runtime"] }
+ntp_usg-client = { version = "3.0", features = ["smol-runtime"] }
 smol = "2"
 ```
 
@@ -194,7 +225,7 @@ use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     smol::block_on(async {
-        let result = ntp::smol_ntp::request_with_timeout(
+        let result = ntp_client::smol_ntp::request_with_timeout(
             "time.nist.gov:123",
             Duration::from_secs(5),
         ).await?;
@@ -207,7 +238,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 The smol continuous client uses `Arc<RwLock<NtpSyncState>>` for state sharing:
 
 ```rust
-use ntp::smol_client::NtpClient;
+use ntp_client::smol_client::NtpClient;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     smol::block_on(async {
@@ -233,11 +264,11 @@ Enable the `clock` feature to correct the system clock based on NTP measurements
 
 ```toml
 [dependencies]
-ntp_usg = { version = "2.0", features = ["clock", "tokio"] }
+ntp_usg-client = { version = "3.0", features = ["clock", "tokio"] }
 ```
 
 ```rust
-use ntp::clock;
+use ntp_client::clock;
 
 // Gradual correction (slew) for small offsets
 clock::slew_clock(0.05)?;
@@ -249,9 +280,35 @@ clock::step_clock(-1.5)?;
 let method = clock::apply_correction(offset)?;
 ```
 
+### NTP Server
+
+Enable the `tokio` feature on the server crate:
+
+```toml
+[dependencies]
+ntp_usg-server = { version = "3.0", features = ["tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+```
+
+```rust
+use ntp_server::protocol::Stratum;
+use ntp_server::server::NtpServer;
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    let server = NtpServer::builder()
+        .listen("0.0.0.0:123")
+        .stratum(Stratum(2))
+        .build()
+        .await?;
+
+    server.run().await
+}
+```
+
 ### Multiple Servers
 
-See [examples/multiple_servers.rs](examples/multiple_servers.rs) for a complete example of querying multiple NTP servers.
+See [crates/ntp_usg-client/examples/multiple_servers.rs](crates/ntp_usg-client/examples/multiple_servers.rs) for a complete example of querying multiple NTP servers.
 
 ## Examples
 
@@ -259,37 +316,43 @@ Run the included examples to see the library in action:
 
 ```bash
 # Basic request example
-cargo run --example request
+cargo run -p ntp_usg-client --example request
 
 # Custom timeout demonstration
-cargo run --example timeout
+cargo run -p ntp_usg-client --example timeout
 
 # Query multiple servers
-cargo run --example multiple_servers
+cargo run -p ntp_usg-client --example multiple_servers
 
 # Detailed packet information
-cargo run --example packet_details
+cargo run -p ntp_usg-client --example packet_details
 
 # Async concurrent queries (requires tokio feature)
-cargo run --example async_request --features tokio
+cargo run -p ntp_usg-client --example async_request --features ntp_usg-client/tokio
 
 # Continuous client with poll management (requires tokio feature)
-cargo run --example continuous --features tokio
+cargo run -p ntp_usg-client --example continuous --features ntp_usg-client/tokio
 
 # NTS-authenticated request (requires nts feature)
-cargo run --example nts_request --features nts
+cargo run -p ntp_usg-client --example nts_request --features ntp_usg-client/nts
 
 # NTS continuous client (requires nts feature)
-cargo run --example nts_continuous --features nts
+cargo run -p ntp_usg-client --example nts_continuous --features ntp_usg-client/nts
 
 # Smol one-shot request
-cargo run --example smol_request --features smol-runtime
+cargo run -p ntp_usg-client --example smol_request --features ntp_usg-client/smol-runtime
 
 # Smol continuous client
-cargo run --example smol_continuous --features smol-runtime
+cargo run -p ntp_usg-client --example smol_continuous --features ntp_usg-client/smol-runtime
 
 # Clock adjustment (requires root/sudo on Unix, Administrator on Windows)
-cargo run --example clock_adjust --features "clock tokio"
+cargo run -p ntp_usg-client --example clock_adjust --features "ntp_usg-client/clock ntp_usg-client/tokio"
+
+# NTP server (requires tokio feature)
+cargo run -p ntp_usg-server --example server --features ntp_usg-server/tokio
+
+# NTS server (requires nts feature + TLS certs)
+cargo run -p ntp_usg-server --example nts_server --features ntp_usg-server/nts -- --cert server.crt --key server.key
 ```
 
 ## Roadmap
@@ -304,7 +367,9 @@ cargo run --example clock_adjust --features "clock tokio"
 - [x] `no_std` support (with optional `alloc`)
 - [x] smol support (one-shot, continuous, and NTS)
 - [x] System clock adjustment (slew/step on Linux, macOS, Windows)
-- [ ] NTP server functionality
+- [x] NTP server with NTS-KE
+- [x] Workspace restructure (proto, client, server crates)
+- [ ] Reference clock interface (GPS, PPS)
 
 ## Contributing
 

@@ -17,6 +17,7 @@ This document outlines the planned features and improvements for `ntp_usg`.
 - [x] **System clock adjustment** — Platform-native slew/step correction on Linux, macOS, and Windows via `clock` feature
 - [x] **NTP server** — NTPv4 server mode with builder pattern, KoD generation, IP-based access control, per-client rate limiting (RFC 8633), interleaved mode (RFC 9769), and both tokio and smol runtimes
 - [x] **NTS server** — Server-side NTS support (RFC 8915) including NTS-KE TLS 1.3 key establishment, cookie generation/validation with master key rotation, and AEAD-authenticated NTP request processing
+- [x] **Workspace restructure** — Split monolith into three crates: `ntp_usg-proto` (protocol types, extensions, NTS crypto), `ntp_usg-client` (sync/async client, NTS, clock), `ntp_usg-server` (server, NTS-KE)
 
 ## Planned
 
