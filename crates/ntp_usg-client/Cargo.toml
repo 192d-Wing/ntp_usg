@@ -133,6 +133,10 @@ required-features = ["gps"]
 name = "pps_receiver"
 required-features = ["pps"]
 
+[[example]]
+name = "gps_pps_combined"
+required-features = ["gps", "pps"]
+
 [[bench]]
 name = "selection_benchmark"
 harness = false

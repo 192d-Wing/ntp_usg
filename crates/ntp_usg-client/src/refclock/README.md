@@ -110,12 +110,36 @@ pub trait RefClock: Send + Sync {
 
 ## Examples
 
+### GPS Receiver
+
 See [`examples/gps_receiver.rs`](../../examples/gps_receiver.rs) for a complete GPS receiver example.
 
 **Run the example:**
 ```bash
 cargo run -p ntp_usg-client --example gps_receiver --features gps -- /dev/ttyUSB0
 ```
+
+### PPS Receiver
+
+See [`examples/pps_receiver.rs`](../../examples/pps_receiver.rs) for a complete PPS example.
+
+**Run the example:**
+```bash
+sudo cargo run -p ntp_usg-client --example pps_receiver --features pps -- /dev/pps0
+```
+
+### Combined GPS + PPS
+
+See [`examples/gps_pps_combined.rs`](../../examples/gps_pps_combined.rs) for using GPS and PPS together.
+
+**Run the example:**
+```bash
+sudo cargo run -p ntp_usg-client --example gps_pps_combined --features gps,pps -- /dev/ttyUSB0 /dev/pps0
+```
+
+This demonstrates optimal time synchronization by combining:
+- GPS for coarse time (100µs - 1ms accuracy)
+- PPS for fine precision (< 1µs accuracy)
 
 ## Testing
 
