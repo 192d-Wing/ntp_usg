@@ -21,8 +21,8 @@
 //   - Mellanox ConnectX series (mlx5 driver)
 
 use ntp_client::refclock::hwts::{
-    enable_timestamping, get_timestamping_capabilities, is_hardware_timestamping_available,
-    HwTimestampConfig, TimestampMode,
+    HwTimestampConfig, TimestampMode, enable_timestamping, get_timestamping_capabilities,
+    is_hardware_timestamping_available,
 };
 use std::net::UdpSocket;
 use std::os::unix::io::AsRawFd;
@@ -60,15 +60,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match get_timestamping_capabilities(sock.as_raw_fd(), interface) {
         Ok(caps) => {
             println!("✓ Capabilities for {}:", interface);
-            println!("  Hardware TX:  {}", if caps.tx_hardware { "✓ Supported" } else { "✗ Not supported" });
-            println!("  Hardware RX:  {}", if caps.rx_hardware { "✓ Supported" } else { "✗ Not supported" });
-            println!("  Software TX:  {}", if caps.tx_software { "✓ Supported" } else { "✗ Not supported" });
-            println!("  Software RX:  {}", if caps.rx_software { "✓ Supported" } else { "✗ Not supported" });
-            println!("  Raw hardware: {}", if caps.raw_hardware { "✓ Supported" } else { "✗ Not supported" });
+            println!(
+                "  Hardware TX:  {}",
+                if caps.tx_hardware {
+                    "✓ Supported"
+                } else {
+                    "✗ Not supported"
+                }
+            );
+            println!(
+                "  Hardware RX:  {}",
+                if caps.rx_hardware {
+                    "✓ Supported"
+                } else {
+                    "✗ Not supported"
+                }
+            );
+            println!(
+                "  Software TX:  {}",
+                if caps.tx_software {
+                    "✓ Supported"
+                } else {
+                    "✗ Not supported"
+                }
+            );
+            println!(
+                "  Software RX:  {}",
+                if caps.rx_software {
+                    "✓ Supported"
+                } else {
+                    "✗ Not supported"
+                }
+            );
+            println!(
+                "  Raw hardware: {}",
+                if caps.raw_hardware {
+                    "✓ Supported"
+                } else {
+                    "✗ Not supported"
+                }
+            );
             println!();
 
             if !caps.tx_hardware && !caps.rx_hardware {
-                println!("⚠ Warning: Hardware timestamping not supported on {}", interface);
+                println!(
+                    "⚠ Warning: Hardware timestamping not supported on {}",
+                    interface
+                );
                 println!("  Falling back to software timestamping");
                 println!();
                 println!("To check NIC support, run:");
@@ -125,7 +163,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = HwTimestampConfig::default();
     println!("Default HwTimestampConfig:");
     println!("  Mode:        {:?}", config.mode);
-    println!("  Interface:   {:?}", config.interface.as_deref().unwrap_or("auto-detect"));
+    println!(
+        "  Interface:   {:?}",
+        config.interface.as_deref().unwrap_or("auto-detect")
+    );
     println!("  TX enabled:  {}", config.tx_enabled);
     println!("  RX enabled:  {}", config.rx_enabled);
     println!();

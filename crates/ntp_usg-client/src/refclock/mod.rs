@@ -91,7 +91,7 @@ pub trait RefClock: Send + Sync {
     /// or is otherwise unavailable. The server should not
     /// advertise Stratum 1 when this returns false.
     fn is_healthy(&self) -> bool {
-        true  // Default implementation
+        true // Default implementation
     }
 
     /// Get a human-readable description of this reference clock
@@ -129,12 +129,12 @@ impl RefClock for LocalClock {
             timestamp: crate::unix_time::Instant::now(),
             offset: 0.0,
             dispersion: self.dispersion,
-            quality: 50,  // Medium quality
+            quality: 50, // Medium quality
         })
     }
 
     fn stratum(&self) -> u8 {
-        10  // High stratum for local clock
+        10 // High stratum for local clock
     }
 
     fn reference_id(&self) -> [u8; 4] {

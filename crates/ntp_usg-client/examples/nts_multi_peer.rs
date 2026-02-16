@@ -115,10 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Assess security posture based on NTS authentication and metrics
-fn print_security_posture(
-    state: &ntp_client::client_common::NtpSyncState,
-    failure_count: u32,
-) {
+fn print_security_posture(state: &ntp_client::client_common::NtpSyncState, failure_count: u32) {
     let offset_ms = state.offset.abs() * 1000.0;
     let jitter_ms = state.jitter * 1000.0;
 

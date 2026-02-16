@@ -49,7 +49,10 @@ impl FixQuality {
 
     /// Check if this fix quality is valid for time synchronization
     pub fn is_valid(&self) -> bool {
-        !matches!(self, FixQuality::NoFix | FixQuality::Simulation | FixQuality::Manual)
+        !matches!(
+            self,
+            FixQuality::NoFix | FixQuality::Simulation | FixQuality::Manual
+        )
     }
 }
 
@@ -123,7 +126,10 @@ pub fn parse_sentence(sentence: &str) -> io::Result<Option<GpsFix>> {
         if calculated != expected {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Checksum mismatch: expected {:02X}, got {:02X}", expected, calculated),
+                format!(
+                    "Checksum mismatch: expected {:02X}, got {:02X}",
+                    expected, calculated
+                ),
             ));
         }
     }
@@ -154,9 +160,7 @@ fn parse_gga(fields: &[&str]) -> io::Result<Option<GpsFix>> {
     }
 
     let time = parse_time(fields[1])?;
-    let quality = FixQuality::from_u8(
-        fields[6].parse().unwrap_or(0)
-    );
+    let quality = FixQuality::from_u8(fields[6].parse().unwrap_or(0));
     let satellites = fields[7].parse().unwrap_or(0);
     let hdop = fields[8].parse().ok();
     let altitude = fields[9].parse().ok();
@@ -219,11 +223,14 @@ fn parse_zda(fields: &[&str]) -> io::Result<Option<GpsFix>> {
 
     let time = parse_time(fields[1])?;
 
-    let day: u8 = fields[2].parse()
+    let day: u8 = fields[2]
+        .parse()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid day"))?;
-    let month: u8 = fields[3].parse()
+    let month: u8 = fields[3]
+        .parse()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid month"))?;
-    let year: u16 = fields[4].parse()
+    let year: u16 = fields[4]
+        .parse()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid year"))?;
 
     Ok(Some(GpsFix {
@@ -240,14 +247,20 @@ fn parse_zda(fields: &[&str]) -> io::Result<Option<GpsFix>> {
 
 fn parse_time(s: &str) -> io::Result<(u8, u8, f64)> {
     if s.len() < 6 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid time format"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid time format",
+        ));
     }
 
-    let hour: u8 = s[0..2].parse()
+    let hour: u8 = s[0..2]
+        .parse()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid hour"))?;
-    let minute: u8 = s[2..4].parse()
+    let minute: u8 = s[2..4]
+        .parse()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid minute"))?;
-    let second: f64 = s[4..].parse()
+    let second: f64 = s[4..]
+        .parse()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid second"))?;
 
     Ok((hour, minute, second))
@@ -255,14 +268,20 @@ fn parse_time(s: &str) -> io::Result<(u8, u8, f64)> {
 
 fn parse_date(s: &str) -> io::Result<(u16, u8, u8)> {
     if s.len() != 6 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid date format"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid date format",
+        ));
     }
 
-    let day: u8 = s[0..2].parse()
+    let day: u8 = s[0..2]
+        .parse()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid day"))?;
-    let month: u8 = s[2..4].parse()
+    let month: u8 = s[2..4]
+        .parse()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid month"))?;
-    let year: u8 = s[4..6].parse()
+    let year: u8 = s[4..6]
+        .parse()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid year"))?;
 
     let full_year = if year >= 80 {
@@ -368,7 +387,10 @@ mod tests {
         assert_eq!(parse_coordinate("4807.038", "N"), Some(48.1173));
         assert_eq!(parse_coordinate("01131.000", "E"), Some(11.516666666666667));
         assert_eq!(parse_coordinate("4807.038", "S"), Some(-48.1173));
-        assert_eq!(parse_coordinate("01131.000", "W"), Some(-11.516666666666667));
+        assert_eq!(
+            parse_coordinate("01131.000", "W"),
+            Some(-11.516666666666667)
+        );
     }
 
     #[test]

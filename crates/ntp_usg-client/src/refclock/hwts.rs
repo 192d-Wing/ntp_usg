@@ -98,12 +98,12 @@ pub fn enable_timestamping(fd: i32, mode: TimestampMode) -> io::Result<()> {
     let flags = match mode {
         TimestampMode::None => 0,
         TimestampMode::Software => {
-            SOF_TIMESTAMPING_TX_SOFTWARE
-                | SOF_TIMESTAMPING_RX_SOFTWARE
-                | SOF_TIMESTAMPING_SOFTWARE
+            SOF_TIMESTAMPING_TX_SOFTWARE | SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_SOFTWARE
         }
         TimestampMode::Hardware => {
-            SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE
+            SOF_TIMESTAMPING_TX_HARDWARE
+                | SOF_TIMESTAMPING_RX_HARDWARE
+                | SOF_TIMESTAMPING_RAW_HARDWARE
         }
         TimestampMode::HardwareRaw => SOF_TIMESTAMPING_RAW_HARDWARE,
     };
@@ -156,7 +156,8 @@ pub fn get_timestamping_capabilities(
     // SIOCETHTOOL ioctl with ETHTOOL_GET_TS_INFO to query NIC capabilities.
     // For now, we attempt to enable hardware timestamping and report success/failure.
 
-    let test_flags = SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
+    let test_flags =
+        SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
 
     let hw_supported = unsafe {
         let ret = libc::setsockopt(

@@ -52,7 +52,10 @@ async fn main() -> io::Result<()> {
         let local_clock = LocalClock::new(0.001); // 1ms accuracy
         println!("✓ Local clock initialized");
         println!("  Stratum: {}", local_clock.stratum());
-        println!("  Reference ID: {}", String::from_utf8_lossy(&local_clock.reference_id()));
+        println!(
+            "  Reference ID: {}",
+            String::from_utf8_lossy(&local_clock.reference_id())
+        );
         println!();
 
         // Build and start the server with the reference clock
@@ -61,7 +64,7 @@ async fn main() -> io::Result<()> {
 
         let server = NtpServer::builder()
             .listen("0.0.0.0:123")
-            .reference_clock(local_clock)  // Automatically sets stratum and reference ID
+            .reference_clock(local_clock) // Automatically sets stratum and reference ID
             .enable_interleaved(true)
             .build()
             .await?;
@@ -89,7 +92,12 @@ async fn main() -> io::Result<()> {
     #[cfg(not(feature = "refclock"))]
     {
         eprintln!("Error: This example requires the 'refclock' feature.");
-        eprintln!("Build with: cargo run -p ntp_usg-server --example stratum1_server --features refclock");
-        Err(io::Error::new(io::ErrorKind::Other, "refclock feature not enabled"))
+        eprintln!(
+            "Build with: cargo run -p ntp_usg-server --example stratum1_server --features refclock"
+        );
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            "refclock feature not enabled",
+        ))
     }
 }

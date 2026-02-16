@@ -224,12 +224,8 @@ impl PpsReceiver {
 
         // Select timestamp based on capture mode
         let (timestamp, sequence) = match self.config.capture_mode {
-            PpsCaptureMode::Assert => {
-                (fetch_data.info.assert_tu, fetch_data.info.assert_sequence)
-            }
-            PpsCaptureMode::Clear => {
-                (fetch_data.info.clear_tu, fetch_data.info.clear_sequence)
-            }
+            PpsCaptureMode::Assert => (fetch_data.info.assert_tu, fetch_data.info.assert_sequence),
+            PpsCaptureMode::Clear => (fetch_data.info.clear_tu, fetch_data.info.clear_sequence),
             PpsCaptureMode::Both => {
                 // Use whichever edge occurred more recently
                 if fetch_data.info.assert_sequence > fetch_data.info.clear_sequence {
@@ -295,9 +291,7 @@ impl RefClock for PpsReceiver {
                 PpsCaptureMode::Assert => {
                     (fetch_data.info.assert_tu, fetch_data.info.assert_sequence)
                 }
-                PpsCaptureMode::Clear => {
-                    (fetch_data.info.clear_tu, fetch_data.info.clear_sequence)
-                }
+                PpsCaptureMode::Clear => (fetch_data.info.clear_tu, fetch_data.info.clear_sequence),
                 PpsCaptureMode::Both => {
                     if fetch_data.info.assert_sequence > fetch_data.info.clear_sequence {
                         (fetch_data.info.assert_tu, fetch_data.info.assert_sequence)
@@ -385,10 +379,7 @@ mod tests {
 
     #[test]
     fn test_pps_capture_mode_conversion() {
-        assert_eq!(
-            PpsCaptureMode::Assert.to_kernel_mode(),
-            PPS_CAPTUREASSERT
-        );
+        assert_eq!(PpsCaptureMode::Assert.to_kernel_mode(), PPS_CAPTUREASSERT);
         assert_eq!(PpsCaptureMode::Clear.to_kernel_mode(), PPS_CAPTURECLEAR);
         assert_eq!(PpsCaptureMode::Both.to_kernel_mode(), PPS_CAPTUREBOTH);
     }

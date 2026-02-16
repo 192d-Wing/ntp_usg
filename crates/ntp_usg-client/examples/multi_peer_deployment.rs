@@ -133,7 +133,10 @@ fn print_health_assessment(state: &ntp_client::client_common::NtpSyncState) {
         "🔴 poor"
     };
 
-    println!("   Health:  Offset {} | Delay {} | Jitter {}", offset_status, delay_status, jitter_status);
+    println!(
+        "   Health:  Offset {} | Delay {} | Jitter {}",
+        offset_status, delay_status, jitter_status
+    );
 
     // Warnings
     if offset_ms.abs() > 128.0 {

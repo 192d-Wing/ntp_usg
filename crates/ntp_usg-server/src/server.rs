@@ -188,11 +188,21 @@ impl NtpServerBuilder {
             // Stratum 1: interpret as primary source (GPS, PPS, etc.)
             // Map common reference IDs to PrimarySource variants
             let reference_id = match &ref_id_bytes {
-                b"GPS\0" => protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Gps),
-                b"PPS\0" => protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Pps),
-                b"IRIG" => protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Irig),
-                b"NIST" => protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Nist),
-                b"LOCL" => protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Locl),
+                b"GPS\0" => {
+                    protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Gps)
+                }
+                b"PPS\0" => {
+                    protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Pps)
+                }
+                b"IRIG" => {
+                    protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Irig)
+                }
+                b"NIST" => {
+                    protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Nist)
+                }
+                b"LOCL" => {
+                    protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Locl)
+                }
                 _ => {
                     // Unknown primary source - use as-is
                     protocol::ReferenceIdentifier::SecondaryOrClient(ref_id_bytes)
@@ -232,7 +242,10 @@ impl NtpServerBuilder {
                                 // Update root dispersion from clock sample
                                 // ShortFormat represents seconds in 16.16 fixed point
                                 let disp_fixed = (sample.dispersion * 65536.0) as u32;
-                                state.root_dispersion = protocol::ShortFormat { seconds: (disp_fixed >> 16) as u16, fraction: (disp_fixed & 0xFFFF) as u16 };
+                                state.root_dispersion = protocol::ShortFormat {
+                                    seconds: (disp_fixed >> 16) as u16,
+                                    fraction: (disp_fixed & 0xFFFF) as u16,
+                                };
 
                                 debug!(
                                     "RefClock update: offset={:.9}s, dispersion={:.9}s, quality={}",

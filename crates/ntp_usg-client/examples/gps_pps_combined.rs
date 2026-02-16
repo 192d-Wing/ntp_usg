@@ -19,9 +19,9 @@
 //   3. Add to /boot/config.txt: dtoverlay=pps-gpio,gpiopin=18
 //   4. Load module: sudo modprobe pps-gpio
 
+use ntp_client::refclock::RefClock;
 use ntp_client::refclock::gps::{GpsConfig, GpsReceiver};
 use ntp_client::refclock::pps::{PpsCaptureMode, PpsConfig, PpsReceiver};
-use ntp_client::refclock::RefClock;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -109,8 +109,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match gps.read_sample().await {
             Ok(sample) => {
                 println!("✓ GPS fix acquired!");
-                println!("  Offset: {:.6}s ({:.3}ms)", sample.offset, sample.offset * 1000.0);
-                println!("  Dispersion: {:.6}s ({:.3}µs)", sample.dispersion, sample.dispersion * 1e6);
+                println!(
+                    "  Offset: {:.6}s ({:.3}ms)",
+                    sample.offset,
+                    sample.offset * 1000.0
+                );
+                println!(
+                    "  Dispersion: {:.6}s ({:.3}µs)",
+                    sample.dispersion,
+                    sample.dispersion * 1e6
+                );
                 println!("  Quality: {}/255", sample.quality);
                 println!();
                 break sample;
@@ -127,8 +135,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match pps.read_sample().await {
             Ok(sample) => {
                 println!("✓ PPS pulse detected!");
-                println!("  Offset: {:.9}s ({:.3}ns)", sample.offset, sample.offset * 1e9);
-                println!("  Dispersion: {:.9}s ({:.3}µs)", sample.dispersion, sample.dispersion * 1e6);
+                println!(
+                    "  Offset: {:.9}s ({:.3}ns)",
+                    sample.offset,
+                    sample.offset * 1e9
+                );
+                println!(
+                    "  Dispersion: {:.9}s ({:.3}µs)",
+                    sample.dispersion,
+                    sample.dispersion * 1e6
+                );
                 println!("  Quality: {}/255", sample.quality);
                 println!();
                 break sample;
@@ -148,9 +164,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Compare GPS and PPS offsets
     let difference = (gps_sample.offset - pps_sample.offset).abs();
     println!("Initial Offset Comparison:");
-    println!("  GPS offset:  {:.6}s ({:.3}ms)", gps_sample.offset, gps_sample.offset * 1000.0);
-    println!("  PPS offset:  {:.9}s ({:.3}µs)", pps_sample.offset, pps_sample.offset * 1e6);
-    println!("  Difference:  {:.9}s ({:.3}µs)", difference, difference * 1e6);
+    println!(
+        "  GPS offset:  {:.6}s ({:.3}ms)",
+        gps_sample.offset,
+        gps_sample.offset * 1000.0
+    );
+    println!(
+        "  PPS offset:  {:.9}s ({:.3}µs)",
+        pps_sample.offset,
+        pps_sample.offset * 1e6
+    );
+    println!(
+        "  Difference:  {:.9}s ({:.3}µs)",
+        difference,
+        difference * 1e6
+    );
     println!();
 
     if difference < 0.001 {
@@ -178,10 +206,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let pps_future = pps.read_sample();
 
         // Wait for both with timeout
-        let results = tokio::time::timeout(
-            Duration::from_secs(3),
-            tokio::join!(gps_future, pps_future)
-        ).await;
+        let results =
+            tokio::time::timeout(Duration::from_secs(3), tokio::join!(gps_future, pps_future))
+                .await;
 
         match results {
             Ok((gps_result, pps_result)) => {
@@ -195,11 +222,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         last_gps_offset = gps_sample.offset;
 
                         println!("📡 GPS:");
-                        println!("  Offset:     {:.6}s ({:>8.3}ms)", gps_sample.offset, gps_sample.offset * 1000.0);
-                        println!("  Dispersion: {:.6}s ({:>8.3}µs)", gps_sample.dispersion, gps_sample.dispersion * 1e6);
+                        println!(
+                            "  Offset:     {:.6}s ({:>8.3}ms)",
+                            gps_sample.offset,
+                            gps_sample.offset * 1000.0
+                        );
+                        println!(
+                            "  Dispersion: {:.6}s ({:>8.3}µs)",
+                            gps_sample.dispersion,
+                            gps_sample.dispersion * 1e6
+                        );
                         println!("  Quality:    {}/255", gps_sample.quality);
                         if sample_count > 1 {
-                            println!("  Drift:      {:.6}s ({:>8.3}ms)", gps_drift, gps_drift * 1000.0);
+                            println!(
+                                "  Drift:      {:.6}s ({:>8.3}ms)",
+                                gps_drift,
+                                gps_drift * 1000.0
+                            );
                         }
                     }
                     Err(e) => {
@@ -214,11 +253,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         last_pps_offset = pps_sample.offset;
 
                         println!("⚡ PPS:");
-                        println!("  Offset:     {:.9}s ({:>8.3}µs)", pps_sample.offset, pps_sample.offset * 1e6);
-                        println!("  Dispersion: {:.9}s ({:>8.3}ns)", pps_sample.dispersion, pps_sample.dispersion * 1e9);
+                        println!(
+                            "  Offset:     {:.9}s ({:>8.3}µs)",
+                            pps_sample.offset,
+                            pps_sample.offset * 1e6
+                        );
+                        println!(
+                            "  Dispersion: {:.9}s ({:>8.3}ns)",
+                            pps_sample.dispersion,
+                            pps_sample.dispersion * 1e9
+                        );
                         println!("  Quality:    {}/255", pps_sample.quality);
                         if sample_count > 1 {
-                            println!("  Drift:      {:.9}s ({:>8.3}ns)", pps_drift, pps_drift * 1e9);
+                            println!(
+                                "  Drift:      {:.9}s ({:>8.3}ns)",
+                                pps_drift,
+                                pps_drift * 1e9
+                            );
                         }
 
                         // Calculate combined precision
@@ -252,10 +303,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if sample_count % 10 == 0 {
                     println!("═══════════════════════════════════════════════════════");
                     println!("Summary after {} samples:", sample_count);
-                    println!("  GPS offset:  {:.6}s ({:.3}ms)", last_gps_offset, last_gps_offset * 1000.0);
-                    println!("  PPS offset:  {:.9}s ({:.3}µs)", last_pps_offset, last_pps_offset * 1e6);
-                    println!("  GPS health:  {}", if gps.is_healthy() { "✓" } else { "✗" });
-                    println!("  PPS health:  {}", if pps.is_healthy() { "✓" } else { "✗" });
+                    println!(
+                        "  GPS offset:  {:.6}s ({:.3}ms)",
+                        last_gps_offset,
+                        last_gps_offset * 1000.0
+                    );
+                    println!(
+                        "  PPS offset:  {:.9}s ({:.3}µs)",
+                        last_pps_offset,
+                        last_pps_offset * 1e6
+                    );
+                    println!(
+                        "  GPS health:  {}",
+                        if gps.is_healthy() { "✓" } else { "✗" }
+                    );
+                    println!(
+                        "  PPS health:  {}",
+                        if pps.is_healthy() { "✓" } else { "✗" }
+                    );
                     println!("═══════════════════════════════════════════════════════");
                     println!();
                 }

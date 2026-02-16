@@ -3,7 +3,7 @@
 // Reads NMEA 0183 sentences from a serial GPS receiver and provides
 // timing information via the RefClock trait.
 
-use super::nmea::{parse_sentence, FixQuality, GpsFix};
+use super::nmea::{FixQuality, GpsFix, parse_sentence};
 use super::{RefClock, RefClockSample};
 use crate::unix_time;
 use async_trait::async_trait;
@@ -97,7 +97,12 @@ impl GpsReceiver {
         let port = serialport::new(config.device.to_string_lossy(), config.baud_rate)
             .timeout(Duration::from_millis(100))
             .open()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to open GPS serial port: {}", e)))?;
+            .map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Failed to open GPS serial port: {}", e),
+                )
+            })?;
 
         let (sample_tx, sample_rx) = mpsc::unbounded_channel();
 
@@ -131,7 +136,10 @@ impl GpsReceiver {
                     // Try to parse NMEA sentence
                     match parse_sentence(line.trim()) {
                         Ok(Some(fix)) => {
-                            debug!("GPS fix: quality={:?}, sats={}, time={:?}", fix.quality, fix.satellites, fix.time);
+                            debug!(
+                                "GPS fix: quality={:?}, sats={}, time={:?}",
+                                fix.quality, fix.satellites, fix.time
+                            );
                             // Send to channel (ignore errors if receiver dropped)
                             let _ = sample_tx.send(fix);
                         }
@@ -184,9 +192,10 @@ impl RefClock for GpsReceiver {
             self.last_fix = self.sample_rx.recv().await;
         }
 
-        let fix = self.last_fix.as_ref().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::Other, "GPS receiver channel closed")
-        })?;
+        let fix = self
+            .last_fix
+            .as_ref()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "GPS receiver channel closed"))?;
 
         // Check if fix is valid
         if !fix.quality.is_valid() {
@@ -231,17 +240,17 @@ impl RefClock for GpsReceiver {
         // Quality indicator: higher quality = lower dispersion
         // PPS fix (quality 3) gets best dispersion, GPS (1) gets moderate
         let dispersion = match fix.quality {
-            FixQuality::Pps => 0.000001,      // 1 microsecond
-            FixQuality::DGps => 0.00001,      // 10 microseconds
-            FixQuality::Rtk | FixQuality::FloatRtk => 0.00005,  // 50 microseconds
-            FixQuality::Gps => 0.0001,        // 100 microseconds
-            _ => 0.001,                        // 1 millisecond
+            FixQuality::Pps => 0.000001,                       // 1 microsecond
+            FixQuality::DGps => 0.00001,                       // 10 microseconds
+            FixQuality::Rtk | FixQuality::FloatRtk => 0.00005, // 50 microseconds
+            FixQuality::Gps => 0.0001,                         // 100 microseconds
+            _ => 0.001,                                        // 1 millisecond
         };
 
         // Quality score: 0 (worst) to 255 (best)
         // Based on satellite count and fix quality
-        let quality = ((fix.satellites.min(16) as u16 * 10 + fix.quality as u16 * 5)
-            .min(255)) as u8;
+        let quality =
+            ((fix.satellites.min(16) as u16 * 10 + fix.quality as u16 * 5).min(255)) as u8;
 
         Ok(RefClockSample {
             timestamp: now,

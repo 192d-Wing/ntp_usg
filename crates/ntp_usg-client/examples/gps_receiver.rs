@@ -16,8 +16,8 @@
 //   - Raspberry Pi GPIO UART: /dev/ttyAMA0, /dev/serial0
 //   - Windows: COM3, COM4, etc.
 
-use ntp_client::refclock::gps::{GpsConfig, GpsReceiver};
 use ntp_client::refclock::RefClock;
+use ntp_client::refclock::gps::{GpsConfig, GpsReceiver};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -61,7 +61,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!();
             eprintln!("Common issues:");
             eprintln!("  - Serial port does not exist or is in use");
-            eprintln!("  - Insufficient permissions (try running as root or add user to dialout group)");
+            eprintln!(
+                "  - Insufficient permissions (try running as root or add user to dialout group)"
+            );
             eprintln!("  - GPS device not connected");
             eprintln!();
             eprintln!("Try:");
@@ -74,7 +76,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("GPS Information:");
     println!("  Description: {}", gps.description());
     println!("  Stratum: {}", gps.stratum());
-    println!("  Reference ID: {}", String::from_utf8_lossy(&gps.reference_id()));
+    println!(
+        "  Reference ID: {}",
+        String::from_utf8_lossy(&gps.reference_id())
+    );
     println!("  Poll interval: {:?}", gps.poll_interval());
     println!();
 
@@ -99,7 +104,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("  Offset: {:.6} seconds", sample.offset);
                 println!("  Dispersion: {:.6} seconds", sample.dispersion);
                 println!("  Quality: {}/255", sample.quality);
-                println!("  Health: {}", if gps.is_healthy() { "✓ Healthy" } else { "✗ Unhealthy" });
+                println!(
+                    "  Health: {}",
+                    if gps.is_healthy() {
+                        "✓ Healthy"
+                    } else {
+                        "✗ Unhealthy"
+                    }
+                );
 
                 // Interpretation
                 let offset_ms = sample.offset * 1000.0;

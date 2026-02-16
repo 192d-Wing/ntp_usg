@@ -21,8 +21,8 @@
 //   - Verify device: ls -l /dev/pps*
 //   - Test with ppstest: sudo ppstest /dev/pps0
 
-use ntp_client::refclock::pps::{PpsCaptureMode, PpsConfig, PpsReceiver};
 use ntp_client::refclock::RefClock;
+use ntp_client::refclock::pps::{PpsCaptureMode, PpsConfig, PpsReceiver};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -85,7 +85,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("PPS Information:");
     println!("  Description: {}", pps.description());
     println!("  Stratum: {}", pps.stratum());
-    println!("  Reference ID: {}", String::from_utf8_lossy(&pps.reference_id()));
+    println!(
+        "  Reference ID: {}",
+        String::from_utf8_lossy(&pps.reference_id())
+    );
     println!("  Poll interval: {:?}", pps.poll_interval());
     println!("  Expected dispersion: {:.9}s", 0.000001);
     println!();
@@ -118,10 +121,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Format output
                 println!("PPS Pulse #{}", sample_count);
                 println!("  Timestamp: {}.{:09} (Unix)", ts_secs, ts_nanos);
-                println!("  Offset: {:.9} seconds ({:.3} µs)", sample.offset, sample.offset * 1e6);
-                println!("  Dispersion: {:.9} seconds ({:.3} µs)", sample.dispersion, sample.dispersion * 1e6);
+                println!(
+                    "  Offset: {:.9} seconds ({:.3} µs)",
+                    sample.offset,
+                    sample.offset * 1e6
+                );
+                println!(
+                    "  Dispersion: {:.9} seconds ({:.3} µs)",
+                    sample.dispersion,
+                    sample.dispersion * 1e6
+                );
                 println!("  Quality: {}/255 (maximum)", sample.quality);
-                println!("  Health: {}", if pps.is_healthy() { "✓ Healthy" } else { "✗ Unhealthy" });
+                println!(
+                    "  Health: {}",
+                    if pps.is_healthy() {
+                        "✓ Healthy"
+                    } else {
+                        "✗ Unhealthy"
+                    }
+                );
 
                 if sample_count > 1 {
                     println!("  Drift: {:.9} seconds ({:.3} µs)", drift, drift * 1e6);
@@ -147,7 +165,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if sample_count % 10 == 0 {
                     println!("─────────────────────────────────────────");
                     println!("Statistics after {} samples:", sample_count);
-                    println!("  Average offset: {:.9}s ({:.3} µs)", last_offset, last_offset * 1e6);
+                    println!(
+                        "  Average offset: {:.9}s ({:.3} µs)",
+                        last_offset,
+                        last_offset * 1e6
+                    );
                     println!("─────────────────────────────────────────");
                     println!();
                 }

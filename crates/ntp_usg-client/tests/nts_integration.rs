@@ -47,12 +47,14 @@ async fn test_nts_cloudflare() {
                 Err(_) => panic!("NTS request timed out after {:?}", QUERY_TIMEOUT),
             }
         }
-        Err(e) if e.to_string().contains("timed out")
+        Err(e)
+            if e.to_string().contains("timed out")
                 || e.to_string().contains("Connection refused")
                 || e.to_string().contains("Connection reset")
                 || e.kind() == std::io::ErrorKind::TimedOut
                 || e.kind() == std::io::ErrorKind::ConnectionReset
-                || e.kind() == std::io::ErrorKind::ConnectionRefused => {
+                || e.kind() == std::io::ErrorKind::ConnectionRefused =>
+        {
             eprintln!("Skipping Cloudflare NTS test: network unreachable ({e})");
         }
         Err(e) => panic!("NTS-KE failed: {e}"),
@@ -74,11 +76,7 @@ async fn test_nts_multiple_requests() {
             for i in 0..5 {
                 match tokio::time::timeout(QUERY_TIMEOUT, session.request()).await {
                     Ok(Ok(result)) => {
-                        println!(
-                            "Request #{}: offset={:.6}s",
-                            i + 1,
-                            result.offset_seconds
-                        );
+                        println!("Request #{}: offset={:.6}s", i + 1, result.offset_seconds);
                         offsets.push(result.offset_seconds);
                     }
                     Ok(Err(e)) => panic!("Request #{} failed: {}", i + 1, e),
@@ -96,12 +94,14 @@ async fn test_nts_multiple_requests() {
                 assert!(spread < 0.5, "NTS requests spread too wide: {:.3}s", spread);
             }
         }
-        Err(e) if e.to_string().contains("timed out")
+        Err(e)
+            if e.to_string().contains("timed out")
                 || e.to_string().contains("Connection refused")
                 || e.to_string().contains("Connection reset")
                 || e.kind() == std::io::ErrorKind::TimedOut
                 || e.kind() == std::io::ErrorKind::ConnectionReset
-                || e.kind() == std::io::ErrorKind::ConnectionRefused => {
+                || e.kind() == std::io::ErrorKind::ConnectionRefused =>
+        {
             eprintln!("Skipping NTS multi-request test: network unreachable");
         }
         Err(e) => panic!("NTS-KE failed: {e}"),
@@ -124,12 +124,14 @@ async fn test_nts_continuous_client() {
 
     let (client, mut state_rx) = match result {
         Ok(x) => x,
-        Err(e) if e.to_string().contains("timed out")
+        Err(e)
+            if e.to_string().contains("timed out")
                 || e.to_string().contains("Connection refused")
                 || e.to_string().contains("Connection reset")
                 || e.kind() == std::io::ErrorKind::AddrNotAvailable
                 || e.kind() == std::io::ErrorKind::ConnectionReset
-                || e.kind() == std::io::ErrorKind::ConnectionRefused => {
+                || e.kind() == std::io::ErrorKind::ConnectionRefused =>
+        {
             eprintln!("Skipping NTS continuous client test: network unreachable");
             return;
         }
@@ -195,12 +197,14 @@ async fn test_nts_mixed_deployment() {
 
     let (client, mut state_rx) = match result {
         Ok(x) => x,
-        Err(e) if e.to_string().contains("timed out")
+        Err(e)
+            if e.to_string().contains("timed out")
                 || e.to_string().contains("Connection refused")
                 || e.to_string().contains("Connection reset")
                 || e.kind() == std::io::ErrorKind::AddrNotAvailable
                 || e.kind() == std::io::ErrorKind::ConnectionReset
-                || e.kind() == std::io::ErrorKind::ConnectionRefused => {
+                || e.kind() == std::io::ErrorKind::ConnectionRefused =>
+        {
             eprintln!("Skipping mixed deployment test: network unreachable");
             return;
         }
@@ -255,8 +259,9 @@ async fn test_nts_ke_timeout() {
     let start = std::time::Instant::now();
     let result = tokio::time::timeout(
         Duration::from_secs(5),
-        NtsSession::from_ke("nts-nonexistent-test-domain-12345.example.com")
-    ).await;
+        NtsSession::from_ke("nts-nonexistent-test-domain-12345.example.com"),
+    )
+    .await;
 
     let elapsed = start.elapsed();
 
@@ -291,16 +296,21 @@ async fn test_nts_cookie_persistence() {
             // Server should have sent new cookies in response
             // Second request should still work
             let result2 = tokio::time::timeout(QUERY_TIMEOUT, session.request()).await;
-            assert!(result2.is_ok(), "Second NTS request failed (cookie exhaustion?)");
+            assert!(
+                result2.is_ok(),
+                "Second NTS request failed (cookie exhaustion?)"
+            );
 
             println!("NTS cookie rotation working correctly");
         }
-        Err(e) if e.to_string().contains("timed out")
+        Err(e)
+            if e.to_string().contains("timed out")
                 || e.to_string().contains("Connection refused")
                 || e.to_string().contains("Connection reset")
                 || e.kind() == std::io::ErrorKind::TimedOut
                 || e.kind() == std::io::ErrorKind::ConnectionReset
-                || e.kind() == std::io::ErrorKind::ConnectionRefused => {
+                || e.kind() == std::io::ErrorKind::ConnectionRefused =>
+        {
             eprintln!("Skipping NTS cookie test: network unreachable");
         }
         Err(e) => panic!("NTS-KE failed: {e}"),
