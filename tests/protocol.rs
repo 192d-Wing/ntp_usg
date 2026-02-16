@@ -1,6 +1,8 @@
+use ntp::error::ParseError;
 use ntp::protocol::{
-    ConstPackedSizeBytes, KissOfDeath, LeapIndicator, Mode, Packet, PrimarySource, ReadBytes,
-    ReferenceIdentifier, ShortFormat, Stratum, TimestampFormat, Version, WriteBytes,
+    ConstPackedSizeBytes, DateFormat, FromBytes, KissOfDeath, LeapIndicator, Mode, Packet,
+    PrimarySource, ReadBytes, ReferenceIdentifier, ShortFormat, Stratum, TimestampFormat, ToBytes,
+    Version, WriteBytes,
 };
 
 #[test]
@@ -253,4 +255,271 @@ fn reference_identifier_as_bytes() {
 
     let unknown = ReferenceIdentifier::Unknown([0xAA, 0xBB, 0xCC, 0xDD]);
     assert_eq!(unknown.as_bytes(), [0xAA, 0xBB, 0xCC, 0xDD]);
+}
+
+// ============================================================================
+// Buffer-based (io-independent) parsing tests
+// ============================================================================
+
+#[test]
+fn buf_packet_from_bytes() {
+    let input = [
+        20u8, 1, 3, 240, 0, 0, 0, 0, 0, 0, 0, 24, 67, 68, 77, 65, 215, 188, 128, 105, 198, 169,
+        46, 99, 215, 187, 177, 194, 159, 47, 120, 0, 215, 188, 128, 113, 45, 236, 230, 45, 215,
+        188, 128, 113, 46, 35, 158, 108,
+    ];
+    let (packet, consumed) = Packet::from_bytes(&input).unwrap();
+    assert_eq!(consumed, 48);
+    assert_eq!(packet.leap_indicator, LeapIndicator::NoWarning);
+    assert_eq!(packet.version, Version::V2);
+    assert_eq!(packet.mode, Mode::Server);
+    assert_eq!(packet.stratum, Stratum::PRIMARY);
+    assert_eq!(packet.poll, 3);
+    assert_eq!(packet.precision, -16);
+    assert_eq!(
+        packet.reference_id,
+        ReferenceIdentifier::PrimarySource(PrimarySource::Cdma)
+    );
+}
+
+#[test]
+fn buf_packet_to_bytes() {
+    let expected_output = [
+        20u8, 1, 3, 240, 0, 0, 0, 0, 0, 0, 0, 24, 67, 68, 77, 65, 215, 188, 128, 105, 198, 169,
+        46, 99, 215, 187, 177, 194, 159, 47, 120, 0, 215, 188, 128, 113, 45, 236, 230, 45, 215,
+        188, 128, 113, 46, 35, 158, 108,
+    ];
+    let packet = Packet {
+        leap_indicator: LeapIndicator::NoWarning,
+        version: Version::V2,
+        mode: Mode::Server,
+        stratum: Stratum::PRIMARY,
+        poll: 3,
+        precision: -16,
+        root_delay: ShortFormat {
+            seconds: 0,
+            fraction: 0,
+        },
+        root_dispersion: ShortFormat {
+            seconds: 0,
+            fraction: 24,
+        },
+        reference_id: ReferenceIdentifier::PrimarySource(PrimarySource::Cdma),
+        reference_timestamp: TimestampFormat {
+            seconds: 3619455081,
+            fraction: 3332976227,
+        },
+        origin_timestamp: TimestampFormat {
+            seconds: 3619402178,
+            fraction: 2670688256,
+        },
+        receive_timestamp: TimestampFormat {
+            seconds: 3619455089,
+            fraction: 770500141,
+        },
+        transmit_timestamp: TimestampFormat {
+            seconds: 3619455089,
+            fraction: 774086252,
+        },
+    };
+    let mut bytes = [0u8; Packet::PACKED_SIZE_BYTES];
+    let written = packet.to_bytes(&mut bytes).unwrap();
+    assert_eq!(written, 48);
+    assert_eq!(&bytes[..], &expected_output[..]);
+}
+
+#[test]
+fn buf_packet_roundtrip() {
+    let input = [
+        20u8, 1, 3, 240, 0, 0, 0, 0, 0, 0, 0, 24, 67, 68, 77, 65, 215, 188, 128, 105, 198, 169,
+        46, 99, 215, 187, 177, 194, 159, 47, 120, 0, 215, 188, 128, 113, 45, 236, 230, 45, 215,
+        188, 128, 113, 46, 35, 158, 108,
+    ];
+    let (packet, _) = Packet::from_bytes(&input).unwrap();
+    let mut output = [0u8; Packet::PACKED_SIZE_BYTES];
+    packet.to_bytes(&mut output).unwrap();
+    assert_eq!(&input[..], &output[..]);
+}
+
+#[test]
+fn buf_equivalence_with_io_api() {
+    let input = [
+        20u8, 1, 3, 240, 0, 0, 0, 0, 0, 0, 0, 24, 67, 68, 77, 65, 215, 188, 128, 105, 198, 169,
+        46, 99, 215, 187, 177, 194, 159, 47, 120, 0, 215, 188, 128, 113, 45, 236, 230, 45, 215,
+        188, 128, 113, 46, 35, 158, 108,
+    ];
+
+    // Parse with both APIs.
+    let io_packet = (&input[..]).read_bytes::<Packet>().unwrap();
+    let (buf_packet, _) = Packet::from_bytes(&input).unwrap();
+    assert_eq!(io_packet, buf_packet);
+
+    // Serialize with both APIs.
+    let mut io_output = [0u8; Packet::PACKED_SIZE_BYTES];
+    (&mut io_output[..]).write_bytes(io_packet).unwrap();
+    let mut buf_output = [0u8; Packet::PACKED_SIZE_BYTES];
+    buf_packet.to_bytes(&mut buf_output).unwrap();
+    assert_eq!(&io_output[..], &buf_output[..]);
+}
+
+#[test]
+fn buf_short_format_roundtrip() {
+    let sf = ShortFormat {
+        seconds: 1234,
+        fraction: 5678,
+    };
+    let mut buf = [0u8; 4];
+    let written = sf.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 4);
+    let (parsed, consumed) = ShortFormat::from_bytes(&buf).unwrap();
+    assert_eq!(consumed, 4);
+    assert_eq!(sf, parsed);
+}
+
+#[test]
+fn buf_timestamp_format_roundtrip() {
+    let ts = TimestampFormat {
+        seconds: 3619455081,
+        fraction: 3332976227,
+    };
+    let mut buf = [0u8; 8];
+    let written = ts.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 8);
+    let (parsed, consumed) = TimestampFormat::from_bytes(&buf).unwrap();
+    assert_eq!(consumed, 8);
+    assert_eq!(ts, parsed);
+}
+
+#[test]
+fn buf_date_format_roundtrip() {
+    let df = DateFormat {
+        era_number: 1,
+        era_offset: 1000000,
+        fraction: 0xDEADBEEFCAFEBABE,
+    };
+    let mut buf = [0u8; 16];
+    let written = df.to_bytes(&mut buf).unwrap();
+    assert_eq!(written, 16);
+    let (parsed, consumed) = DateFormat::from_bytes(&buf).unwrap();
+    assert_eq!(consumed, 16);
+    assert_eq!(df, parsed);
+}
+
+#[test]
+fn buf_buffer_too_short_errors() {
+    // Empty buffer for Packet.
+    let err = Packet::from_bytes(&[]).unwrap_err();
+    assert_eq!(
+        err,
+        ParseError::BufferTooShort {
+            needed: 48,
+            available: 0
+        }
+    );
+
+    // 47 bytes (one short).
+    let err = Packet::from_bytes(&[0u8; 47]).unwrap_err();
+    assert_eq!(
+        err,
+        ParseError::BufferTooShort {
+            needed: 48,
+            available: 47
+        }
+    );
+
+    // Short buffer for ShortFormat.
+    let err = ShortFormat::from_bytes(&[0u8; 3]).unwrap_err();
+    assert_eq!(
+        err,
+        ParseError::BufferTooShort {
+            needed: 4,
+            available: 3
+        }
+    );
+
+    // Short buffer for TimestampFormat.
+    let err = TimestampFormat::from_bytes(&[0u8; 1]).unwrap_err();
+    assert_eq!(
+        err,
+        ParseError::BufferTooShort {
+            needed: 8,
+            available: 1
+        }
+    );
+
+    // Short output buffer for Packet::to_bytes.
+    let packet = Packet {
+        leap_indicator: LeapIndicator::NoWarning,
+        version: Version::V4,
+        mode: Mode::Client,
+        stratum: Stratum::UNSPECIFIED,
+        poll: 0,
+        precision: 0,
+        root_delay: ShortFormat::default(),
+        root_dispersion: ShortFormat::default(),
+        reference_id: ReferenceIdentifier::Unknown([0; 4]),
+        reference_timestamp: TimestampFormat::default(),
+        origin_timestamp: TimestampFormat::default(),
+        receive_timestamp: TimestampFormat::default(),
+        transmit_timestamp: TimestampFormat::default(),
+    };
+    let mut short_buf = [0u8; 20];
+    let err = packet.to_bytes(&mut short_buf).unwrap_err();
+    assert_eq!(
+        err,
+        ParseError::BufferTooShort {
+            needed: 48,
+            available: 20
+        }
+    );
+}
+
+#[test]
+fn buf_stratum_0_kod_deny() {
+    let input = make_test_packet(0, [0x44, 0x45, 0x4E, 0x59]);
+    let (packet, _) = Packet::from_bytes(&input).unwrap();
+    assert_eq!(packet.stratum, Stratum::UNSPECIFIED);
+    assert_eq!(
+        packet.reference_id,
+        ReferenceIdentifier::KissOfDeath(KissOfDeath::Deny)
+    );
+}
+
+#[test]
+fn buf_stratum_16_unsynchronized() {
+    let input = make_test_packet(16, [0x00, 0x00, 0x00, 0x00]);
+    let (packet, _) = Packet::from_bytes(&input).unwrap();
+    assert_eq!(packet.stratum, Stratum(16));
+    assert_eq!(
+        packet.reference_id,
+        ReferenceIdentifier::Unknown([0x00, 0x00, 0x00, 0x00])
+    );
+}
+
+#[test]
+fn buf_kod_roundtrip() {
+    let input = make_test_packet(0, [0x44, 0x45, 0x4E, 0x59]); // DENY
+    let (packet, _) = Packet::from_bytes(&input).unwrap();
+    let mut output = [0u8; Packet::PACKED_SIZE_BYTES];
+    packet.to_bytes(&mut output).unwrap();
+    assert_eq!(&input[..], &output[..]);
+}
+
+#[test]
+fn buf_extra_bytes_after_packet_ignored() {
+    // 52 bytes: 48-byte packet + 4 extra bytes.
+    let mut input = [0u8; 52];
+    input[0] = 0x24; // LI=0, VN=4, Mode=4
+    input[1] = 1; // Stratum 1
+    input[12..16].copy_from_slice(b"GPS\0");
+    // Put non-zero data in extra bytes.
+    input[48] = 0xFF;
+    input[49] = 0xFF;
+
+    let (packet, consumed) = Packet::from_bytes(&input).unwrap();
+    assert_eq!(consumed, 48);
+    assert_eq!(
+        packet.reference_id,
+        ReferenceIdentifier::PrimarySource(PrimarySource::Gps)
+    );
 }

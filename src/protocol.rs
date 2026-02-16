@@ -6,8 +6,13 @@
 //!
 //! Documentation is largely derived (and often copied directly) from IETF RFC 5905.
 
+#[cfg(feature = "std")]
 use byteorder::{BE, ReadBytesExt, WriteBytesExt};
-use std::{fmt, io};
+use core::fmt;
+#[cfg(feature = "std")]
+use std::io;
+
+use crate::error::ParseError;
 
 /// NTP port number.
 pub const PORT: u8 = 123;
@@ -36,6 +41,8 @@ pub const MAXSTRAT: u8 = 16;
 /// A trait for writing any of the Network Time Protocol types to network-endian bytes.
 ///
 /// A blanket implementation is provided for all types that implement `byteorder::WriteBytesExt`.
+/// Requires the `std` feature.
+#[cfg(feature = "std")]
 pub trait WriteBytes {
     /// Writes an NTP protocol type to this writer in network byte order.
     fn write_bytes<P: WriteToBytes>(&mut self, protocol: P) -> io::Result<()>;
@@ -44,18 +51,24 @@ pub trait WriteBytes {
 /// A trait for reading any of the Network Time Protocol types from network-endian bytes.
 ///
 /// A blanket implementation is provided for all types that implement `byteorder::ReadBytesExt`.
+/// Requires the `std` feature.
+#[cfg(feature = "std")]
 pub trait ReadBytes {
     /// Reads an NTP protocol type from this reader in network byte order.
     fn read_bytes<P: ReadFromBytes>(&mut self) -> io::Result<P>;
 }
 
 /// Network Time Protocol types that may be written to network endian bytes.
+/// Requires the `std` feature.
+#[cfg(feature = "std")]
 pub trait WriteToBytes {
     /// Write the command to bytes.
     fn write_to_bytes<W: WriteBytesExt>(&self, writer: W) -> io::Result<()>;
 }
 
 /// Network Time Protocol types that may be read from network endian bytes.
+/// Requires the `std` feature.
+#[cfg(feature = "std")]
 pub trait ReadFromBytes: Sized {
     /// Read the command from bytes.
     fn read_from_bytes<R: ReadBytesExt>(reader: R) -> io::Result<Self>;
@@ -65,6 +78,28 @@ pub trait ReadFromBytes: Sized {
 pub trait ConstPackedSizeBytes {
     /// The constant size in bytes when this type is packed for network transmission.
     const PACKED_SIZE_BYTES: usize;
+}
+
+/// Parse a type from a byte slice, returning the parsed value and the number
+/// of bytes consumed.
+///
+/// Unlike [`ReadFromBytes`], this trait does not require `std::io` or the `byteorder` crate.
+/// It operates directly on `&[u8]` slices, making it suitable for `no_std` environments
+/// and packet capture analysis.
+pub trait FromBytes: Sized {
+    /// Parse from the given byte slice. Returns the parsed value and the
+    /// number of bytes consumed from the front of `buf`.
+    fn from_bytes(buf: &[u8]) -> Result<(Self, usize), ParseError>;
+}
+
+/// Serialize a type into a byte slice, returning the number of bytes written.
+///
+/// Unlike [`WriteToBytes`], this trait does not require `std::io` or the `byteorder` crate.
+/// It operates directly on `&mut [u8]` slices, making it suitable for `no_std` environments.
+pub trait ToBytes {
+    /// Write this value into the given byte slice. Returns the number of bytes
+    /// written. Fails with [`ParseError::BufferTooShort`] if `buf` is too short.
+    fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, ParseError>;
 }
 
 /// **NTP Short Format** - Used in delay and dispersion header fields where the full resolution and
@@ -661,8 +696,9 @@ impl ConstPackedSizeBytes for Packet {
         + TimestampFormat::PACKED_SIZE_BYTES * 4;
 }
 
-// Writer implementations.
+// Writer implementations (requires std).
 
+#[cfg(feature = "std")]
 impl<W> WriteBytes for W
 where
     W: WriteBytesExt,
@@ -672,6 +708,7 @@ where
     }
 }
 
+#[cfg(feature = "std")]
 impl<P> WriteToBytes for &P
 where
     P: WriteToBytes,
@@ -681,6 +718,7 @@ where
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteToBytes for ShortFormat {
     fn write_to_bytes<W: WriteBytesExt>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u16::<BE>(self.seconds)?;
@@ -689,6 +727,7 @@ impl WriteToBytes for ShortFormat {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteToBytes for TimestampFormat {
     fn write_to_bytes<W: WriteBytesExt>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u32::<BE>(self.seconds)?;
@@ -697,6 +736,7 @@ impl WriteToBytes for TimestampFormat {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteToBytes for DateFormat {
     fn write_to_bytes<W: WriteBytesExt>(&self, mut writer: W) -> io::Result<()> {
         writer.write_i32::<BE>(self.era_number)?;
@@ -706,6 +746,7 @@ impl WriteToBytes for DateFormat {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteToBytes for Stratum {
     fn write_to_bytes<W: WriteBytesExt>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u8(self.0)?;
@@ -713,6 +754,7 @@ impl WriteToBytes for Stratum {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteToBytes for ReferenceIdentifier {
     fn write_to_bytes<W: WriteBytesExt>(&self, mut writer: W) -> io::Result<()> {
         match *self {
@@ -733,6 +775,7 @@ impl WriteToBytes for ReferenceIdentifier {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteToBytes for (LeapIndicator, Version, Mode) {
     fn write_to_bytes<W: WriteBytesExt>(&self, mut writer: W) -> io::Result<()> {
         let (li, vn, mode) = *self;
@@ -745,6 +788,7 @@ impl WriteToBytes for (LeapIndicator, Version, Mode) {
     }
 }
 
+#[cfg(feature = "std")]
 impl WriteToBytes for Packet {
     fn write_to_bytes<W: WriteBytesExt>(&self, mut writer: W) -> io::Result<()> {
         let li_vn_mode = (self.leap_indicator, self.version, self.mode);
@@ -763,8 +807,9 @@ impl WriteToBytes for Packet {
     }
 }
 
-// Reader implementations.
+// Reader implementations (requires std).
 
+#[cfg(feature = "std")]
 impl<R> ReadBytes for R
 where
     R: ReadBytesExt,
@@ -774,6 +819,7 @@ where
     }
 }
 
+#[cfg(feature = "std")]
 impl ReadFromBytes for ShortFormat {
     fn read_from_bytes<R: ReadBytesExt>(mut reader: R) -> io::Result<Self> {
         let seconds = reader.read_u16::<BE>()?;
@@ -783,6 +829,7 @@ impl ReadFromBytes for ShortFormat {
     }
 }
 
+#[cfg(feature = "std")]
 impl ReadFromBytes for TimestampFormat {
     fn read_from_bytes<R: ReadBytesExt>(mut reader: R) -> io::Result<Self> {
         let seconds = reader.read_u32::<BE>()?;
@@ -792,6 +839,7 @@ impl ReadFromBytes for TimestampFormat {
     }
 }
 
+#[cfg(feature = "std")]
 impl ReadFromBytes for DateFormat {
     fn read_from_bytes<R: ReadBytesExt>(mut reader: R) -> io::Result<Self> {
         let era_number = reader.read_i32::<BE>()?;
@@ -806,6 +854,7 @@ impl ReadFromBytes for DateFormat {
     }
 }
 
+#[cfg(feature = "std")]
 impl ReadFromBytes for Stratum {
     fn read_from_bytes<R: ReadBytesExt>(mut reader: R) -> io::Result<Self> {
         let stratum = Stratum(reader.read_u8()?);
@@ -813,6 +862,7 @@ impl ReadFromBytes for Stratum {
     }
 }
 
+#[cfg(feature = "std")]
 impl ReadFromBytes for (LeapIndicator, Version, Mode) {
     fn read_from_bytes<R: ReadBytesExt>(mut reader: R) -> io::Result<Self> {
         let li_vn_mode = reader.read_u8()?;
@@ -838,6 +888,7 @@ impl ReadFromBytes for (LeapIndicator, Version, Mode) {
     }
 }
 
+#[cfg(feature = "std")]
 impl ReadFromBytes for Packet {
     fn read_from_bytes<R: ReadBytesExt>(mut reader: R) -> io::Result<Self> {
         let (leap_indicator, version, mode) = reader.read_bytes()?;
@@ -891,15 +942,337 @@ impl ReadFromBytes for Packet {
     }
 }
 
-// Manual default implementations.
-
 // Display implementations.
 
 impl fmt::Display for PrimarySource {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let bytes = self.bytes();
-        let s = String::from_utf8_lossy(&bytes);
-        write!(f, "{}", s)
+        for &b in &bytes {
+            if b == 0 {
+                break;
+            }
+            if b.is_ascii() {
+                write!(f, "{}", b as char)?;
+            } else {
+                write!(f, "?")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+// Buffer-based reader implementations (io-independent).
+
+impl FromBytes for ShortFormat {
+    fn from_bytes(buf: &[u8]) -> Result<(Self, usize), ParseError> {
+        if buf.len() < Self::PACKED_SIZE_BYTES {
+            return Err(ParseError::BufferTooShort {
+                needed: Self::PACKED_SIZE_BYTES,
+                available: buf.len(),
+            });
+        }
+        let seconds = u16::from_be_bytes([buf[0], buf[1]]);
+        let fraction = u16::from_be_bytes([buf[2], buf[3]]);
+        Ok((ShortFormat { seconds, fraction }, Self::PACKED_SIZE_BYTES))
+    }
+}
+
+impl FromBytes for TimestampFormat {
+    fn from_bytes(buf: &[u8]) -> Result<(Self, usize), ParseError> {
+        if buf.len() < Self::PACKED_SIZE_BYTES {
+            return Err(ParseError::BufferTooShort {
+                needed: Self::PACKED_SIZE_BYTES,
+                available: buf.len(),
+            });
+        }
+        let seconds = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
+        let fraction = u32::from_be_bytes([buf[4], buf[5], buf[6], buf[7]]);
+        Ok((
+            TimestampFormat { seconds, fraction },
+            Self::PACKED_SIZE_BYTES,
+        ))
+    }
+}
+
+impl FromBytes for DateFormat {
+    fn from_bytes(buf: &[u8]) -> Result<(Self, usize), ParseError> {
+        if buf.len() < Self::PACKED_SIZE_BYTES {
+            return Err(ParseError::BufferTooShort {
+                needed: Self::PACKED_SIZE_BYTES,
+                available: buf.len(),
+            });
+        }
+        let era_number = i32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
+        let era_offset = u32::from_be_bytes([buf[4], buf[5], buf[6], buf[7]]);
+        let fraction = u64::from_be_bytes([
+            buf[8], buf[9], buf[10], buf[11], buf[12], buf[13], buf[14], buf[15],
+        ]);
+        Ok((
+            DateFormat {
+                era_number,
+                era_offset,
+                fraction,
+            },
+            Self::PACKED_SIZE_BYTES,
+        ))
+    }
+}
+
+impl FromBytes for Stratum {
+    fn from_bytes(buf: &[u8]) -> Result<(Self, usize), ParseError> {
+        if buf.is_empty() {
+            return Err(ParseError::BufferTooShort {
+                needed: 1,
+                available: 0,
+            });
+        }
+        Ok((Stratum(buf[0]), 1))
+    }
+}
+
+impl FromBytes for (LeapIndicator, Version, Mode) {
+    fn from_bytes(buf: &[u8]) -> Result<(Self, usize), ParseError> {
+        if buf.is_empty() {
+            return Err(ParseError::BufferTooShort {
+                needed: 1,
+                available: 0,
+            });
+        }
+        let li_vn_mode = buf[0];
+        let li_u8 = li_vn_mode >> 6;
+        let vn_u8 = (li_vn_mode >> 3) & 0b111;
+        let mode_u8 = li_vn_mode & 0b111;
+        let li = LeapIndicator::try_from(li_u8).map_err(|_| ParseError::InvalidField {
+            field: "leap indicator",
+            value: li_u8 as u32,
+        })?;
+        let vn = Version(vn_u8);
+        let mode = Mode::try_from(mode_u8).map_err(|_| ParseError::InvalidField {
+            field: "association mode",
+            value: mode_u8 as u32,
+        })?;
+        Ok(((li, vn, mode), 1))
+    }
+}
+
+impl ReferenceIdentifier {
+    /// Parse a reference identifier from 4 bytes, using stratum for disambiguation.
+    ///
+    /// The interpretation of the reference identifier depends on the stratum:
+    /// - Stratum 0: Kiss-o'-Death code
+    /// - Stratum 1: Primary source identifier
+    /// - Stratum 2-15: Secondary/client reference (IPv4 or IPv6 hash)
+    /// - Stratum 16+: Unknown
+    pub fn from_bytes_with_stratum(bytes: [u8; 4], stratum: Stratum) -> Self {
+        let u = u32::from_be_bytes(bytes);
+        if stratum == Stratum::UNSPECIFIED {
+            match KissOfDeath::try_from(u) {
+                Ok(kod) => ReferenceIdentifier::KissOfDeath(kod),
+                Err(_) => ReferenceIdentifier::Unknown(bytes),
+            }
+        } else if stratum == Stratum::PRIMARY {
+            match PrimarySource::try_from(u) {
+                Ok(src) => ReferenceIdentifier::PrimarySource(src),
+                Err(_) => ReferenceIdentifier::Unknown(bytes),
+            }
+        } else if stratum.is_secondary() {
+            ReferenceIdentifier::SecondaryOrClient(bytes)
+        } else {
+            ReferenceIdentifier::Unknown(bytes)
+        }
+    }
+}
+
+impl FromBytes for Packet {
+    fn from_bytes(buf: &[u8]) -> Result<(Self, usize), ParseError> {
+        if buf.len() < Self::PACKED_SIZE_BYTES {
+            return Err(ParseError::BufferTooShort {
+                needed: Self::PACKED_SIZE_BYTES,
+                available: buf.len(),
+            });
+        }
+
+        let mut offset = 0;
+
+        let ((leap_indicator, version, mode), n) =
+            <(LeapIndicator, Version, Mode)>::from_bytes(&buf[offset..])?;
+        offset += n;
+
+        let (stratum, n) = Stratum::from_bytes(&buf[offset..])?;
+        offset += n;
+
+        let poll = buf[offset] as i8;
+        offset += 1;
+
+        let precision = buf[offset] as i8;
+        offset += 1;
+
+        let (root_delay, n) = ShortFormat::from_bytes(&buf[offset..])?;
+        offset += n;
+
+        let (root_dispersion, n) = ShortFormat::from_bytes(&buf[offset..])?;
+        offset += n;
+
+        let ref_id_bytes = [buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]];
+        let reference_id = ReferenceIdentifier::from_bytes_with_stratum(ref_id_bytes, stratum);
+        offset += 4;
+
+        let (reference_timestamp, n) = TimestampFormat::from_bytes(&buf[offset..])?;
+        offset += n;
+
+        let (origin_timestamp, n) = TimestampFormat::from_bytes(&buf[offset..])?;
+        offset += n;
+
+        let (receive_timestamp, n) = TimestampFormat::from_bytes(&buf[offset..])?;
+        offset += n;
+
+        let (transmit_timestamp, n) = TimestampFormat::from_bytes(&buf[offset..])?;
+        offset += n;
+
+        Ok((
+            Packet {
+                leap_indicator,
+                version,
+                mode,
+                stratum,
+                poll,
+                precision,
+                root_delay,
+                root_dispersion,
+                reference_id,
+                reference_timestamp,
+                origin_timestamp,
+                receive_timestamp,
+                transmit_timestamp,
+            },
+            offset,
+        ))
+    }
+}
+
+// Buffer-based writer implementations (io-independent).
+
+impl ToBytes for ShortFormat {
+    fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, ParseError> {
+        if buf.len() < Self::PACKED_SIZE_BYTES {
+            return Err(ParseError::BufferTooShort {
+                needed: Self::PACKED_SIZE_BYTES,
+                available: buf.len(),
+            });
+        }
+        let s = self.seconds.to_be_bytes();
+        let f = self.fraction.to_be_bytes();
+        buf[0] = s[0];
+        buf[1] = s[1];
+        buf[2] = f[0];
+        buf[3] = f[1];
+        Ok(Self::PACKED_SIZE_BYTES)
+    }
+}
+
+impl ToBytes for TimestampFormat {
+    fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, ParseError> {
+        if buf.len() < Self::PACKED_SIZE_BYTES {
+            return Err(ParseError::BufferTooShort {
+                needed: Self::PACKED_SIZE_BYTES,
+                available: buf.len(),
+            });
+        }
+        let s = self.seconds.to_be_bytes();
+        let f = self.fraction.to_be_bytes();
+        buf[..4].copy_from_slice(&s);
+        buf[4..8].copy_from_slice(&f);
+        Ok(Self::PACKED_SIZE_BYTES)
+    }
+}
+
+impl ToBytes for DateFormat {
+    fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, ParseError> {
+        if buf.len() < Self::PACKED_SIZE_BYTES {
+            return Err(ParseError::BufferTooShort {
+                needed: Self::PACKED_SIZE_BYTES,
+                available: buf.len(),
+            });
+        }
+        buf[..4].copy_from_slice(&self.era_number.to_be_bytes());
+        buf[4..8].copy_from_slice(&self.era_offset.to_be_bytes());
+        buf[8..16].copy_from_slice(&self.fraction.to_be_bytes());
+        Ok(Self::PACKED_SIZE_BYTES)
+    }
+}
+
+impl ToBytes for Stratum {
+    fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, ParseError> {
+        if buf.is_empty() {
+            return Err(ParseError::BufferTooShort {
+                needed: 1,
+                available: 0,
+            });
+        }
+        buf[0] = self.0;
+        Ok(1)
+    }
+}
+
+impl ToBytes for (LeapIndicator, Version, Mode) {
+    fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, ParseError> {
+        if buf.is_empty() {
+            return Err(ParseError::BufferTooShort {
+                needed: 1,
+                available: 0,
+            });
+        }
+        let (li, vn, mode) = *self;
+        let mut li_vn_mode = 0u8;
+        li_vn_mode |= (li as u8) << 6;
+        li_vn_mode |= vn.0 << 3;
+        li_vn_mode |= mode as u8;
+        buf[0] = li_vn_mode;
+        Ok(1)
+    }
+}
+
+impl ToBytes for ReferenceIdentifier {
+    fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, ParseError> {
+        if buf.len() < Self::PACKED_SIZE_BYTES {
+            return Err(ParseError::BufferTooShort {
+                needed: Self::PACKED_SIZE_BYTES,
+                available: buf.len(),
+            });
+        }
+        let bytes = self.as_bytes();
+        buf[..4].copy_from_slice(&bytes);
+        Ok(Self::PACKED_SIZE_BYTES)
+    }
+}
+
+impl ToBytes for Packet {
+    fn to_bytes(&self, buf: &mut [u8]) -> Result<usize, ParseError> {
+        if buf.len() < Self::PACKED_SIZE_BYTES {
+            return Err(ParseError::BufferTooShort {
+                needed: Self::PACKED_SIZE_BYTES,
+                available: buf.len(),
+            });
+        }
+
+        let mut offset = 0;
+
+        let li_vn_mode = (self.leap_indicator, self.version, self.mode);
+        offset += li_vn_mode.to_bytes(&mut buf[offset..])?;
+        offset += self.stratum.to_bytes(&mut buf[offset..])?;
+        buf[offset] = self.poll as u8;
+        offset += 1;
+        buf[offset] = self.precision as u8;
+        offset += 1;
+        offset += self.root_delay.to_bytes(&mut buf[offset..])?;
+        offset += self.root_dispersion.to_bytes(&mut buf[offset..])?;
+        offset += self.reference_id.to_bytes(&mut buf[offset..])?;
+        offset += self.reference_timestamp.to_bytes(&mut buf[offset..])?;
+        offset += self.origin_timestamp.to_bytes(&mut buf[offset..])?;
+        offset += self.receive_timestamp.to_bytes(&mut buf[offset..])?;
+        offset += self.transmit_timestamp.to_bytes(&mut buf[offset..])?;
+
+        Ok(offset)
     }
 }
 

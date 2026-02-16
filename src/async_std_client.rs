@@ -1,0 +1,692 @@
+// Copyright 2026 U.S. Federal Government (in countries where recognized)
+// SPDX-License-Identifier: Apache-2.0
+
+//! Continuous NTP client using the async-std runtime.
+//!
+//! This module provides the same continuous NTP client functionality as
+//! [`crate::client`] but using async-std instead of tokio. It maintains
+//! associations with one or more NTP servers, polling them at adaptive
+//! intervals per RFC 5905 Section 7.3 and supporting interleaved mode per
+//! RFC 9769.
+//!
+//! # Architecture
+//!
+//! The client uses a builder pattern for configuration. State is shared via
+//! `Arc<std::sync::RwLock<NtpSyncState>>` rather than a tokio watch channel.
+//!
+//! # Examples
+//!
+//! ```no_run
+//! # async fn example() -> std::io::Result<()> {
+//! let (client, state) = ntp::async_std_client::NtpClient::builder()
+//!     .server("pool.ntp.org:123")
+//!     .server("time.google.com:123")
+//!     .min_poll(4)
+//!     .max_poll(10)
+//!     .build()
+//!     .await?;
+//!
+//! // Spawn the poll loop.
+//! async_std::task::spawn(client.run());
+//!
+//! // Read the latest sync state at any time.
+//! let state = state.read().unwrap();
+//! println!("Offset: {:.6}s, Jitter: {:.6}s", state.offset, state.jitter);
+//! # Ok(())
+//! # }
+//! ```
+
+use async_std::net::UdpSocket;
+use log::{debug, warn};
+use std::io;
+use std::net::SocketAddr;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
+
+use crate::filter::{ClockSample, SampleFilter};
+use crate::{
+    KissOfDeathError, build_request_packet, compute_offset_delay, parse_and_validate_response,
+    protocol, unix_time,
+};
+
+#[cfg(feature = "nts-async-std")]
+use crate::async_std_nts;
+
+/// The current synchronization state, available to consumers via
+/// `Arc<RwLock<NtpSyncState>>`.
+#[derive(Clone, Debug)]
+pub struct NtpSyncState {
+    /// Best estimated clock offset in seconds (positive = local clock behind server).
+    pub offset: f64,
+    /// Best estimated round-trip delay in seconds.
+    pub delay: f64,
+    /// RMS jitter of recent samples in seconds.
+    pub jitter: f64,
+    /// Stratum of the best peer.
+    pub stratum: u8,
+    /// Whether interleaved mode is active for the best peer.
+    pub interleaved: bool,
+    /// When this state was last updated.
+    pub last_update: std::time::Instant,
+    /// Number of successful responses received across all peers.
+    pub total_responses: u64,
+    /// Whether the best peer is using NTS authentication.
+    pub nts_authenticated: bool,
+}
+
+impl Default for NtpSyncState {
+    fn default() -> Self {
+        NtpSyncState {
+            offset: 0.0,
+            delay: 0.0,
+            jitter: 0.0,
+            stratum: protocol::MAXSTRAT,
+            interleaved: false,
+            last_update: std::time::Instant::now(),
+            total_responses: 0,
+            nts_authenticated: false,
+        }
+    }
+}
+
+/// Result of polling a single peer.
+enum PollResult {
+    /// Successful basic-mode exchange.
+    Sample(ClockSample, bool /* interleaved */),
+    /// Server sent RATE kiss code.
+    RateKissCode,
+    /// Server sent DENY or RSTR kiss code.
+    DenyKissCode,
+}
+
+/// NTS-specific state for a peer.
+#[cfg(feature = "nts-async-std")]
+struct NtsPeerState {
+    c2s_key: Vec<u8>,
+    s2c_key: Vec<u8>,
+    cookies: Vec<Vec<u8>>,
+    aead_algorithm: u16,
+    nts_ke_server: String,
+    cookie_len: usize,
+}
+
+/// State maintained for a single NTP server peer.
+struct PeerState {
+    addr: SocketAddr,
+    poll_exponent: u8,
+    reachability: u8,
+    filter: SampleFilter,
+    stratum: Option<protocol::Stratum>,
+    prev_t1: Option<protocol::TimestampFormat>,
+    prev_t4: Option<protocol::TimestampFormat>,
+    current_t1: Option<protocol::TimestampFormat>,
+    interleaved: bool,
+    demobilized: bool,
+    #[cfg(feature = "nts-async-std")]
+    nts_state: Option<NtsPeerState>,
+}
+
+impl PeerState {
+    fn new(addr: SocketAddr, initial_poll: u8) -> Self {
+        PeerState {
+            addr,
+            poll_exponent: initial_poll,
+            reachability: 0,
+            filter: SampleFilter::new(),
+            stratum: None,
+            prev_t1: None,
+            prev_t4: None,
+            current_t1: None,
+            interleaved: false,
+            demobilized: false,
+            #[cfg(feature = "nts-async-std")]
+            nts_state: None,
+        }
+    }
+
+    #[cfg(feature = "nts-async-std")]
+    fn new_nts(
+        addr: SocketAddr,
+        initial_poll: u8,
+        ke: async_std_nts::NtsKeResult,
+        nts_ke_server: String,
+    ) -> Self {
+        let cookie_len = ke.cookies.first().map_or(0, |c| c.len());
+        PeerState {
+            addr,
+            poll_exponent: initial_poll,
+            reachability: 0,
+            filter: SampleFilter::new(),
+            stratum: None,
+            prev_t1: None,
+            prev_t4: None,
+            current_t1: None,
+            interleaved: false,
+            demobilized: false,
+            nts_state: Some(NtsPeerState {
+                c2s_key: ke.c2s_key,
+                s2c_key: ke.s2c_key,
+                cookies: ke.cookies,
+                aead_algorithm: ke.aead_algorithm,
+                nts_ke_server,
+                cookie_len,
+            }),
+        }
+    }
+
+    fn poll_interval(&self) -> Duration {
+        Duration::from_secs(1u64 << self.poll_exponent)
+    }
+
+    fn reach_success(&mut self) {
+        self.reachability = (self.reachability << 1) | 1;
+    }
+
+    fn reach_failure(&mut self) {
+        self.reachability <<= 1;
+    }
+
+    fn increase_poll(&mut self, max_poll: u8) {
+        if self.poll_exponent < max_poll {
+            self.poll_exponent += 1;
+        }
+    }
+
+    fn decrease_poll(&mut self, min_poll: u8) {
+        if self.poll_exponent > min_poll {
+            self.poll_exponent -= 1;
+        }
+    }
+
+    fn adjust_poll(&mut self, min_poll: u8, max_poll: u8) {
+        let jitter = self.filter.jitter();
+        if let Some(best) = self.filter.best_sample() {
+            if best.offset.abs() > 0.128 || (best.delay > 0.0 && jitter > best.delay * 4.0) {
+                self.decrease_poll(min_poll);
+            } else if self.filter.len() >= 4 {
+                self.increase_poll(max_poll);
+            }
+        }
+    }
+
+    fn sync_distance(&self) -> f64 {
+        match self.filter.best_sample() {
+            Some(s) => s.delay.abs() / 2.0 + self.filter.jitter(),
+            None => f64::MAX,
+        }
+    }
+}
+
+/// Classify a response as basic or interleaved mode and compute the clock sample.
+fn classify_and_compute(
+    response: &protocol::Packet,
+    t4: protocol::TimestampFormat,
+    current_t1: protocol::TimestampFormat,
+    prev_t1: Option<protocol::TimestampFormat>,
+    prev_t4: Option<protocol::TimestampFormat>,
+) -> io::Result<(ClockSample, bool)> {
+    if response.origin_timestamp == current_t1 {
+        let t4_instant = unix_time::Instant::from(t4);
+        let t1_instant = unix_time::timestamp_to_instant(current_t1, &t4_instant);
+        let t2_instant = unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
+        let t3_instant = unix_time::timestamp_to_instant(response.transmit_timestamp, &t4_instant);
+        let (offset, delay) =
+            compute_offset_delay(&t1_instant, &t2_instant, &t3_instant, &t4_instant);
+        Ok((
+            ClockSample {
+                offset,
+                delay,
+                age: 0.0,
+            },
+            false,
+        ))
+    } else if let (Some(pt1), Some(pt4)) = (prev_t1, prev_t4) {
+        if response.origin_timestamp == pt1 {
+            let t4_instant = unix_time::Instant::from(pt4);
+            let t1_instant = unix_time::timestamp_to_instant(pt1, &t4_instant);
+            let t2_instant =
+                unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
+            let t3_instant =
+                unix_time::timestamp_to_instant(response.transmit_timestamp, &t4_instant);
+            let (offset, delay) =
+                compute_offset_delay(&t1_instant, &t2_instant, &t3_instant, &t4_instant);
+            Ok((
+                ClockSample {
+                    offset,
+                    delay,
+                    age: 0.0,
+                },
+                true,
+            ))
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "origin timestamp mismatch: neither basic nor interleaved",
+            ))
+        }
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "origin timestamp mismatch: response does not match our request",
+        ))
+    }
+}
+
+/// Builder for configuring and creating an [`NtpClient`].
+pub struct NtpClientBuilder {
+    servers: Vec<String>,
+    #[cfg(feature = "nts-async-std")]
+    nts_servers: Vec<String>,
+    min_poll: u8,
+    max_poll: u8,
+    initial_poll: Option<u8>,
+}
+
+impl NtpClientBuilder {
+    fn new() -> Self {
+        NtpClientBuilder {
+            servers: Vec::new(),
+            #[cfg(feature = "nts-async-std")]
+            nts_servers: Vec::new(),
+            min_poll: protocol::MINPOLL,
+            max_poll: protocol::MAXPOLL,
+            initial_poll: None,
+        }
+    }
+
+    /// Add an NTP server address (hostname:port or ip:port).
+    pub fn server(mut self, addr: impl Into<String>) -> Self {
+        self.servers.push(addr.into());
+        self
+    }
+
+    /// Set minimum poll exponent (default: MINPOLL=4, i.e. 16s).
+    pub fn min_poll(mut self, exponent: u8) -> Self {
+        self.min_poll = exponent.clamp(protocol::MINPOLL, protocol::MAXPOLL);
+        self
+    }
+
+    /// Set maximum poll exponent (default: MAXPOLL=17, i.e. ~36h).
+    pub fn max_poll(mut self, exponent: u8) -> Self {
+        self.max_poll = exponent.clamp(protocol::MINPOLL, protocol::MAXPOLL);
+        self
+    }
+
+    /// Add an NTS server hostname.
+    #[cfg(feature = "nts-async-std")]
+    pub fn nts_server(mut self, hostname: impl Into<String>) -> Self {
+        self.nts_servers.push(hostname.into());
+        self
+    }
+
+    /// Set initial poll exponent. Defaults to min_poll.
+    pub fn initial_poll(mut self, exponent: u8) -> Self {
+        self.initial_poll = Some(exponent);
+        self
+    }
+
+    /// Build the client. Performs async DNS resolution for all servers.
+    ///
+    /// Returns the client (to be spawned) and a shared state handle.
+    pub async fn build(self) -> io::Result<(NtpClient, Arc<RwLock<NtpSyncState>>)> {
+        use async_std::net::ToSocketAddrs;
+
+        #[cfg(feature = "nts-async-std")]
+        let has_nts = !self.nts_servers.is_empty();
+        #[cfg(not(feature = "nts-async-std"))]
+        let has_nts = false;
+
+        if self.servers.is_empty() && !has_nts {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "at least one server address is required",
+            ));
+        }
+
+        let min_poll = self.min_poll;
+        let max_poll = if self.max_poll >= self.min_poll {
+            self.max_poll
+        } else {
+            self.min_poll
+        };
+        let initial_poll = self
+            .initial_poll
+            .unwrap_or(min_poll)
+            .clamp(min_poll, max_poll);
+
+        let mut peers = Vec::new();
+        for server in &self.servers {
+            let addrs: Vec<SocketAddr> = server.as_str().to_socket_addrs().await?.collect();
+            if let Some(&addr) = addrs.first() {
+                peers.push(PeerState::new(addr, initial_poll));
+            } else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("address resolved to no socket addresses: {server}"),
+                ));
+            }
+        }
+
+        #[cfg(feature = "nts-async-std")]
+        for nts_server in &self.nts_servers {
+            let ke = async_std_nts::nts_ke(nts_server).await?;
+            let addr_str = format!("{}:{}", ke.ntp_server, ke.ntp_port);
+            let addrs: Vec<SocketAddr> = addr_str.as_str().to_socket_addrs().await?.collect();
+            if let Some(&addr) = addrs.first() {
+                peers.push(PeerState::new_nts(
+                    addr,
+                    initial_poll,
+                    ke,
+                    nts_server.clone(),
+                ));
+            } else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!(
+                        "NTS NTP server resolved to no socket addresses: {}",
+                        nts_server
+                    ),
+                ));
+            }
+        }
+
+        let state = Arc::new(RwLock::new(NtpSyncState::default()));
+
+        Ok((
+            NtpClient {
+                peers,
+                state: Arc::clone(&state),
+                min_poll,
+                max_poll,
+                total_responses: 0,
+            },
+            state,
+        ))
+    }
+}
+
+/// A continuous NTP client using the async-std runtime.
+///
+/// Created via [`NtpClient::builder()`]. Call [`run()`](NtpClient::run) to start
+/// the poll loop (typically via `async_std::task::spawn`).
+pub struct NtpClient {
+    peers: Vec<PeerState>,
+    state: Arc<RwLock<NtpSyncState>>,
+    min_poll: u8,
+    max_poll: u8,
+    total_responses: u64,
+}
+
+impl NtpClient {
+    /// Create a builder for configuring the client.
+    pub fn builder() -> NtpClientBuilder {
+        NtpClientBuilder::new()
+    }
+
+    /// Run the continuous poll loop. This future runs indefinitely.
+    pub async fn run(mut self) {
+        let mut next_poll: Vec<std::time::Instant> = self
+            .peers
+            .iter()
+            .map(|_| std::time::Instant::now())
+            .collect();
+
+        loop {
+            let now = std::time::Instant::now();
+
+            // Find the peer with the earliest next poll time that isn't demobilized.
+            let next = next_poll
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !self.peers[*i].demobilized)
+                .min_by_key(|(_, t)| *t);
+
+            let (idx, &deadline) = match next {
+                Some(n) => n,
+                None => {
+                    warn!("all peers demobilized, stopping poll loop");
+                    return;
+                }
+            };
+
+            // Sleep until the deadline.
+            if deadline > now {
+                async_std::task::sleep(deadline - now).await;
+            }
+
+            debug!(
+                "polling peer {} (poll interval: {}s)",
+                self.peers[idx].addr,
+                1u64 << self.peers[idx].poll_exponent
+            );
+
+            let result = Self::poll_peer(&mut self.peers[idx]).await;
+
+            match result {
+                Ok(PollResult::Sample(sample, interleaved)) => {
+                    let peer = &mut self.peers[idx];
+                    peer.reach_success();
+                    peer.filter.add(sample.offset, sample.delay);
+                    peer.interleaved = interleaved;
+                    peer.adjust_poll(self.min_poll, self.max_poll);
+                    self.total_responses += 1;
+                    self.publish_best_state();
+                    debug!(
+                        "peer {}: offset={:.6}s delay={:.6}s interleaved={}",
+                        self.peers[idx].addr, sample.offset, sample.delay, interleaved
+                    );
+                }
+                Ok(PollResult::RateKissCode) => {
+                    self.peers[idx].reach_success();
+                    self.peers[idx].decrease_poll(self.min_poll);
+                    warn!(
+                        "peer {} sent RATE, reducing poll interval",
+                        self.peers[idx].addr
+                    );
+                }
+                Ok(PollResult::DenyKissCode) => {
+                    self.peers[idx].demobilized = true;
+                    warn!("peer {} sent DENY/RSTR, demobilizing", self.peers[idx].addr);
+                }
+                Err(e) => {
+                    self.peers[idx].reach_failure();
+                    debug!("peer {} poll failed: {}", self.peers[idx].addr, e);
+                }
+            }
+
+            // Schedule next poll for this peer.
+            next_poll[idx] = std::time::Instant::now() + self.peers[idx].poll_interval();
+        }
+    }
+
+    /// Poll a single peer and return the result.
+    async fn poll_peer(peer: &mut PeerState) -> io::Result<PollResult> {
+        #[cfg(feature = "nts-async-std")]
+        if peer.nts_state.is_some() {
+            let mut nts = peer.nts_state.take().unwrap();
+            let result = Self::poll_peer_nts(peer, &mut nts).await;
+            peer.nts_state = Some(nts);
+            return result;
+        }
+
+        let bind_addr = crate::bind_addr_for(&peer.addr);
+        let sock = UdpSocket::bind(bind_addr).await?;
+
+        let (send_buf, t1) = build_request_packet()?;
+        peer.current_t1 = Some(t1);
+
+        let timeout = Duration::from_secs(5);
+
+        // Send with timeout.
+        async_std::future::timeout(timeout, sock.send_to(&send_buf, peer.addr))
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP send timed out"))??;
+
+        // Receive with timeout.
+        let mut recv_buf = [0u8; 1024];
+        let (recv_len, src_addr) =
+            async_std::future::timeout(timeout, sock.recv_from(&mut recv_buf))
+                .await
+                .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out"))??;
+
+        let parse_result = parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
+
+        match parse_result {
+            Err(e) => {
+                if let Some(kod) = e
+                    .get_ref()
+                    .and_then(|inner| inner.downcast_ref::<KissOfDeathError>())
+                {
+                    return match kod.code {
+                        protocol::KissOfDeath::Rate => Ok(PollResult::RateKissCode),
+                        protocol::KissOfDeath::Deny | protocol::KissOfDeath::Rstr => {
+                            Ok(PollResult::DenyKissCode)
+                        }
+                    };
+                }
+                Err(e)
+            }
+            Ok((response, t4)) => {
+                peer.stratum = Some(response.stratum);
+
+                let (sample, interleaved) =
+                    classify_and_compute(&response, t4, t1, peer.prev_t1, peer.prev_t4)?;
+
+                peer.prev_t1 = peer.current_t1;
+                peer.prev_t4 = Some(t4);
+
+                Ok(PollResult::Sample(sample, interleaved))
+            }
+        }
+    }
+
+    #[cfg(feature = "nts-async-std")]
+    async fn poll_peer_nts(
+        peer: &mut PeerState,
+        nts_state: &mut NtsPeerState,
+    ) -> io::Result<PollResult> {
+        // Replenish cookies if running low.
+        if nts_state.cookies.len() <= async_std_nts::COOKIE_REKEY_THRESHOLD {
+            debug!(
+                "peer {}: {} cookies remaining, attempting NTS-KE re-key",
+                peer.addr,
+                nts_state.cookies.len()
+            );
+            match async_std_nts::nts_ke(&nts_state.nts_ke_server).await {
+                Ok(ke) => {
+                    nts_state.c2s_key = ke.c2s_key;
+                    nts_state.s2c_key = ke.s2c_key;
+                    nts_state.cookies = ke.cookies;
+                    nts_state.aead_algorithm = ke.aead_algorithm;
+                    nts_state.cookie_len = nts_state.cookies.first().map_or(0, |c| c.len());
+                    debug!(
+                        "peer {}: NTS-KE re-key successful, {} cookies",
+                        peer.addr,
+                        nts_state.cookies.len()
+                    );
+                }
+                Err(e) => {
+                    warn!("peer {}: NTS-KE re-key failed: {}", peer.addr, e);
+                }
+            }
+        }
+
+        let cookie = nts_state
+            .cookies
+            .pop()
+            .ok_or_else(|| io::Error::other("no NTS cookies remaining"))?;
+
+        let (send_buf, t1, uid_data) =
+            async_std_nts::build_nts_request(&nts_state.c2s_key, nts_state.aead_algorithm, cookie)?;
+        peer.current_t1 = Some(t1);
+
+        let bind_addr = crate::bind_addr_for(&peer.addr);
+        let sock = UdpSocket::bind(bind_addr).await?;
+        let timeout = Duration::from_secs(5);
+
+        async_std::future::timeout(timeout, sock.send_to(&send_buf, peer.addr))
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP send timed out"))??;
+
+        let mut recv_buf = [0u8; 2048];
+        let (recv_len, src_addr) =
+            async_std::future::timeout(timeout, sock.recv_from(&mut recv_buf))
+                .await
+                .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out"))??;
+
+        let parse_result = parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
+
+        match parse_result {
+            Err(e) => {
+                if let Some(kod) = e
+                    .get_ref()
+                    .and_then(|inner| inner.downcast_ref::<KissOfDeathError>())
+                {
+                    return match kod.code {
+                        protocol::KissOfDeath::Rate => Ok(PollResult::RateKissCode),
+                        protocol::KissOfDeath::Deny | protocol::KissOfDeath::Rstr => {
+                            Ok(PollResult::DenyKissCode)
+                        }
+                    };
+                }
+                Err(e)
+            }
+            Ok((response, t4)) => {
+                let new_cookies = async_std_nts::validate_nts_response(
+                    &nts_state.s2c_key,
+                    nts_state.aead_algorithm,
+                    &uid_data,
+                    &recv_buf,
+                    recv_len,
+                )?;
+                nts_state.cookies.extend(new_cookies);
+
+                peer.stratum = Some(response.stratum);
+
+                let (sample, interleaved) =
+                    classify_and_compute(&response, t4, t1, peer.prev_t1, peer.prev_t4)?;
+
+                peer.prev_t1 = peer.current_t1;
+                peer.prev_t4 = Some(t4);
+
+                Ok(PollResult::Sample(sample, interleaved))
+            }
+        }
+    }
+
+    /// Select the best peer and publish its state.
+    fn publish_best_state(&self) {
+        let best = self
+            .peers
+            .iter()
+            .filter(|p| !p.demobilized && p.filter.best_sample().is_some())
+            .min_by(|a, b| {
+                a.sync_distance()
+                    .partial_cmp(&b.sync_distance())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+        if let Some(peer) = best
+            && let Some(sample) = peer.filter.best_sample()
+        {
+            #[cfg(feature = "nts-async-std")]
+            let nts_authenticated = peer.nts_state.is_some();
+            #[cfg(not(feature = "nts-async-std"))]
+            let nts_authenticated = false;
+
+            let state = NtpSyncState {
+                offset: sample.offset,
+                delay: sample.delay,
+                jitter: peer.filter.jitter(),
+                stratum: peer.stratum.map_or(protocol::MAXSTRAT, |s| s.0),
+                interleaved: peer.interleaved,
+                last_update: std::time::Instant::now(),
+                total_responses: self.total_responses,
+                nts_authenticated,
+            };
+            if let Ok(mut guard) = self.state.write() {
+                *guard = state;
+            }
+        }
+    }
+}

@@ -1,4 +1,5 @@
 use crate::protocol;
+#[cfg(feature = "std")]
 use std::time;
 
 /// The number of seconds from 1st January 1900 UTC to the start of the Unix epoch.
@@ -29,9 +30,10 @@ const NTP_SCALE_64: f64 = u64::MAX as f64;
 ///
 /// ## Example
 ///
-/// Here is a demonstration of displaying the **Instant** in local time using the chrono crate:
+/// Here is a demonstration of displaying the **Instant** in local time using the chrono crate
+/// (requires the `std` feature):
 ///
-/// ```
+/// ```ignore
 /// extern crate chrono;
 /// extern crate ntp;
 ///
@@ -77,6 +79,7 @@ impl Instant {
     ///     println!("{:?}", ntp::unix_time::Instant::now());
     /// }
     /// ```
+    #[cfg(feature = "std")]
     pub fn now() -> Self {
         match time::SystemTime::now().duration_since(time::UNIX_EPOCH) {
             Ok(duration) => {
@@ -156,6 +159,7 @@ impl From<protocol::ShortFormat> for Instant {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<protocol::TimestampFormat> for Instant {
     /// Converts a 32-bit NTP timestamp to a Unix [`Instant`], using the current system
     /// time as a pivot for era disambiguation.
@@ -223,7 +227,7 @@ impl From<Instant> for protocol::DateFormat {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

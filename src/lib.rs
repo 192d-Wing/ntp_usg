@@ -20,26 +20,15 @@ fn main() {
 ```
 */
 
-#![forbid(unsafe_code)]
+#![cfg_attr(not(feature = "std"), no_std)]
+#![deny(unsafe_code)]
 #![warn(missing_docs)]
 
-use log::debug;
-use protocol::{ConstPackedSizeBytes, ReadBytes, WriteBytes};
-use std::io;
-use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
-use std::ops::Deref;
-use std::time::Duration;
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
-/// Select the appropriate bind address based on the target address family.
-///
-/// Returns `"0.0.0.0:0"` for IPv4 targets and `"[::]:0"` for IPv6 targets.
-pub(crate) fn bind_addr_for(target: &SocketAddr) -> &'static str {
-    match target {
-        SocketAddr::V4(_) => "0.0.0.0:0",
-        SocketAddr::V6(_) => "[::]:0",
-    }
-}
-
+/// Custom error types for buffer-based NTP packet parsing and serialization.
+pub mod error;
 /// NTP extension field parsing and NTS extension types.
 ///
 /// Provides types for parsing and serializing NTP extension fields (RFC 7822)
@@ -56,7 +45,7 @@ pub mod unix_time;
 ///
 /// Implements a simplified version of the RFC 5905 Section 10 clock filter
 /// algorithm.
-#[cfg(feature = "tokio")]
+#[cfg(any(feature = "tokio", feature = "async-std-runtime"))]
 pub mod filter;
 
 /// Continuous NTP client with adaptive poll interval management and interleaved mode.
@@ -82,6 +71,20 @@ pub mod client;
 #[cfg(feature = "nts")]
 pub mod nts;
 
+/// System clock adjustment utilities for applying NTP corrections.
+///
+/// Provides platform-specific functions for slewing (gradual) and stepping
+/// (immediate) the system clock. Requires elevated privileges (root/admin).
+///
+/// Enable with the `clock` feature flag:
+///
+/// ```toml
+/// [dependencies]
+/// ntp_usg = { version = "1.1", features = ["clock"] }
+/// ```
+#[cfg(feature = "clock")]
+pub mod clock;
+
 /// Async NTP client functions using the Tokio runtime.
 ///
 /// Enable with the `tokio` feature flag:
@@ -94,6 +97,72 @@ pub mod nts;
 /// See [`async_ntp::request`] and [`async_ntp::request_with_timeout`] for details.
 #[cfg(feature = "tokio")]
 pub mod async_ntp;
+
+/// Async NTP client functions using the async-std runtime.
+///
+/// Enable with the `async-std-runtime` feature flag:
+///
+/// ```toml
+/// [dependencies]
+/// ntp_usg = { version = "1.1", features = ["async-std-runtime"] }
+/// ```
+///
+/// See [`async_std_ntp::request`] and [`async_std_ntp::request_with_timeout`] for details.
+#[cfg(feature = "async-std-runtime")]
+pub mod async_std_ntp;
+
+/// Continuous NTP client using the async-std runtime.
+///
+/// Enable with the `async-std-runtime` feature flag:
+///
+/// ```toml
+/// [dependencies]
+/// ntp_usg = { version = "1.1", features = ["async-std-runtime"] }
+/// ```
+#[cfg(feature = "async-std-runtime")]
+pub mod async_std_client;
+
+/// Network Time Security (NTS) client using the async-std runtime (RFC 8915).
+///
+/// Provides the same NTS functionality as [`nts`] but using async-std
+/// and futures-rustls instead of tokio and tokio-rustls.
+///
+/// Enable with the `nts-async-std` feature flag:
+///
+/// ```toml
+/// [dependencies]
+/// ntp_usg = { version = "1.1", features = ["nts-async-std"] }
+/// ```
+#[cfg(feature = "nts-async-std")]
+pub mod async_std_nts;
+
+// ============================================================================
+// Everything below requires std (networking, blocking I/O, etc.)
+// ============================================================================
+
+#[cfg(feature = "std")]
+use log::debug;
+#[cfg(feature = "std")]
+use protocol::{ConstPackedSizeBytes, ReadBytes, WriteBytes};
+#[cfg(feature = "std")]
+use std::io;
+#[cfg(feature = "std")]
+use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
+#[cfg(feature = "std")]
+use std::ops::Deref;
+#[cfg(feature = "std")]
+use std::time::Duration;
+
+/// Select the appropriate bind address based on the target address family.
+///
+/// Returns `"0.0.0.0:0"` for IPv4 targets and `"[::]:0"` for IPv6 targets.
+#[cfg(feature = "std")]
+pub(crate) fn bind_addr_for(target: &SocketAddr) -> &'static str {
+    match target {
+        SocketAddr::V4(_) => "0.0.0.0:0",
+        SocketAddr::V6(_) => "[::]:0",
+    }
+}
 
 /// Error returned when the server responds with a Kiss-o'-Death (KoD) packet.
 ///
@@ -123,12 +192,14 @@ pub mod async_ntp;
 /// # Ok(())
 /// # }
 /// ```
+#[cfg(feature = "std")]
 #[derive(Clone, Copy, Debug)]
 pub struct KissOfDeathError {
     /// The specific kiss code received from the server.
     pub code: protocol::KissOfDeath,
 }
 
+#[cfg(feature = "std")]
 impl std::fmt::Display for KissOfDeathError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.code {
@@ -151,6 +222,7 @@ impl std::fmt::Display for KissOfDeathError {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for KissOfDeathError {}
 
 /// The result of an NTP request, containing the server's response packet
@@ -158,6 +230,7 @@ impl std::error::Error for KissOfDeathError {}
 ///
 /// This struct implements `Deref<Target = protocol::Packet>`, so all packet
 /// fields can be accessed directly (e.g., `result.transmit_timestamp`).
+#[cfg(feature = "std")]
 #[derive(Clone, Copy, Debug)]
 pub struct NtpResult {
     /// The parsed NTP response packet from the server.
@@ -183,6 +256,7 @@ pub struct NtpResult {
     pub delay_seconds: f64,
 }
 
+#[cfg(feature = "std")]
 impl Deref for NtpResult {
     type Target = protocol::Packet;
     fn deref(&self) -> &Self::Target {
@@ -191,12 +265,14 @@ impl Deref for NtpResult {
 }
 
 /// Convert a Unix `Instant` to seconds as f64 (relative to Unix epoch).
+#[cfg(feature = "std")]
 fn instant_to_f64(instant: &unix_time::Instant) -> f64 {
     instant.secs() as f64 + (instant.subsec_nanos() as f64 / 1e9)
 }
 
 /// Compute clock offset and round-trip delay from the four NTP timestamps
 /// using era-aware `Instant` values.
+#[cfg(feature = "std")]
 pub(crate) fn compute_offset_delay(
     t1: &unix_time::Instant,
     t2: &unix_time::Instant,
@@ -215,6 +291,7 @@ pub(crate) fn compute_offset_delay(
 /// Build an NTP client request packet and serialize it.
 ///
 /// Returns the serialized buffer and the origin timestamp (T1).
+#[cfg(feature = "std")]
 pub(crate) fn build_request_packet() -> io::Result<(
     [u8; protocol::Packet::PACKED_SIZE_BYTES],
     protocol::TimestampFormat,
@@ -250,6 +327,7 @@ pub(crate) fn build_request_packet() -> io::Result<(
 /// Returns the parsed packet and the destination timestamp (T4). This is used
 /// by both the one-shot [`validate_response`] and the continuous client (which
 /// does its own origin timestamp handling for interleaved mode support).
+#[cfg(feature = "std")]
 pub(crate) fn parse_and_validate_response(
     recv_buf: &[u8],
     recv_len: usize,
@@ -322,6 +400,7 @@ pub(crate) fn parse_and_validate_response(
 /// Delegates to [`parse_and_validate_response`] for common checks, then
 /// verifies the origin timestamp (anti-replay) and computes clock offset
 /// and round-trip delay.
+#[cfg(feature = "std")]
 pub(crate) fn validate_response(
     recv_buf: &[u8],
     recv_len: usize,
@@ -397,6 +476,7 @@ pub(crate) fn validate_response(
 /// - DNS resolution fails
 /// - Response fails validation (wrong mode, origin timestamp mismatch, etc.)
 /// - Server sent a Kiss-o'-Death packet (see [`KissOfDeathError`])
+#[cfg(feature = "std")]
 pub fn request<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
     request_with_timeout(addr, Duration::from_secs(5))
 }
@@ -443,6 +523,7 @@ pub fn request<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
 /// - Server responds with unexpected mode or zero transmit timestamp
 /// - Server reports unsynchronized clock (LI=Unknown with non-zero stratum)
 /// - Server sent a Kiss-o'-Death packet (see [`KissOfDeathError`])
+#[cfg(feature = "std")]
 pub fn request_with_timeout<A: ToSocketAddrs>(addr: A, timeout: Duration) -> io::Result<NtpResult> {
     // Resolve the target address eagerly so we can verify the response source.
     let resolved_addrs: Vec<SocketAddr> = addr.to_socket_addrs()?.collect();
@@ -476,12 +557,14 @@ pub fn request_with_timeout<A: ToSocketAddrs>(addr: A, timeout: Duration) -> io:
     validate_response(&recv_buf, recv_len, src_addr, &resolved_addrs, &t1)
 }
 
+#[cfg(all(test, feature = "std"))]
 #[test]
 fn test_request_ntp_org() {
     let res = request("0.pool.ntp.org:123");
     let _ = res.expect("Failed to get a ntp packet from ntp.org");
 }
 
+#[cfg(all(test, feature = "std"))]
 #[test]
 fn test_request_google() {
     let res = request("time.google.com:123");
