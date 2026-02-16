@@ -78,7 +78,7 @@ futures-lite = { version = "2", optional = true }
 libc = { version = "0.2", optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", optional = true, features = [
+windows-sys = { version = "0.61", optional = true, features = [
     "Win32_System_SystemInformation",
     "Win32_System_Time",
     "Win32_Foundation",
