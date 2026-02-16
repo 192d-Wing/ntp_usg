@@ -1,28 +1,29 @@
 // Copyright 2026 U.S. Federal Government (in countries where recognized)
 // SPDX-License-Identifier: Apache-2.0
 
-//! Async NTP client using the async-std runtime.
+//! Async NTP client using the smol runtime.
 //!
 //! This module provides async versions of the synchronous [`request`](crate::request) and
 //! [`request_with_timeout`](crate::request_with_timeout) functions, using
-//! [`async_std::net::UdpSocket`] for non-blocking I/O.
+//! [`smol::net::UdpSocket`] for non-blocking I/O.
 //!
 //! # Runtime Requirements
 //!
-//! These functions must be called from within an async-std runtime context.
+//! These functions must be called from within a smol runtime context
+//! (e.g., inside `smol::block_on` or a `smol::spawn`ed task).
 //!
 //! # Examples
 //!
 //! ```no_run
 //! # async fn example() -> std::io::Result<()> {
-//! let result = ntp::async_std_ntp::request("pool.ntp.org:123").await?;
+//! let result = ntp::smol_ntp::request("pool.ntp.org:123").await?;
 //! println!("Offset: {:.6} seconds", result.offset_seconds);
 //! # Ok(())
 //! # }
 //! ```
 
-use async_std::net::{ToSocketAddrs, UdpSocket};
 use log::debug;
+use smol::net::UdpSocket;
 use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -41,19 +42,20 @@ use crate::{NtpResult, build_request_packet, validate_response};
 ///
 /// ```no_run
 /// # async fn example() -> std::io::Result<()> {
-/// let result = ntp::async_std_ntp::request("pool.ntp.org:123").await?;
+/// let result = ntp::smol_ntp::request("pool.ntp.org:123").await?;
 /// println!("Offset: {:.6} seconds", result.offset_seconds);
 /// # Ok(())
 /// # }
 /// ```
-pub async fn request<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
+pub async fn request(addr: &str) -> io::Result<NtpResult> {
     request_with_timeout(addr, Duration::from_secs(5)).await
 }
 
 /// Send an async request to an NTP server with a configurable timeout.
 ///
 /// Constructs an NTPv4 client-mode packet, sends it to the specified server, and validates
-/// the response per RFC 5905. Uses [`async_std::future::timeout`] for async-friendly timeouts.
+/// the response per RFC 5905. Uses [`futures_lite::future::or`] with [`smol::Timer`] for
+/// async-friendly timeouts.
 ///
 /// # Arguments
 ///
@@ -65,7 +67,7 @@ pub async fn request<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
 /// ```no_run
 /// # async fn example() -> std::io::Result<()> {
 /// use std::time::Duration;
-/// let result = ntp::async_std_ntp::request_with_timeout(
+/// let result = ntp::smol_ntp::request_with_timeout(
 ///     "pool.ntp.org:123",
 ///     Duration::from_secs(10),
 /// ).await?;
@@ -73,19 +75,21 @@ pub async fn request<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
 /// # Ok(())
 /// # }
 /// ```
-pub async fn request_with_timeout<A: ToSocketAddrs>(
-    addr: A,
-    timeout: Duration,
-) -> io::Result<NtpResult> {
-    async_std::future::timeout(timeout, request_inner(addr))
-        .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP request timed out"))?
+pub async fn request_with_timeout(addr: &str, timeout: Duration) -> io::Result<NtpResult> {
+    futures_lite::future::or(request_inner(addr), async {
+        smol::Timer::after(timeout).await;
+        Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "NTP request timed out",
+        ))
+    })
+    .await
 }
 
 /// Inner async implementation without timeout wrapping.
-async fn request_inner<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
-    // Async DNS resolution via async-std.
-    let resolved_addrs: Vec<SocketAddr> = addr.to_socket_addrs().await?.collect();
+async fn request_inner(addr: &str) -> io::Result<NtpResult> {
+    // Async DNS resolution via smol.
+    let resolved_addrs: Vec<SocketAddr> = smol::net::resolve(addr).await?;
     if resolved_addrs.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
