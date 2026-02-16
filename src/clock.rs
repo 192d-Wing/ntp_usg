@@ -170,6 +170,7 @@ mod platform {
 
         // Apply offset.
         let offset_nanos = (offset_seconds * 1_000_000_000.0) as i64;
+        #[allow(clippy::unnecessary_cast)] // tv_sec/tv_nsec types differ across platforms
         let total_nanos = tp.tv_sec as i64 * 1_000_000_000 + tp.tv_nsec as i64 + offset_nanos;
         tp.tv_sec = (total_nanos / 1_000_000_000) as _;
         tp.tv_nsec = (total_nanos % 1_000_000_000) as _;
