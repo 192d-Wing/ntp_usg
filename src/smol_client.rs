@@ -518,18 +518,23 @@ impl NtpClient {
         // Send with timeout.
         futures_lite::future::or(sock.send_to(&send_buf, peer.addr), async {
             smol::Timer::after(timeout).await;
-            Err(io::Error::new(io::ErrorKind::TimedOut, "NTP send timed out"))
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "NTP send timed out",
+            ))
         })
         .await?;
 
         // Receive with timeout.
         let mut recv_buf = [0u8; 1024];
-        let (recv_len, src_addr) =
-            futures_lite::future::or(sock.recv_from(&mut recv_buf), async {
-                smol::Timer::after(timeout).await;
-                Err(io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out"))
-            })
-            .await?;
+        let (recv_len, src_addr) = futures_lite::future::or(sock.recv_from(&mut recv_buf), async {
+            smol::Timer::after(timeout).await;
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "NTP recv timed out",
+            ))
+        })
+        .await?;
 
         let parse_result = parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
 
@@ -608,17 +613,22 @@ impl NtpClient {
 
         futures_lite::future::or(sock.send_to(&send_buf, peer.addr), async {
             smol::Timer::after(timeout).await;
-            Err(io::Error::new(io::ErrorKind::TimedOut, "NTP send timed out"))
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "NTP send timed out",
+            ))
         })
         .await?;
 
         let mut recv_buf = [0u8; 2048];
-        let (recv_len, src_addr) =
-            futures_lite::future::or(sock.recv_from(&mut recv_buf), async {
-                smol::Timer::after(timeout).await;
-                Err(io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out"))
-            })
-            .await?;
+        let (recv_len, src_addr) = futures_lite::future::or(sock.recv_from(&mut recv_buf), async {
+            smol::Timer::after(timeout).await;
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "NTP recv timed out",
+            ))
+        })
+        .await?;
 
         let parse_result = parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
 
