@@ -97,9 +97,7 @@ impl GpsReceiver {
         let port = serialport::new(config.device.to_string_lossy(), config.baud_rate)
             .timeout(Duration::from_millis(100))
             .open()
-            .map_err(|e| {
-                io::Error::other(format!("Failed to open GPS serial port: {}", e))
-            })?;
+            .map_err(|e| io::Error::other(format!("Failed to open GPS serial port: {}", e)))?;
 
         let (sample_tx, sample_rx) = mpsc::unbounded_channel();
 

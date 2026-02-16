@@ -146,9 +146,8 @@ impl PpsReceiver {
     /// ```
     pub fn new(config: PpsConfig) -> io::Result<Self> {
         // Open PPS device
-        let device = File::open(&config.device).map_err(|e| {
-            io::Error::other(format!("Failed to open PPS device: {}", e))
-        })?;
+        let device = File::open(&config.device)
+            .map_err(|e| io::Error::other(format!("Failed to open PPS device: {}", e)))?;
 
         // Get PPS capabilities
         let capabilities = unsafe {
