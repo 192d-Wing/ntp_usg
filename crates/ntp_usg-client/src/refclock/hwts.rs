@@ -5,6 +5,7 @@
 // sub-microsecond accuracy for NTP packets.
 //
 // Requires Linux kernel 2.6.30+ with hardware timestamping support.
+#![allow(unsafe_code)]
 
 use std::io;
 use std::mem;
