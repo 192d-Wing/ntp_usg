@@ -210,32 +210,43 @@ Web-based monitoring dashboard for real-time NTP client monitoring (`examples/we
 ## Version 3.3.0 - Hardware Integration
 
 **Target**: Q3 2026
+**Status**: In Progress (2/4 components complete)
 
 ### Reference Clock Interface
 
-**Status**: Planned
-
 Add support for high-precision reference clocks:
 
-- [ ] **GPS receivers**
-  - NMEA protocol parsing
-  - PPS signal integration
-  - Stratum 1 operation
+- [x] **GPS receivers** ✅
+  - NMEA protocol parsing (GGA, RMC, ZDA)
+  - Serial port communication
+  - Fix quality validation
+  - Unix timestamp conversion
+  - Example: `examples/gps_receiver.rs`
 
-- [ ] **PPS (Pulse Per Second)**
-  - Kernel PPS support (Linux)
-  - Hardware timestamping
-  - Nanosecond precision
+- [x] **PPS (Pulse Per Second)** ✅
+  - Linux kernel PPS API support
+  - Assert/Clear/Both edge capture
+  - Nanosecond precision timestamps
+  - Async ioctl interface
+  - Example: `examples/pps_receiver.rs`
 
-- [ ] **Hardware timestamping**
+- [x] **Reference clock API** ✅
+  - Generic RefClock trait
+  - RefClockSample with offset/dispersion/quality
+  - LocalClock for testing
+  - Documentation: `src/refclock/README.md`
+
+- [ ] **Hardware timestamping** 🚧
   - NIC hardware timestamps
   - SO_TIMESTAMPING support
   - Reduced network jitter
+  - Planned for future release
 
-- [ ] **Reference clock API**
-  - Generic RefClock trait
-  - Multiple clock sources
-  - Weighted combination
+- [ ] **Stratum 1 server integration** 🚧
+  - Integrate RefClock with NtpServer
+  - Automatic stratum setting
+  - Reference ID from clock source
+  - Planned for future release
 
 ---
 
@@ -274,16 +285,33 @@ Have ideas for the roadmap? Open an issue with the `enhancement` label or start 
 ---
 
 **Last Updated**: 2026-02-16
-**Current Version**: 3.1.0
-**Next Planned Release**: 3.2.0 (Q2 2026)
+**Current Version**: 3.2.0
+**Next Planned Release**: 3.3.0 (Q3 2026)
 
 ## Version 3.2.0 Progress Summary
 
-**Completion Status**: 4/4 major objectives completed (100%)
+**Completion Status**: 4/4 major objectives completed (100%) ✅
 
 - ✅ More Extensive Examples: 3 production examples
 - ✅ Integration Tests: 16 tests against real servers
 - ✅ Docker Testing Environment: Full Docker Compose setup
 - ✅ Web Dashboard: Real-time monitoring with 3 API endpoints
 
-All major v3.2.0 deliverables have been completed ahead of schedule!
+All major v3.2.0 deliverables completed!
+
+## Version 3.3.0 Progress Summary
+
+**Completion Status**: 2/4 major objectives completed (50%) 🚧
+
+- ✅ GPS Receiver Support: NMEA parser, serial interface, example
+- ✅ PPS Integration: Linux kernel PPS API, nanosecond precision
+- ✅ RefClock Trait: Generic hardware time source abstraction
+- 🚧 Hardware Timestamping: Planned
+- 🚧 Stratum 1 Server Mode: Planned
+
+**Recent Additions:**
+
+- 1,777 lines of new code (GPS + PPS + RefClock)
+- 2 new examples (gps_receiver, pps_receiver)
+- 3 new feature flags (refclock, gps, pps)
+- Comprehensive documentation and tests
