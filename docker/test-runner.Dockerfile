@@ -1,5 +1,5 @@
 # Test runner container for integration tests
-FROM rust:1.93-slim
+FROM rust:1-slim
 
 WORKDIR /workspace
 

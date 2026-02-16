@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.93-slim as builder
+FROM rust:1-slim AS builder
 
 WORKDIR /build
 
@@ -42,7 +42,7 @@ EOF
 RUN cargo build --release --example docker_server --features ntp_usg-server/tokio
 
 # Runtime stage
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 # Install runtime dependencies
 RUN apt-get update && \
