@@ -670,6 +670,73 @@ mod tests {
     }
 
     #[test]
+    fn test_reachability_max_then_overflow() {
+        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
+        for _ in 0..8 {
+            peer.reach_success();
+        }
+        assert_eq!(peer.reachability, 0xFF);
+        peer.reach_success();
+        assert_eq!(peer.reachability, 0xFF); // Still all 1s
+    }
+
+    #[test]
+    fn test_reachability_alternating() {
+        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
+        peer.reach_success(); // 0b0000_0001
+        peer.reach_failure(); // 0b0000_0010
+        peer.reach_success(); // 0b0000_0101
+        peer.reach_failure(); // 0b0000_1010
+        assert_eq!(peer.reachability, 0b0000_1010);
+    }
+
+    #[test]
+    fn test_increase_poll_normal() {
+        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), 8);
+        peer.increase_poll(protocol::MAXPOLL);
+        assert_eq!(peer.poll_exponent, 9);
+    }
+
+    #[test]
+    fn test_decrease_poll_normal() {
+        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), 8);
+        peer.decrease_poll(protocol::MINPOLL);
+        assert_eq!(peer.poll_exponent, 7);
+    }
+
+    #[test]
+    fn test_sync_distance_no_samples() {
+        let peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
+        assert_eq!(peer.sync_distance(), f64::MAX);
+    }
+
+    #[test]
+    fn test_sync_distance_with_samples() {
+        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
+        peer.filter.add(0.001, 0.100);
+        let dist = peer.sync_distance();
+        assert!(dist > 0.0);
+        assert!(dist < f64::MAX);
+    }
+
+    #[test]
+    fn test_poll_interval_various_exponents() {
+        for exp in protocol::MINPOLL..=protocol::MAXPOLL {
+            let peer = PeerState::new("127.0.0.1:123".parse().unwrap(), exp);
+            let expected = Duration::from_secs(1u64 << exp);
+            assert_eq!(peer.poll_interval(), expected);
+        }
+    }
+
+    #[test]
+    fn test_adjust_poll_no_samples() {
+        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), 6);
+        let original = peer.poll_exponent;
+        peer.adjust_poll(protocol::MINPOLL, protocol::MAXPOLL);
+        assert_eq!(peer.poll_exponent, original);
+    }
+
+    #[test]
     fn test_adjust_poll_large_offset() {
         let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), 10);
         peer.filter.add(0.5, 0.050);

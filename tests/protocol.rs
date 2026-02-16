@@ -523,3 +523,202 @@ fn buf_extra_bytes_after_packet_ignored() {
         ReferenceIdentifier::PrimarySource(PrimarySource::Gps)
     );
 }
+
+// ============================================================================
+// TryFrom conversion tests
+// ============================================================================
+
+#[test]
+fn leap_indicator_try_from_all_variants() {
+    assert_eq!(
+        LeapIndicator::try_from(0u8).unwrap(),
+        LeapIndicator::NoWarning
+    );
+    assert_eq!(LeapIndicator::try_from(1u8).unwrap(), LeapIndicator::AddOne);
+    assert_eq!(LeapIndicator::try_from(2u8).unwrap(), LeapIndicator::SubOne);
+    assert_eq!(
+        LeapIndicator::try_from(3u8).unwrap(),
+        LeapIndicator::Unknown
+    );
+    assert!(LeapIndicator::try_from(4u8).is_err());
+    assert!(LeapIndicator::try_from(255u8).is_err());
+}
+
+#[test]
+fn mode_try_from_all_variants() {
+    assert_eq!(Mode::try_from(0u8).unwrap(), Mode::Reserved);
+    assert_eq!(Mode::try_from(1u8).unwrap(), Mode::SymmetricActive);
+    assert_eq!(Mode::try_from(2u8).unwrap(), Mode::SymmetricPassive);
+    assert_eq!(Mode::try_from(3u8).unwrap(), Mode::Client);
+    assert_eq!(Mode::try_from(4u8).unwrap(), Mode::Server);
+    assert_eq!(Mode::try_from(5u8).unwrap(), Mode::Broadcast);
+    assert_eq!(Mode::try_from(6u8).unwrap(), Mode::NtpControlMessage);
+    assert_eq!(Mode::try_from(7u8).unwrap(), Mode::ReservedForPrivateUse);
+    assert!(Mode::try_from(8u8).is_err());
+    assert!(Mode::try_from(255u8).is_err());
+}
+
+#[test]
+fn kiss_of_death_rstr_variant() {
+    // RSTR = [0x52, 0x53, 0x54, 0x52]
+    let input = make_test_packet(0, [0x52, 0x53, 0x54, 0x52]);
+    let packet = (&input[..]).read_bytes::<Packet>().unwrap();
+    assert_eq!(
+        packet.reference_id,
+        ReferenceIdentifier::KissOfDeath(KissOfDeath::Rstr)
+    );
+    assert!(packet.reference_id.is_kiss_of_death());
+}
+
+// ============================================================================
+// Version and Stratum method tests
+// ============================================================================
+
+#[test]
+fn version_is_known() {
+    assert!(Version::V1.is_known());
+    assert!(Version::V2.is_known());
+    assert!(Version::V3.is_known());
+    assert!(Version::V4.is_known());
+
+    // Parse a packet with VN=0 to get an unknown version.
+    let mut buf = make_test_packet(4, [192, 168, 1, 1]);
+    buf[0] = buf[0] & 0xC7; // Clear version bits (VN=0)
+    let packet = (&buf[..]).read_bytes::<Packet>().unwrap();
+    assert!(!packet.version.is_known());
+
+    // Parse a packet with VN=5 to get another unknown version.
+    buf[0] = (buf[0] & 0xC7) | (5 << 3); // VN=5
+    let packet = (&buf[..]).read_bytes::<Packet>().unwrap();
+    assert!(!packet.version.is_known());
+}
+
+#[test]
+fn stratum_is_secondary() {
+    assert!(!Stratum::UNSPECIFIED.is_secondary());
+    assert!(!Stratum::PRIMARY.is_secondary());
+    assert!(Stratum::SECONDARY_MIN.is_secondary());
+    assert!(Stratum(8).is_secondary());
+    assert!(Stratum::SECONDARY_MAX.is_secondary());
+    assert!(!Stratum::UNSYNCHRONIZED.is_secondary());
+    assert!(!Stratum(17).is_secondary());
+}
+
+#[test]
+fn stratum_is_reserved() {
+    assert!(!Stratum::UNSPECIFIED.is_reserved());
+    assert!(!Stratum::PRIMARY.is_reserved());
+    assert!(!Stratum::SECONDARY_MAX.is_reserved());
+    assert!(!Stratum::MAX.is_reserved());
+    assert!(Stratum(17).is_reserved());
+    assert!(Stratum(100).is_reserved());
+    assert!(Stratum(255).is_reserved());
+}
+
+// ============================================================================
+// PrimarySource Display tests
+// ============================================================================
+
+#[test]
+fn primary_source_display() {
+    assert_eq!(PrimarySource::Gps.to_string(), "GPS");
+    assert_eq!(PrimarySource::Cdma.to_string(), "CDMA");
+    assert_eq!(PrimarySource::Goes.to_string(), "GOES");
+    assert_eq!(PrimarySource::Nist.to_string(), "NIST");
+    assert_eq!(PrimarySource::Pps.to_string(), "PPS");
+    assert_eq!(PrimarySource::Null.to_string(), "");
+}
+
+// ============================================================================
+// Packet with all leap indicator and mode variants
+// ============================================================================
+
+#[test]
+fn packet_with_all_leap_indicators() {
+    for li_val in 0u8..=3 {
+        let mut buf = make_test_packet(4, [192, 168, 1, 1]);
+        buf[0] = (buf[0] & 0x3F) | (li_val << 6);
+        let packet = (&buf[..]).read_bytes::<Packet>().unwrap();
+        assert_eq!(
+            packet.leap_indicator,
+            LeapIndicator::try_from(li_val).unwrap()
+        );
+    }
+}
+
+#[test]
+fn packet_with_all_mode_variants() {
+    for mode_val in 0u8..=7 {
+        let mut buf = make_test_packet(4, [192, 168, 1, 1]);
+        buf[0] = (buf[0] & 0xF8) | mode_val;
+        let packet = (&buf[..]).read_bytes::<Packet>().unwrap();
+        assert_eq!(packet.mode, Mode::try_from(mode_val).unwrap());
+    }
+}
+
+// ============================================================================
+// Primary source GPS variant in packet
+// ============================================================================
+
+#[test]
+fn stratum_1_gps_source() {
+    let input = make_test_packet(1, [b'G', b'P', b'S', 0]);
+    let packet = (&input[..]).read_bytes::<Packet>().unwrap();
+    assert_eq!(packet.stratum, Stratum::PRIMARY);
+    assert_eq!(
+        packet.reference_id,
+        ReferenceIdentifier::PrimarySource(PrimarySource::Gps)
+    );
+}
+
+// ============================================================================
+// ToBytes buffer-too-short errors
+// ============================================================================
+
+#[test]
+fn buf_short_format_to_bytes_too_short() {
+    let sf = ShortFormat {
+        seconds: 1,
+        fraction: 2,
+    };
+    let mut buf = [0u8; 3];
+    let err = sf.to_bytes(&mut buf).unwrap_err();
+    assert_eq!(
+        err,
+        ParseError::BufferTooShort {
+            needed: 4,
+            available: 3
+        }
+    );
+}
+
+#[test]
+fn buf_timestamp_format_to_bytes_too_short() {
+    let ts = TimestampFormat {
+        seconds: 1,
+        fraction: 2,
+    };
+    let mut buf = [0u8; 7];
+    let err = ts.to_bytes(&mut buf).unwrap_err();
+    assert_eq!(
+        err,
+        ParseError::BufferTooShort {
+            needed: 8,
+            available: 7
+        }
+    );
+}
+
+#[test]
+fn buf_reference_id_to_bytes_too_short() {
+    let rid = ReferenceIdentifier::PrimarySource(PrimarySource::Gps);
+    let mut buf = [0u8; 3];
+    let err = rid.to_bytes(&mut buf).unwrap_err();
+    assert_eq!(
+        err,
+        ParseError::BufferTooShort {
+            needed: 4,
+            available: 3
+        }
+    );
+}

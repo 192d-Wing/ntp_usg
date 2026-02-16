@@ -357,6 +357,81 @@ mod tests {
     }
 
     #[test]
+    fn test_correction_method_traits() {
+        // Clone + Copy
+        let slew = CorrectionMethod::Slew;
+        let slew_copy = slew;
+        assert_eq!(slew, slew_copy);
+
+        // PartialEq
+        assert_eq!(CorrectionMethod::Slew, CorrectionMethod::Slew);
+        assert_eq!(CorrectionMethod::Step, CorrectionMethod::Step);
+        assert_ne!(CorrectionMethod::Slew, CorrectionMethod::Step);
+
+        // Debug
+        assert_eq!(format!("{:?}", CorrectionMethod::Slew), "Slew");
+        assert_eq!(format!("{:?}", CorrectionMethod::Step), "Step");
+    }
+
+    #[test]
+    fn test_threshold_boundary_conditions() {
+        // Zero → slew
+        assert!(0.0_f64.abs() <= STEP_THRESHOLD_SECS);
+
+        // Negative small → slew
+        assert!((-0.05_f64).abs() <= STEP_THRESHOLD_SECS);
+
+        // Exactly at threshold → slew (<=)
+        assert!(STEP_THRESHOLD_SECS.abs() <= STEP_THRESHOLD_SECS);
+
+        // Just above threshold → step
+        assert!((STEP_THRESHOLD_SECS + 0.001).abs() > STEP_THRESHOLD_SECS);
+
+        // Negative large → step
+        assert!((-0.200_f64).abs() > STEP_THRESHOLD_SECS);
+
+        // Negative exactly at threshold → slew
+        assert!((-STEP_THRESHOLD_SECS).abs() <= STEP_THRESHOLD_SECS);
+    }
+
+    #[test]
+    fn test_clock_error_debug() {
+        let debug = format!("{:?}", ClockError::PermissionDenied);
+        assert!(debug.contains("PermissionDenied"));
+
+        let debug = format!("{:?}", ClockError::OsError(13));
+        assert!(debug.contains("OsError"));
+        assert!(debug.contains("13"));
+
+        let debug = format!("{:?}", ClockError::Unsupported);
+        assert!(debug.contains("Unsupported"));
+    }
+
+    #[test]
+    fn test_slew_clock_requires_privileges() {
+        // Without root, slew should return an error.
+        let result = slew_clock(0.001);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_step_clock_requires_privileges() {
+        // Without root, step should return an error.
+        let result = step_clock(0.001);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_apply_correction_requires_privileges() {
+        // Without root, both slew-range and step-range should fail.
+        let result = apply_correction(0.001); // slew range
+        assert!(result.is_err());
+
+        let result = apply_correction(0.500); // step range
+        assert!(result.is_err());
+    }
+
+    #[test]
     #[ignore] // Requires root privileges.
     fn test_slew_tiny_offset() {
         // Slew by 1 microsecond — should succeed with root.
