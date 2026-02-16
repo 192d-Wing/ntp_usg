@@ -29,14 +29,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Automatic cookie replenishment from server responses
   - Supports AEAD_AES_SIV_CMAC_256 and AEAD_AES_SIV_CMAC_512
   - Dependencies: `rustls`, `tokio-rustls`, `ring`, `aes-siv`, `rand`, `webpki-roots`
-- New examples: `continuous.rs`, `nts_request.rs`
+- **NTS in continuous client** (requires `nts` feature)
+  - `NtpClientBuilder::nts_server()` for NTS-authenticated peers
+  - NTS-KE performed during `build()` with automatic cookie replenishment during polling
+  - `NtpSyncState::nts_authenticated` field indicates NTS status
+  - Interleaved mode works with NTS (orthogonal protocols)
+- New examples: `continuous.rs`, `nts_request.rs`, `nts_continuous.rs`
 - CI now tests `--features nts` alongside tokio and default features
 
 ### Changed
 
+- Extracted `build_nts_request()` and `validate_nts_response()` from `NtsSession` for reuse by continuous client
 - Extracted `parse_and_validate_response()` from `validate_response()` for reuse by continuous client
 - Made `compute_offset_delay()` and `build_request_packet()` `pub(crate)` for module reuse
 - Added `io-util` to tokio features for NTS TLS stream handling
+- Updated `rand` to 0.10 and `webpki-roots` to 1.0
 
 ## [0.9.0] - 2026-02-15
 

@@ -127,6 +127,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### NTS Continuous Client
+
+Combine NTS authentication with the continuous polling client:
+
+```rust
+use ntp::client::NtpClient;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let (client, mut state_rx) = NtpClient::builder()
+        .nts_server("time.cloudflare.com")
+        .min_poll(4)
+        .max_poll(10)
+        .build()
+        .await?;
+
+    tokio::spawn(client.run());
+
+    while state_rx.changed().await.is_ok() {
+        let state = state_rx.borrow();
+        println!("Offset: {:.6}s, NTS: {}", state.offset, state.nts_authenticated);
+    }
+    Ok(())
+}
+```
+
 ### Multiple Servers
 
 See [examples/multiple_servers.rs](examples/multiple_servers.rs) for a complete example of querying multiple NTP servers.
@@ -156,6 +182,9 @@ cargo run --example continuous --features tokio
 
 # NTS-authenticated request (requires nts feature)
 cargo run --example nts_request --features nts
+
+# NTS continuous client (requires nts feature)
+cargo run --example nts_continuous --features nts
 ```
 
 ## Roadmap
