@@ -33,6 +33,7 @@ broadcast = []
 refclock = ["tokio", "dep:async-trait"]
 gps = ["refclock", "dep:serialport"]
 pps = ["refclock"]
+hwts = ["refclock"]
 smol-runtime = ["dep:smol", "dep:futures-lite"]
 nts-smol = [
     "smol-runtime",
@@ -136,6 +137,10 @@ required-features = ["pps"]
 [[example]]
 name = "gps_pps_combined"
 required-features = ["gps", "pps"]
+
+[[example]]
+name = "hwts_demo"
+required-features = ["hwts"]
 
 [[bench]]
 name = "selection_benchmark"

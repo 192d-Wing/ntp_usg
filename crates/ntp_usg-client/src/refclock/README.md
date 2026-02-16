@@ -138,6 +138,7 @@ sudo cargo run -p ntp_usg-client --example gps_pps_combined --features gps,pps -
 ```
 
 This demonstrates optimal time synchronization by combining:
+
 - GPS for coarse time (100µs - 1ms accuracy)
 - PPS for fine precision (< 1µs accuracy)
 

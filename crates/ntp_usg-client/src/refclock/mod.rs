@@ -21,8 +21,13 @@ pub mod nmea;
 #[cfg(feature = "gps")]
 pub mod gps;
 
+/// PPS (Pulse Per Second) reference clock implementation
 #[cfg(all(feature = "pps", target_os = "linux"))]
 pub mod pps;
+
+/// Hardware timestamping support for NTP packets
+#[cfg(all(feature = "hwts", target_os = "linux"))]
+pub mod hwts;
 
 /// A sample from a reference clock
 #[derive(Debug, Clone)]
