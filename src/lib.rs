@@ -46,6 +46,11 @@ pub mod protocol;
 /// Provides the `Instant` type for converting between NTP timestamps
 /// (seconds since 1900-01-01) and Unix timestamps (seconds since 1970-01-01).
 pub mod unix_time;
+/// NTP extension field parsing and NTS extension types.
+///
+/// Provides types for parsing and serializing NTP extension fields (RFC 7822)
+/// and NTS-specific extension field types (RFC 8915).
+pub mod extension;
 
 /// Clock sample filtering for the continuous NTP client.
 ///
