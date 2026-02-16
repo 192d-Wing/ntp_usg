@@ -1,8 +1,11 @@
 # ntp_usg
 
-[![Crates.io](https://img.shields.io/crates/v/ntp_usg-proto.svg?style=for-the-badge&logo=rust&label=proto)](https://crates.io/crates/ntp_usg-proto)
-[![Crates.io](https://img.shields.io/crates/v/ntp_usg-client.svg?style=for-the-badge&logo=rust&label=client)](https://crates.io/crates/ntp_usg-client)
-[![Crates.io](https://img.shields.io/crates/v/ntp_usg-server.svg?style=for-the-badge&logo=rust&label=server)](https://crates.io/crates/ntp_usg-server)
+![docs.rs](https://img.shields.io/docsrs/ntp_usg-proto?style=for-the-badge&logo=rust&label=proto%20docs)
+![docs.rs](https://img.shields.io/docsrs/ntp_usg-client?style=for-the-badge&logo=rust&label=client%20docs)
+![docs.rs](https://img.shields.io/docsrs/ntp_usg-server?style=for-the-badge&logo=rust&label=server%20docs)
+[![Crates.io](https://img.shields.io/crates/v/ntp_usg-proto.svg?style=for-the-badge&logo=rust&label=proto%20crate)](https://crates.io/crates/ntp_usg-proto)
+[![Crates.io](https://img.shields.io/crates/v/ntp_usg-client.svg?style=for-the-badge&logo=rust&label=client%20crate)](https://crates.io/crates/ntp_usg-client)
+[![Crates.io](https://img.shields.io/crates/v/ntp_usg-server.svg?style=for-the-badge&logo=rust&label=server%20crate)](https://crates.io/crates/ntp_usg-server)
 [![License](https://img.shields.io/crates/l/ntp_usg-proto.svg?style=for-the-badge)](https://github.com/192d-Wing/ntp_usg#license)
 [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/192d-Wing/ntp_usg/ci.yml?branch=master&style=for-the-badge&logo=github)](https://github.com/192d-Wing/ntp_usg/actions/workflows/ci.yml)
 [![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/192d-Wing/ntp_usg?style=for-the-badge&logo=github)](https://github.com/192d-Wing/ntp_usg/issues)
