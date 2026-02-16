@@ -27,17 +27,35 @@ name = "ntp"
 [features]
 default = []
 tokio = ["dep:tokio"]
-nts = ["dep:rustls", "dep:tokio-rustls", "dep:webpki-roots", "dep:aes-siv", "dep:rand", "tokio"]
+nts = [
+    "dep:rustls",
+    "dep:tokio-rustls",
+    "dep:webpki-roots",
+    "dep:aes-siv",
+    "dep:rand",
+    "tokio",
+]
 
 [dependencies]
 byteorder = "1.5"
 log = "0.4"
-tokio = { version = "1", features = ["net", "time", "sync", "io-util"], optional = true }
-rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
-tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["tls12"] }
+tokio = { version = "1", features = [
+    "net",
+    "time",
+    "sync",
+    "io-util",
+], optional = true }
+rustls = { version = "0.23", optional = true, default-features = false, features = [
+    "std",
+    "tls12",
+    "ring",
+] }
+tokio-rustls = { version = "0.26", optional = true, default-features = false, features = [
+    "tls12",
+] }
 aes-siv = { version = "0.7", optional = true }
-rand = { version = "0.8", optional = true }
-webpki-roots = { version = "0.26", optional = true }
+rand = { version = "0.10", optional = true }
+webpki-roots = { version = "1", optional = true }
 
 [[example]]
 name = "async_request"
@@ -49,6 +67,10 @@ required-features = ["tokio"]
 
 [[example]]
 name = "nts_request"
+required-features = ["nts"]
+
+[[example]]
+name = "nts_continuous"
 required-features = ["nts"]
 
 [dev-dependencies]
