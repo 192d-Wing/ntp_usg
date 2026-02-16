@@ -1,8 +1,8 @@
 # ntp_usg
 
-![docs.rs](https://img.shields.io/docsrs/ntp_usg-proto?style=for-the-badge&logo=rust&label=proto%20docs)
-![docs.rs](https://img.shields.io/docsrs/ntp_usg-client?style=for-the-badge&logo=rust&label=client%20docs)
-![docs.rs](https://img.shields.io/docsrs/ntp_usg-server?style=for-the-badge&logo=rust&label=server%20docs)
+[![docs.rs](https://img.shields.io/docsrs/ntp_usg-proto?style=for-the-badge&logo=rust&label=proto%20docs)](https://docs.rs/ntp_usg-proto/latest/ntp_proto/)
+[![docs.rs](https://img.shields.io/docsrs/ntp_usg-client?style=for-the-badge&logo=rust&label=client%20docs)](https://docs.rs/ntp_usg-client/latest/ntp_client/)
+[![docs.rs](https://img.shields.io/docsrs/ntp_usg-server?style=for-the-badge&logo=rust&label=server%20docs)](https://docs.rs/ntp_usg-server/latest/ntp_server/)
 [![Crates.io](https://img.shields.io/crates/v/ntp_usg-proto.svg?style=for-the-badge&logo=rust&label=proto%20crate)](https://crates.io/crates/ntp_usg-proto)
 [![Crates.io](https://img.shields.io/crates/v/ntp_usg-client.svg?style=for-the-badge&logo=rust&label=client%20crate)](https://crates.io/crates/ntp_usg-client)
 [![Crates.io](https://img.shields.io/crates/v/ntp_usg-server.svg?style=for-the-badge&logo=rust&label=server%20crate)](https://crates.io/crates/ntp_usg-server)
