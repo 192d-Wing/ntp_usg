@@ -498,12 +498,11 @@ impl ExtensionRegistry {
         require_handlers: bool,
     ) -> io::Result<()> {
         for field in fields {
-            if let Err(e) = self.dispatch(field) {
-                if require_handlers || e.kind() != io::ErrorKind::Unsupported {
+            if let Err(e) = self.dispatch(field)
+                && (require_handlers || e.kind() != io::ErrorKind::Unsupported) {
                     return Err(e);
                 }
                 // Ignore "no handler" errors if require_handlers is false
-            }
         }
         Ok(())
     }
