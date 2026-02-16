@@ -234,4 +234,67 @@ mod tests {
         let result = classify_and_compute(&response, t4, t1, None, None);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_classify_mismatch_with_prev_values() {
+        // Origin doesn't match current OR previous T1.
+        let current_t1 = protocol::TimestampFormat {
+            seconds: 100,
+            fraction: 0,
+        };
+        let prev_t1 = protocol::TimestampFormat {
+            seconds: 90,
+            fraction: 0,
+        };
+        let prev_t4 = protocol::TimestampFormat {
+            seconds: 91,
+            fraction: 0,
+        };
+        let t4 = protocol::TimestampFormat {
+            seconds: 101,
+            fraction: 0,
+        };
+        let response = protocol::Packet {
+            leap_indicator: protocol::LeapIndicator::NoWarning,
+            version: protocol::Version::V4,
+            mode: protocol::Mode::Server,
+            stratum: protocol::Stratum(2),
+            poll: 6,
+            precision: -20,
+            root_delay: protocol::ShortFormat::default(),
+            root_dispersion: protocol::ShortFormat::default(),
+            reference_id: protocol::ReferenceIdentifier::SecondaryOrClient([127, 0, 0, 1]),
+            reference_timestamp: protocol::TimestampFormat::default(),
+            origin_timestamp: protocol::TimestampFormat {
+                seconds: 999,
+                fraction: 0,
+            },
+            receive_timestamp: protocol::TimestampFormat::default(),
+            transmit_timestamp: protocol::TimestampFormat {
+                seconds: 1,
+                fraction: 0,
+            },
+        };
+
+        let result = classify_and_compute(&response, t4, current_t1, Some(prev_t1), Some(prev_t4));
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("neither basic nor interleaved")
+        );
+    }
+
+    #[test]
+    fn test_sync_state_default() {
+        let state = NtpSyncState::default();
+        assert_eq!(state.offset, 0.0);
+        assert_eq!(state.delay, 0.0);
+        assert_eq!(state.jitter, 0.0);
+        assert_eq!(state.stratum, protocol::MAXSTRAT);
+        assert!(!state.interleaved);
+        assert_eq!(state.total_responses, 0);
+        assert!(!state.nts_authenticated);
+    }
 }

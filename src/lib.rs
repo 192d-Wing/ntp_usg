@@ -579,3 +579,336 @@ fn test_request_google() {
     let res = request("time.google.com:123");
     let _ = res.expect("Failed to get a ntp packet from time.google.com");
 }
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use super::*;
+
+    // ── compute_offset_delay ──────────────────────────────────────
+
+    #[test]
+    fn test_offset_delay_symmetric() {
+        // T1=0, T2=0.5, T3=0.5, T4=1.0
+        // offset = ((0.5-0)+(0.5-1))/2 = (0.5+(-0.5))/2 = 0
+        // delay = (1-0)-(0.5-0.5) = 1.0
+        let t1 = unix_time::Instant::new(0, 0);
+        let t2 = unix_time::Instant::new(0, 500_000_000);
+        let t3 = unix_time::Instant::new(0, 500_000_000);
+        let t4 = unix_time::Instant::new(1, 0);
+        let (offset, delay) = compute_offset_delay(&t1, &t2, &t3, &t4);
+        assert!(offset.abs() < 1e-9, "expected ~0 offset, got {offset}");
+        assert!(
+            (delay - 1.0).abs() < 1e-9,
+            "expected 1.0 delay, got {delay}"
+        );
+    }
+
+    #[test]
+    fn test_offset_delay_local_behind() {
+        // Client behind by 1s: T1=0, T2=1.5, T3=1.5, T4=1.0
+        // offset = ((1.5-0)+(1.5-1))/2 = (1.5+0.5)/2 = 1.0
+        // delay = (1-0)-(1.5-1.5) = 1.0
+        let t1 = unix_time::Instant::new(0, 0);
+        let t2 = unix_time::Instant::new(1, 500_000_000);
+        let t3 = unix_time::Instant::new(1, 500_000_000);
+        let t4 = unix_time::Instant::new(1, 0);
+        let (offset, delay) = compute_offset_delay(&t1, &t2, &t3, &t4);
+        assert!(
+            (offset - 1.0).abs() < 1e-9,
+            "expected 1.0 offset, got {offset}"
+        );
+        assert!(
+            (delay - 1.0).abs() < 1e-9,
+            "expected 1.0 delay, got {delay}"
+        );
+    }
+
+    #[test]
+    fn test_offset_delay_local_ahead() {
+        // Client ahead by 1s: T1=10, T2=9.25, T3=9.75, T4=11
+        // offset = ((9.25-10)+(9.75-11))/2 = (-0.75+(-1.25))/2 = -1.0
+        // delay = (11-10)-(9.75-9.25) = 1.0 - 0.5 = 0.5
+        let t1 = unix_time::Instant::new(10, 0);
+        let t2 = unix_time::Instant::new(9, 250_000_000);
+        let t3 = unix_time::Instant::new(9, 750_000_000);
+        let t4 = unix_time::Instant::new(11, 0);
+        let (offset, delay) = compute_offset_delay(&t1, &t2, &t3, &t4);
+        assert!(
+            (offset - (-1.0)).abs() < 1e-9,
+            "expected -1.0 offset, got {offset}"
+        );
+        assert!(
+            (delay - 0.5).abs() < 1e-9,
+            "expected 0.5 delay, got {delay}"
+        );
+    }
+
+    #[test]
+    fn test_offset_delay_zero_processing_time() {
+        // Server processes instantly, RTT=0.1s: T1=0, T2=0.05, T3=0.05, T4=0.1
+        // offset = ((0.05-0)+(0.05-0.1))/2 = (0.05+(-0.05))/2 = 0
+        // delay = (0.1-0)-(0.05-0.05) = 0.1
+        let t1 = unix_time::Instant::new(0, 0);
+        let t2 = unix_time::Instant::new(0, 50_000_000);
+        let t3 = unix_time::Instant::new(0, 50_000_000);
+        let t4 = unix_time::Instant::new(0, 100_000_000);
+        let (offset, delay) = compute_offset_delay(&t1, &t2, &t3, &t4);
+        assert!(offset.abs() < 1e-9, "expected ~0 offset, got {offset}");
+        assert!(
+            (delay - 0.1).abs() < 1e-9,
+            "expected 0.1 delay, got {delay}"
+        );
+    }
+
+    // ── build_request_packet ──────────────────────────────────────
+
+    #[test]
+    fn test_build_request_packet_structure() {
+        let (buf, t1) = build_request_packet().unwrap();
+
+        // Deserialize and verify fields.
+        let pkt: protocol::Packet = (&buf[..protocol::Packet::PACKED_SIZE_BYTES])
+            .read_bytes()
+            .unwrap();
+        assert_eq!(pkt.version, protocol::Version::V4);
+        assert_eq!(pkt.mode, protocol::Mode::Client);
+        assert_eq!(pkt.stratum, protocol::Stratum::UNSPECIFIED);
+        assert_eq!(pkt.transmit_timestamp, t1);
+        // T1 should be non-zero (set to current time).
+        assert!(t1.seconds != 0 || t1.fraction != 0);
+    }
+
+    #[test]
+    fn test_build_request_packet_size() {
+        let (buf, _) = build_request_packet().unwrap();
+        assert_eq!(buf.len(), protocol::Packet::PACKED_SIZE_BYTES);
+        assert_eq!(buf.len(), 48);
+    }
+
+    // ── parse_and_validate_response ───────────────────────────────
+
+    /// Helper: build a valid 48-byte server response buffer.
+    fn make_server_response(
+        mode: protocol::Mode,
+        li: protocol::LeapIndicator,
+        stratum: protocol::Stratum,
+        ref_id: protocol::ReferenceIdentifier,
+        transmit_secs: u32,
+    ) -> [u8; 48] {
+        let pkt = protocol::Packet {
+            leap_indicator: li,
+            version: protocol::Version::V4,
+            mode,
+            stratum,
+            poll: 6,
+            precision: -20,
+            root_delay: protocol::ShortFormat::default(),
+            root_dispersion: protocol::ShortFormat::default(),
+            reference_id: ref_id,
+            reference_timestamp: protocol::TimestampFormat::default(),
+            origin_timestamp: protocol::TimestampFormat {
+                seconds: 100,
+                fraction: 0,
+            },
+            receive_timestamp: protocol::TimestampFormat {
+                seconds: 3_913_056_000,
+                fraction: 0,
+            },
+            transmit_timestamp: protocol::TimestampFormat {
+                seconds: transmit_secs,
+                fraction: 1,
+            },
+        };
+        let mut buf = [0u8; 48];
+        (&mut buf[..]).write_bytes(pkt).unwrap();
+        buf
+    }
+
+    fn valid_server_buf() -> [u8; 48] {
+        make_server_response(
+            protocol::Mode::Server,
+            protocol::LeapIndicator::NoWarning,
+            protocol::Stratum(2),
+            protocol::ReferenceIdentifier::SecondaryOrClient([127, 0, 0, 1]),
+            3_913_056_001,
+        )
+    }
+
+    fn src_addr() -> SocketAddr {
+        "127.0.0.1:123".parse().unwrap()
+    }
+
+    #[test]
+    fn test_validate_accepts_valid_response() {
+        let buf = valid_server_buf();
+        let addrs = vec![src_addr()];
+        let result = parse_and_validate_response(&buf, 48, src_addr(), &addrs);
+        assert!(result.is_ok());
+        let (pkt, _t4) = result.unwrap();
+        assert_eq!(pkt.mode, protocol::Mode::Server);
+    }
+
+    #[test]
+    fn test_validate_rejects_wrong_source_ip() {
+        let buf = valid_server_buf();
+        let addrs = vec!["10.0.0.1:123".parse().unwrap()];
+        let result = parse_and_validate_response(&buf, 48, src_addr(), &addrs);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("unexpected source")
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_short_packet() {
+        let buf = valid_server_buf();
+        let addrs = vec![src_addr()];
+        let result = parse_and_validate_response(&buf, 47, src_addr(), &addrs);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("too short"));
+    }
+
+    #[test]
+    fn test_validate_rejects_client_mode() {
+        let buf = make_server_response(
+            protocol::Mode::Client,
+            protocol::LeapIndicator::NoWarning,
+            protocol::Stratum(2),
+            protocol::ReferenceIdentifier::SecondaryOrClient([127, 0, 0, 1]),
+            3_913_056_001,
+        );
+        let addrs = vec![src_addr()];
+        let result = parse_and_validate_response(&buf, 48, src_addr(), &addrs);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("unexpected response mode")
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_kiss_of_death() {
+        let buf = make_server_response(
+            protocol::Mode::Server,
+            protocol::LeapIndicator::NoWarning,
+            protocol::Stratum::UNSPECIFIED,
+            protocol::ReferenceIdentifier::KissOfDeath(protocol::KissOfDeath::Deny),
+            3_913_056_001,
+        );
+        let addrs = vec![src_addr()];
+        let result = parse_and_validate_response(&buf, 48, src_addr(), &addrs);
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::ConnectionRefused);
+        let kod = err
+            .get_ref()
+            .unwrap()
+            .downcast_ref::<KissOfDeathError>()
+            .unwrap();
+        assert!(matches!(kod.code, protocol::KissOfDeath::Deny));
+    }
+
+    #[test]
+    fn test_validate_rejects_zero_transmit() {
+        // Build a packet with fully zero transmit timestamp.
+        let pkt = protocol::Packet {
+            leap_indicator: protocol::LeapIndicator::NoWarning,
+            version: protocol::Version::V4,
+            mode: protocol::Mode::Server,
+            stratum: protocol::Stratum(2),
+            poll: 6,
+            precision: -20,
+            root_delay: protocol::ShortFormat::default(),
+            root_dispersion: protocol::ShortFormat::default(),
+            reference_id: protocol::ReferenceIdentifier::SecondaryOrClient([127, 0, 0, 1]),
+            reference_timestamp: protocol::TimestampFormat::default(),
+            origin_timestamp: protocol::TimestampFormat::default(),
+            receive_timestamp: protocol::TimestampFormat::default(),
+            transmit_timestamp: protocol::TimestampFormat {
+                seconds: 0,
+                fraction: 0,
+            },
+        };
+        let mut raw = [0u8; 48];
+        (&mut raw[..]).write_bytes(pkt).unwrap();
+        let addrs = vec![src_addr()];
+        let result = parse_and_validate_response(&raw, 48, src_addr(), &addrs);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("transmit timestamp is zero")
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_unsynchronized() {
+        let buf = make_server_response(
+            protocol::Mode::Server,
+            protocol::LeapIndicator::Unknown,
+            protocol::Stratum(2), // non-zero stratum + LI=Unknown = unsynchronized
+            protocol::ReferenceIdentifier::SecondaryOrClient([127, 0, 0, 1]),
+            3_913_056_001,
+        );
+        let addrs = vec![src_addr()];
+        let result = parse_and_validate_response(&buf, 48, src_addr(), &addrs);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("unsynchronized"));
+    }
+
+    #[test]
+    fn test_validate_allows_li_unknown_stratum_zero() {
+        // LI=Unknown with stratum 0 (UNSPECIFIED) is OK — it's a KoD or reference clock.
+        // But stratum 0 with a non-KoD ref_id should pass the LI check.
+        let buf = make_server_response(
+            protocol::Mode::Server,
+            protocol::LeapIndicator::Unknown,
+            protocol::Stratum::UNSPECIFIED,
+            protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Gps),
+            3_913_056_001,
+        );
+        let addrs = vec![src_addr()];
+        let result = parse_and_validate_response(&buf, 48, src_addr(), &addrs);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_accepts_different_port() {
+        // Source port doesn't need to match — only IP.
+        let buf = valid_server_buf();
+        let addrs = vec!["127.0.0.1:456".parse().unwrap()];
+        let result = parse_and_validate_response(&buf, 48, src_addr(), &addrs);
+        assert!(result.is_ok());
+    }
+
+    // ── KissOfDeathError display ──────────────────────────────────
+
+    #[test]
+    fn test_kod_display_deny() {
+        let kod = KissOfDeathError {
+            code: protocol::KissOfDeath::Deny,
+        };
+        assert!(kod.to_string().contains("DENY"));
+    }
+
+    #[test]
+    fn test_kod_display_rstr() {
+        let kod = KissOfDeathError {
+            code: protocol::KissOfDeath::Rstr,
+        };
+        assert!(kod.to_string().contains("RSTR"));
+    }
+
+    #[test]
+    fn test_kod_display_rate() {
+        let kod = KissOfDeathError {
+            code: protocol::KissOfDeath::Rate,
+        };
+        assert!(kod.to_string().contains("RATE"));
+    }
+}

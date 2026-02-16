@@ -178,4 +178,66 @@ mod tests {
         let f = SampleFilter::default();
         assert!(f.is_empty());
     }
+
+    #[test]
+    fn test_exactly_filter_size_samples() {
+        let mut f = SampleFilter::new();
+        for i in 0..FILTER_SIZE {
+            f.add(i as f64 * 0.001, 0.050 + i as f64 * 0.001);
+        }
+        assert_eq!(f.len(), FILTER_SIZE);
+        // First sample (i=0) has minimum delay 0.050.
+        let best = f.best_sample().unwrap();
+        assert!((best.delay - 0.050).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_identical_delays() {
+        let mut f = SampleFilter::new();
+        f.add(0.010, 0.050);
+        f.add(0.020, 0.050);
+        f.add(0.030, 0.050);
+        // All delays equal — best_sample should return one of them.
+        let best = f.best_sample().unwrap();
+        assert_eq!(best.delay, 0.050);
+    }
+
+    #[test]
+    fn test_identical_samples_zero_jitter() {
+        let mut f = SampleFilter::new();
+        for _ in 0..4 {
+            f.add(0.005, 0.050);
+        }
+        // All offsets identical → jitter should be 0.
+        assert!(f.jitter().abs() < 1e-15);
+    }
+
+    #[test]
+    fn test_negative_offsets() {
+        let mut f = SampleFilter::new();
+        f.add(-0.010, 0.050);
+        f.add(-0.005, 0.030); // best (min delay)
+        let best = f.best_sample().unwrap();
+        assert_eq!(best.offset, -0.005);
+    }
+
+    #[test]
+    fn test_nan_delay_does_not_panic() {
+        let mut f = SampleFilter::new();
+        f.add(0.005, f64::NAN);
+        f.add(0.010, 0.050);
+        // NaN delay should not panic; best_sample returns Some.
+        let best = f.best_sample();
+        assert!(best.is_some());
+    }
+
+    #[test]
+    fn test_len_consistency() {
+        let mut f = SampleFilter::new();
+        for i in 0..20 {
+            f.add(0.0, 0.0);
+            let expected = (i + 1).min(FILTER_SIZE);
+            assert_eq!(f.len(), expected, "len wrong after {i} additions");
+        }
+    }
 }

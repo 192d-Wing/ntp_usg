@@ -521,4 +521,228 @@ mod tests {
             aead_decrypt(AEAD_AES_SIV_CMAC_256, &key, aad, &nonce, &ciphertext).unwrap();
         assert!(decrypted.is_empty());
     }
+
+    #[test]
+    fn test_aead_unsupported_algorithm() {
+        let key = vec![0u8; 32];
+        assert!(aead_encrypt(99, &key, b"aad", b"msg").is_err());
+        assert!(aead_decrypt(99, &key, b"aad", &[0; 16], b"ct").is_err());
+    }
+
+    #[test]
+    fn test_build_nts_request_structure() {
+        use crate::protocol::ReadBytes;
+
+        let key = vec![0x42u8; 32];
+        let cookie = vec![0xABu8; 100];
+        let (send_buf, t1, uid_data) =
+            build_nts_request(&key, AEAD_AES_SIV_CMAC_256, cookie.clone()).unwrap();
+
+        // Packet should be at least 48 bytes (header).
+        assert!(send_buf.len() > protocol::Packet::PACKED_SIZE_BYTES);
+
+        // Parse the header and verify structure.
+        let pkt: protocol::Packet = (&send_buf[..protocol::Packet::PACKED_SIZE_BYTES])
+            .read_bytes()
+            .unwrap();
+        assert_eq!(pkt.version, protocol::Version::V4);
+        assert_eq!(pkt.mode, protocol::Mode::Client);
+        assert_eq!(pkt.transmit_timestamp, t1);
+        assert!(t1.seconds != 0 || t1.fraction != 0);
+
+        // UID should be 32 bytes.
+        assert_eq!(uid_data.len(), 32);
+
+        // Parse extension fields and verify expected types.
+        let ext_data = &send_buf[protocol::Packet::PACKED_SIZE_BYTES..];
+        let fields = extension::parse_extension_fields(ext_data).unwrap();
+
+        // Should contain: UID, Cookie, 7 placeholders, Authenticator.
+        let uid_count = fields
+            .iter()
+            .filter(|f| f.field_type == UNIQUE_IDENTIFIER)
+            .count();
+        let cookie_count = fields
+            .iter()
+            .filter(|f| f.field_type == extension::NTS_COOKIE)
+            .count();
+        let placeholder_count = fields
+            .iter()
+            .filter(|f| f.field_type == extension::NTS_COOKIE_PLACEHOLDER)
+            .count();
+        let auth_count = fields
+            .iter()
+            .filter(|f| f.field_type == extension::NTS_AUTHENTICATOR)
+            .count();
+
+        assert_eq!(uid_count, 1);
+        assert_eq!(cookie_count, 1);
+        assert_eq!(placeholder_count, COOKIE_PLACEHOLDER_COUNT);
+        assert_eq!(auth_count, 1);
+    }
+
+    #[test]
+    fn test_validate_nts_response_roundtrip() {
+        // Build a request, then construct a matching response and validate it.
+        let c2s_key = vec![0x42u8; 32];
+        let s2c_key = vec![0x43u8; 32];
+        let cookie = vec![0xABu8; 100];
+        let (_send_buf, t1, uid_data) =
+            build_nts_request(&c2s_key, AEAD_AES_SIV_CMAC_256, cookie).unwrap();
+
+        // Build a fake server response.
+        let response_pkt = protocol::Packet {
+            leap_indicator: protocol::LeapIndicator::NoWarning,
+            version: protocol::Version::V4,
+            mode: protocol::Mode::Server,
+            stratum: protocol::Stratum(2),
+            poll: 6,
+            precision: -20,
+            root_delay: protocol::ShortFormat::default(),
+            root_dispersion: protocol::ShortFormat::default(),
+            reference_id: protocol::ReferenceIdentifier::SecondaryOrClient([127, 0, 0, 1]),
+            reference_timestamp: protocol::TimestampFormat::default(),
+            origin_timestamp: t1,
+            receive_timestamp: protocol::TimestampFormat {
+                seconds: t1.seconds,
+                fraction: t1.fraction.wrapping_add(1000),
+            },
+            transmit_timestamp: protocol::TimestampFormat {
+                seconds: t1.seconds,
+                fraction: t1.fraction.wrapping_add(2000),
+            },
+        };
+        let mut resp_header = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
+        (&mut resp_header[..]).write_bytes(response_pkt).unwrap();
+
+        // Build response extension fields: UID + Cookie + Authenticator.
+        let uid = UniqueIdentifier::new(uid_data.clone());
+        let new_cookie_data = vec![0xCDu8; 100];
+        let resp_cookie = NtsCookie::new(new_cookie_data.clone());
+        let pre_auth_fields = vec![uid.to_extension_field(), resp_cookie.to_extension_field()];
+        let pre_auth_bytes = extension::write_extension_fields(&pre_auth_fields).unwrap();
+
+        // Build AAD = header + pre-auth fields.
+        let mut resp_aad = Vec::new();
+        resp_aad.extend_from_slice(&resp_header);
+        resp_aad.extend_from_slice(&pre_auth_bytes);
+
+        // Encrypt with s2c_key (empty plaintext).
+        let (nonce, ciphertext) =
+            aead_encrypt(AEAD_AES_SIV_CMAC_256, &s2c_key, &resp_aad, &[]).unwrap();
+
+        // Build authenticator extension field.
+        let auth = NtsAuthenticator::new(nonce, ciphertext);
+        let auth_bytes = extension::write_extension_fields(&[auth.to_extension_field()]).unwrap();
+
+        // Assemble full response.
+        let mut recv_buf = vec![0u8; 2048];
+        let mut pos = 0;
+        recv_buf[pos..pos + resp_header.len()].copy_from_slice(&resp_header);
+        pos += resp_header.len();
+        recv_buf[pos..pos + pre_auth_bytes.len()].copy_from_slice(&pre_auth_bytes);
+        pos += pre_auth_bytes.len();
+        recv_buf[pos..pos + auth_bytes.len()].copy_from_slice(&auth_bytes);
+        pos += auth_bytes.len();
+        let recv_len = pos;
+
+        // Validate!
+        let new_cookies = validate_nts_response(
+            &s2c_key,
+            AEAD_AES_SIV_CMAC_256,
+            &uid_data,
+            &recv_buf,
+            recv_len,
+        )
+        .unwrap();
+
+        assert_eq!(new_cookies.len(), 1);
+        assert_eq!(new_cookies[0], new_cookie_data);
+    }
+
+    #[test]
+    fn test_validate_nts_response_uid_mismatch() {
+        let c2s_key = vec![0x42u8; 32];
+        let s2c_key = vec![0x43u8; 32];
+        let cookie = vec![0xABu8; 100];
+        let (_, t1, _uid_data) =
+            build_nts_request(&c2s_key, AEAD_AES_SIV_CMAC_256, cookie).unwrap();
+
+        // Build response with a different UID.
+        let wrong_uid = vec![0xFFu8; 32];
+        let uid = UniqueIdentifier::new(wrong_uid);
+        let pre_auth_fields = vec![uid.to_extension_field()];
+        let pre_auth_bytes = extension::write_extension_fields(&pre_auth_fields).unwrap();
+
+        let response_pkt = protocol::Packet {
+            leap_indicator: protocol::LeapIndicator::NoWarning,
+            version: protocol::Version::V4,
+            mode: protocol::Mode::Server,
+            stratum: protocol::Stratum(2),
+            poll: 6,
+            precision: -20,
+            root_delay: protocol::ShortFormat::default(),
+            root_dispersion: protocol::ShortFormat::default(),
+            reference_id: protocol::ReferenceIdentifier::SecondaryOrClient([127, 0, 0, 1]),
+            reference_timestamp: protocol::TimestampFormat::default(),
+            origin_timestamp: t1,
+            receive_timestamp: protocol::TimestampFormat::default(),
+            transmit_timestamp: protocol::TimestampFormat {
+                seconds: 1,
+                fraction: 0,
+            },
+        };
+        let mut resp_header = [0u8; 48];
+        (&mut resp_header[..]).write_bytes(response_pkt).unwrap();
+
+        let mut resp_aad = Vec::new();
+        resp_aad.extend_from_slice(&resp_header);
+        resp_aad.extend_from_slice(&pre_auth_bytes);
+
+        let (nonce, ciphertext) =
+            aead_encrypt(AEAD_AES_SIV_CMAC_256, &s2c_key, &resp_aad, &[]).unwrap();
+        let auth = NtsAuthenticator::new(nonce, ciphertext);
+        let auth_bytes = extension::write_extension_fields(&[auth.to_extension_field()]).unwrap();
+
+        let mut recv_buf = vec![0u8; 2048];
+        let mut pos = 0;
+        recv_buf[..48].copy_from_slice(&resp_header);
+        pos += 48;
+        recv_buf[pos..pos + pre_auth_bytes.len()].copy_from_slice(&pre_auth_bytes);
+        pos += pre_auth_bytes.len();
+        recv_buf[pos..pos + auth_bytes.len()].copy_from_slice(&auth_bytes);
+        pos += auth_bytes.len();
+
+        let original_uid = vec![0x00u8; 32]; // doesn't match 0xFF
+        let result = validate_nts_response(
+            &s2c_key,
+            AEAD_AES_SIV_CMAC_256,
+            &original_uid,
+            &recv_buf,
+            pos,
+        );
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unique Identifier mismatch")
+        );
+    }
+
+    #[test]
+    fn test_validate_nts_response_no_extensions() {
+        let key = vec![0x42u8; 32];
+        let uid = vec![0u8; 32];
+        // Buffer with only a 48-byte header, no extensions.
+        let buf = [0u8; 48];
+        let result = validate_nts_response(&key, AEAD_AES_SIV_CMAC_256, &uid, &buf, 48);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("no extension fields")
+        );
+    }
 }
