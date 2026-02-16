@@ -40,7 +40,6 @@ use aes_siv::aead::Aead;
 use aes_siv::aead::KeyInit;
 use aes_siv::{Aes128SivAead, Aes256SivAead};
 use log::debug;
-use rand::Rng;
 use rustls::pki_types::ServerName;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio_rustls::TlsConnector;
@@ -87,7 +86,10 @@ const AEAD_AES_SIV_CMAC_512: u16 = 17;
 const NTS_EXPORTER_LABEL: &str = "EXPORTER-network-time-security";
 
 /// Number of cookie placeholders to include in NTS requests.
-const COOKIE_PLACEHOLDER_COUNT: usize = 7;
+pub(crate) const COOKIE_PLACEHOLDER_COUNT: usize = 7;
+
+/// Cookie count threshold below which re-keying should be attempted.
+pub(crate) const COOKIE_REKEY_THRESHOLD: usize = 2;
 
 /// Result of NTS Key Establishment.
 #[derive(Clone, Debug)]
@@ -474,71 +476,10 @@ impl NtsSession {
         let cookie = self.cookies.pop().ok_or_else(|| {
             io::Error::other("no NTS cookies remaining")
         })?;
-        let cookie_len = cookie.len();
 
-        // Build the NTP header.
-        let packet = protocol::Packet {
-            leap_indicator: protocol::LeapIndicator::default(),
-            version: protocol::Version::V4,
-            mode: protocol::Mode::Client,
-            stratum: protocol::Stratum::UNSPECIFIED,
-            poll: 0,
-            precision: 0,
-            root_delay: protocol::ShortFormat::default(),
-            root_dispersion: protocol::ShortFormat::default(),
-            reference_id: protocol::ReferenceIdentifier::PrimarySource(
-                protocol::PrimarySource::Null,
-            ),
-            reference_timestamp: protocol::TimestampFormat::default(),
-            origin_timestamp: protocol::TimestampFormat::default(),
-            receive_timestamp: protocol::TimestampFormat::default(),
-            transmit_timestamp: unix_time::Instant::now().into(),
-        };
-        let t1 = packet.transmit_timestamp;
-
-        let mut header_buf = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
-        (&mut header_buf[..]).write_bytes(packet)?;
-
-        // Build extension fields (unencrypted).
-        let mut rng = rand::thread_rng();
-        let mut uid_data = vec![0u8; 32];
-        rng.fill(&mut uid_data[..]);
-        let uid = UniqueIdentifier::new(uid_data.clone());
-        let nts_cookie = NtsCookie::new(cookie);
-
-        // Build extension fields before the authenticator (these are AAD).
-        let mut pre_auth_fields = vec![uid.to_extension_field(), nts_cookie.to_extension_field()];
-
-        // Add cookie placeholders so the server sends replacement cookies.
-        for _ in 0..COOKIE_PLACEHOLDER_COUNT {
-            let placeholder = NtsCookiePlaceholder::new(cookie_len);
-            pre_auth_fields.push(placeholder.to_extension_field());
-        }
-
-        let pre_auth_bytes = extension::write_extension_fields(&pre_auth_fields)?;
-
-        // Build AAD = NTP header + all extension fields before authenticator.
-        let mut aad = Vec::with_capacity(header_buf.len() + pre_auth_bytes.len());
-        aad.extend_from_slice(&header_buf);
-        aad.extend_from_slice(&pre_auth_bytes);
-
-        // AEAD encrypt (plaintext is empty for basic NTS client — no encrypted extensions).
-        let (nonce, ciphertext) = aead_encrypt(
-            self.aead_algorithm,
-            &self.c2s_key,
-            &aad,
-            &[],
-        )?;
-
-        // Build the NTS Authenticator extension field.
-        let authenticator = NtsAuthenticator::new(nonce, ciphertext);
-        let auth_ef = authenticator.to_extension_field();
-        let auth_bytes = extension::write_extension_fields(&[auth_ef])?;
-
-        // Assemble the complete packet.
-        let mut send_buf = Vec::with_capacity(aad.len() + auth_bytes.len());
-        send_buf.extend_from_slice(&aad);
-        send_buf.extend_from_slice(&auth_bytes);
+        // Build the NTS-authenticated request packet.
+        let (send_buf, t1, uid_data) =
+            build_nts_request(&self.c2s_key, self.aead_algorithm, cookie)?;
 
         // Send the packet.
         let sock = UdpSocket::bind(bind_addr_for(&self.ntp_addr)).await?;
@@ -560,72 +501,15 @@ impl NtsSession {
             ));
         }
 
-        // Parse extension fields from the response.
-        if recv_len <= protocol::Packet::PACKED_SIZE_BYTES {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "NTS: response has no extension fields",
-            ));
-        }
-        let ext_data = &recv_buf[protocol::Packet::PACKED_SIZE_BYTES..recv_len];
-        let ext_fields = extension::parse_extension_fields(ext_data)?;
-
-        // Find the Unique Identifier and verify it matches.
-        let resp_uid = ext_fields
-            .iter()
-            .find(|ef| ef.field_type == UNIQUE_IDENTIFIER)
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "NTS: response missing Unique Identifier",
-                )
-            })?;
-        if resp_uid.value != uid_data {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "NTS: Unique Identifier mismatch",
-            ));
-        }
-
-        // Find the NTS Authenticator.
-        let auth_ef = ext_fields
-            .iter()
-            .find(|ef| ef.field_type == extension::NTS_AUTHENTICATOR)
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "NTS: response missing NTS Authenticator",
-                )
-            })?;
-        let resp_auth = NtsAuthenticator::from_extension_field(auth_ef)?
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "NTS: failed to parse NTS Authenticator",
-                )
-            })?;
-
-        // Build AAD for response verification: NTP header + extension fields before authenticator.
-        let auth_ef_start = find_authenticator_offset(ext_data, &ext_fields)?;
-        let mut resp_aad = Vec::new();
-        resp_aad.extend_from_slice(&recv_buf[..protocol::Packet::PACKED_SIZE_BYTES]);
-        resp_aad.extend_from_slice(&ext_data[..auth_ef_start]);
-
-        // AEAD decrypt/verify.
-        let _plaintext = aead_decrypt(
-            self.aead_algorithm,
+        // Validate NTS extension fields and extract new cookies.
+        let new_cookies = validate_nts_response(
             &self.s2c_key,
-            &resp_aad,
-            &resp_auth.nonce,
-            &resp_auth.ciphertext,
+            self.aead_algorithm,
+            &uid_data,
+            &recv_buf,
+            recv_len,
         )?;
-
-        // Extract new cookies from the response.
-        for ef in &ext_fields {
-            if let Some(cookie) = NtsCookie::from_extension_field(ef) {
-                self.cookies.push(cookie.0);
-            }
-        }
+        self.cookies.extend(new_cookies);
 
         debug!(
             "NTS request successful, {} cookies remaining",
@@ -650,6 +534,167 @@ impl NtsSession {
             delay_seconds,
         })
     }
+}
+
+/// Build an NTS-authenticated NTP request packet.
+///
+/// Constructs the NTP header with extension fields (Unique Identifier, NTS Cookie,
+/// cookie placeholders) and an AEAD authenticator.
+///
+/// Returns `(send_buf, t1, uid_data)` where:
+/// - `send_buf` is the complete serialized packet ready to send
+/// - `t1` is the origin timestamp
+/// - `uid_data` is the Unique Identifier bytes for response validation
+pub(crate) fn build_nts_request(
+    c2s_key: &[u8],
+    aead_algorithm: u16,
+    cookie: Vec<u8>,
+) -> io::Result<(Vec<u8>, protocol::TimestampFormat, Vec<u8>)> {
+    let cookie_len = cookie.len();
+
+    // Build the NTP header.
+    let packet = protocol::Packet {
+        leap_indicator: protocol::LeapIndicator::default(),
+        version: protocol::Version::V4,
+        mode: protocol::Mode::Client,
+        stratum: protocol::Stratum::UNSPECIFIED,
+        poll: 0,
+        precision: 0,
+        root_delay: protocol::ShortFormat::default(),
+        root_dispersion: protocol::ShortFormat::default(),
+        reference_id: protocol::ReferenceIdentifier::PrimarySource(
+            protocol::PrimarySource::Null,
+        ),
+        reference_timestamp: protocol::TimestampFormat::default(),
+        origin_timestamp: protocol::TimestampFormat::default(),
+        receive_timestamp: protocol::TimestampFormat::default(),
+        transmit_timestamp: unix_time::Instant::now().into(),
+    };
+    let t1 = packet.transmit_timestamp;
+
+    let mut header_buf = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
+    (&mut header_buf[..]).write_bytes(packet)?;
+
+    // Build extension fields (unencrypted).
+    let mut uid_data = vec![0u8; 32];
+    rand::fill(&mut uid_data[..]);
+    let uid = UniqueIdentifier::new(uid_data.clone());
+    let nts_cookie = NtsCookie::new(cookie);
+
+    // Build extension fields before the authenticator (these are AAD).
+    let mut pre_auth_fields = vec![uid.to_extension_field(), nts_cookie.to_extension_field()];
+
+    // Add cookie placeholders so the server sends replacement cookies.
+    for _ in 0..COOKIE_PLACEHOLDER_COUNT {
+        let placeholder = NtsCookiePlaceholder::new(cookie_len);
+        pre_auth_fields.push(placeholder.to_extension_field());
+    }
+
+    let pre_auth_bytes = extension::write_extension_fields(&pre_auth_fields)?;
+
+    // Build AAD = NTP header + all extension fields before authenticator.
+    let mut aad = Vec::with_capacity(header_buf.len() + pre_auth_bytes.len());
+    aad.extend_from_slice(&header_buf);
+    aad.extend_from_slice(&pre_auth_bytes);
+
+    // AEAD encrypt (plaintext is empty for basic NTS client — no encrypted extensions).
+    let (nonce, ciphertext) = aead_encrypt(aead_algorithm, c2s_key, &aad, &[])?;
+
+    // Build the NTS Authenticator extension field.
+    let authenticator = NtsAuthenticator::new(nonce, ciphertext);
+    let auth_ef = authenticator.to_extension_field();
+    let auth_bytes = extension::write_extension_fields(&[auth_ef])?;
+
+    // Assemble the complete packet.
+    let mut send_buf = Vec::with_capacity(aad.len() + auth_bytes.len());
+    send_buf.extend_from_slice(&aad);
+    send_buf.extend_from_slice(&auth_bytes);
+
+    Ok((send_buf, t1, uid_data))
+}
+
+/// Validate NTS extension fields in an NTP response.
+///
+/// Verifies the Unique Identifier matches, authenticates the response via AEAD,
+/// and extracts new cookies from the server.
+///
+/// Returns the list of new cookies provided by the server.
+pub(crate) fn validate_nts_response(
+    s2c_key: &[u8],
+    aead_algorithm: u16,
+    uid_data: &[u8],
+    recv_buf: &[u8],
+    recv_len: usize,
+) -> io::Result<Vec<Vec<u8>>> {
+    // Parse extension fields from the response.
+    if recv_len <= protocol::Packet::PACKED_SIZE_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NTS: response has no extension fields",
+        ));
+    }
+    let ext_data = &recv_buf[protocol::Packet::PACKED_SIZE_BYTES..recv_len];
+    let ext_fields = extension::parse_extension_fields(ext_data)?;
+
+    // Find the Unique Identifier and verify it matches.
+    let resp_uid = ext_fields
+        .iter()
+        .find(|ef| ef.field_type == UNIQUE_IDENTIFIER)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "NTS: response missing Unique Identifier",
+            )
+        })?;
+    if resp_uid.value != uid_data {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NTS: Unique Identifier mismatch",
+        ));
+    }
+
+    // Find the NTS Authenticator.
+    let auth_ef = ext_fields
+        .iter()
+        .find(|ef| ef.field_type == extension::NTS_AUTHENTICATOR)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "NTS: response missing NTS Authenticator",
+            )
+        })?;
+    let resp_auth = NtsAuthenticator::from_extension_field(auth_ef)?
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "NTS: failed to parse NTS Authenticator",
+            )
+        })?;
+
+    // Build AAD for response verification: NTP header + extension fields before authenticator.
+    let auth_ef_start = find_authenticator_offset(ext_data, &ext_fields)?;
+    let mut resp_aad = Vec::new();
+    resp_aad.extend_from_slice(&recv_buf[..protocol::Packet::PACKED_SIZE_BYTES]);
+    resp_aad.extend_from_slice(&ext_data[..auth_ef_start]);
+
+    // AEAD decrypt/verify.
+    let _plaintext = aead_decrypt(
+        aead_algorithm,
+        s2c_key,
+        &resp_aad,
+        &resp_auth.nonce,
+        &resp_auth.ciphertext,
+    )?;
+
+    // Extract new cookies from the response.
+    let mut new_cookies = Vec::new();
+    for ef in &ext_fields {
+        if let Some(cookie) = NtsCookie::from_extension_field(ef) {
+            new_cookies.push(cookie.0);
+        }
+    }
+
+    Ok(new_cookies)
 }
 
 /// Find the byte offset of the NTS Authenticator extension field within the
@@ -692,9 +737,8 @@ fn aead_encrypt(
             })?;
             // AES-SIV uses a synthetic nonce (SIV mode), so we provide an empty nonce.
             // The actual "nonce" for NTS is random data included as AAD.
-            let mut rng = rand::thread_rng();
             let mut nonce_bytes = [0u8; 16];
-            rng.fill(&mut nonce_bytes);
+            rand::fill(&mut nonce_bytes);
 
             // AES-SIV-CMAC uses a fixed nonce internally (part of SIV construction).
             // For NTS, we use the nonce as additional data.
@@ -713,9 +757,8 @@ fn aead_encrypt(
             let cipher = Aes256SivAead::new_from_slice(key).map_err(|e| {
                 io::Error::new(io::ErrorKind::InvalidData, format!("AES-SIV key error: {}", e))
             })?;
-            let mut rng = rand::thread_rng();
             let mut nonce_bytes = [0u8; 16];
-            rng.fill(&mut nonce_bytes);
+            rand::fill(&mut nonce_bytes);
 
             let payload = aes_siv::aead::Payload {
                 msg: plaintext,
