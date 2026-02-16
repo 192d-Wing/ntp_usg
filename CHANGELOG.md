@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-02-16
+
+### Added
+
+#### Reference Clock Support (`refclock` feature)
+
+- **GPS receiver** (`refclock/gps.rs`) - NMEA 0183 serial GPS reference clock with `$GPRMC`/`$GPGGA` sentence parsing, configurable baud rate, and async tokio integration
+- **PPS (Pulse Per Second)** (`refclock/pps.rs`) - Kernel PPS discipline via `/dev/pps*` with sub-microsecond timing, configurable edge selection, and jitter filtering
+- **Hardware timestamping** (`refclock/hwts.rs`) - NIC hardware timestamp support via `SO_TIMESTAMPING` for nanosecond-precision packet timing
+- **NMEA parser** (`refclock/nmea.rs`) - Zero-allocation NMEA 0183 sentence parser with checksum validation
+- **RefClock trait** (`refclock/mod.rs`) - Generic `RefClock` async trait for pluggable reference clock implementations
+
+#### Server Integration
+
+- **Stratum 1 server** - `NtpServer` now supports `RefClock` sources for Stratum 1 operation, automatically setting reference ID and stratum from the clock source
+- New example: `stratum1_server.rs` demonstrating GPS-disciplined Stratum 1 NTP server
+
+#### Client Examples
+
+- **GPS receiver** (`examples/gps_receiver.rs`) - Standalone GPS reference clock demo
+- **PPS receiver** (`examples/pps_receiver.rs`) - Standalone PPS discipline demo
+- **GPS+PPS combined** (`examples/gps_pps_combined.rs`) - Combined GPS time + PPS discipline for maximum accuracy
+- **Hardware timestamping** (`examples/hwts_demo.rs`) - NIC hardware timestamp demo
+
+#### Documentation
+
+- `crates/ntp_usg-client/src/refclock/README.md` - Reference clock module documentation
+
+### New Feature Flags
+
+| Crate | Feature | Description |
+|-------|---------|-------------|
+| `ntp_usg-client` | `refclock` | Base reference clock trait and infrastructure |
+| `ntp_usg-client` | `gps` | GPS receiver via serial port (NMEA 0183) |
+| `ntp_usg-client` | `pps` | Kernel PPS discipline |
+| `ntp_usg-client` | `hwts` | NIC hardware timestamping |
+| `ntp_usg-server` | `refclock` | Server-side RefClock integration for Stratum 1 |
+| `ntp_usg-server` | `gps` | GPS support forwarded from client |
+| `ntp_usg-server` | `pps` | PPS support forwarded from client |
+
+### New Dependencies (all optional)
+
+- `serialport` 4.6 (for `gps` feature, serial port access)
+- `async-trait` 0.1 (for `refclock` trait)
+- `ntp_usg-client` (server dependency, for `refclock` feature)
+
 ## [3.2.0] - 2026-02-16
 
 ### Added
@@ -411,6 +457,9 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[3.3.0]: https://github.com/192d-Wing/ntp_usg/compare/v3.2.0...v3.3.0
+[3.2.0]: https://github.com/192d-Wing/ntp_usg/compare/v3.1.0...v3.2.0
+[3.1.0]: https://github.com/192d-Wing/ntp_usg/compare/v3.0.1...v3.1.0
 [3.0.1]: https://github.com/192d-Wing/ntp_usg/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/192d-Wing/ntp_usg/compare/v2.0.3...v3.0.0
 [2.0.3]: https://github.com/192d-Wing/ntp_usg/compare/v2.0.2...v2.0.3
