@@ -45,20 +45,20 @@ This document outlines the development roadmap for the ntp_usg project.
 
 Add comprehensive, production-ready examples covering real-world use cases:
 
-- [ ] **Multi-peer deployment example**
+- [x] **Multi-peer deployment example** (`examples/multi_peer_deployment.rs`)
   - 5-7 peer configuration
   - Selection/clustering demonstration
   - Error handling and fallback strategies
 
-- [ ] **NTS-authenticated continuous client**
+- [x] **NTS-authenticated continuous client** (`examples/nts_multi_peer.rs`)
   - Cookie management
   - Re-keying strategies
   - Failure recovery
 
-- [ ] **System daemon example**
+- [x] **System daemon example** (`examples/daemon.rs`)
   - Background service
   - Logging configuration
-  - Signal handling (SIGHUP, SIGTERM)
+  - Systemd integration notes
 
 - [ ] **Embedded system example**
   - `no_std` usage

@@ -87,11 +87,19 @@ name = "multi_peer_deployment"
 required-features = ["tokio"]
 
 [[example]]
+name = "daemon"
+required-features = ["tokio"]
+
+[[example]]
 name = "nts_request"
 required-features = ["nts"]
 
 [[example]]
 name = "nts_continuous"
+required-features = ["nts"]
+
+[[example]]
+name = "nts_multi_peer"
 required-features = ["nts"]
 
 [[example]]
