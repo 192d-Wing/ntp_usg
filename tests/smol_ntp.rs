@@ -8,7 +8,9 @@ use std::time::Duration;
 #[test]
 fn test_smol_request_nist() {
     smol::block_on(async {
-        let res = ntp::smol_ntp::request("time.nist.gov:123").await;
+        let res =
+            ntp::smol_ntp::request_with_timeout("time.nist.gov:123", Duration::from_secs(10))
+                .await;
         let _ = res.expect("Failed to get an NTP packet from time.nist.gov");
     });
 }
@@ -16,7 +18,11 @@ fn test_smol_request_nist() {
 #[test]
 fn test_smol_request_nist_alt() {
     smol::block_on(async {
-        let res = ntp::smol_ntp::request("time-a-g.nist.gov:123").await;
+        let res = ntp::smol_ntp::request_with_timeout(
+            "time-a-g.nist.gov:123",
+            Duration::from_secs(10),
+        )
+        .await;
         let _ = res.expect("Failed to get an NTP packet from time-a-g.nist.gov");
     });
 }

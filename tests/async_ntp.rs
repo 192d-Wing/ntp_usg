@@ -7,13 +7,16 @@ use std::time::Duration;
 
 #[tokio::test]
 async fn test_async_request_nist() {
-    let res = ntp::async_ntp::request("time.nist.gov:123").await;
+    let res =
+        ntp::async_ntp::request_with_timeout("time.nist.gov:123", Duration::from_secs(10)).await;
     let _ = res.expect("Failed to get an NTP packet from time.nist.gov");
 }
 
 #[tokio::test]
 async fn test_async_request_nist_alt() {
-    let res = ntp::async_ntp::request("time-a-g.nist.gov:123").await;
+    let res =
+        ntp::async_ntp::request_with_timeout("time-a-g.nist.gov:123", Duration::from_secs(10))
+            .await;
     let _ = res.expect("Failed to get an NTP packet from time-a-g.nist.gov");
 }
 

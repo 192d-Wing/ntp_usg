@@ -569,14 +569,14 @@ pub fn request_with_timeout<A: ToSocketAddrs>(addr: A, timeout: Duration) -> io:
 #[cfg(all(test, feature = "std"))]
 #[test]
 fn test_request_nist() {
-    let res = request("time.nist.gov:123");
+    let res = request_with_timeout("time.nist.gov:123", Duration::from_secs(10));
     let _ = res.expect("Failed to get a ntp packet from time.nist.gov");
 }
 
 #[cfg(all(test, feature = "std"))]
 #[test]
 fn test_request_nist_alt() {
-    let res = request("time-a-g.nist.gov:123");
+    let res = request_with_timeout("time-a-g.nist.gov:123", Duration::from_secs(10));
     let _ = res.expect("Failed to get a ntp packet from time-a-g.nist.gov");
 }
 
