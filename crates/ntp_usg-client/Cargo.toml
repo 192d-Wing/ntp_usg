@@ -60,6 +60,7 @@ windows-sys = { workspace = true, optional = true }
 chrono = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 smol = { workspace = true }
+criterion = "0.5"
 
 [[example]]
 name = "request"
@@ -100,3 +101,8 @@ required-features = ["smol-runtime"]
 [[example]]
 name = "smol_continuous"
 required-features = ["smol-runtime"]
+
+[[bench]]
+name = "selection_benchmark"
+harness = false
+required-features = ["tokio"]

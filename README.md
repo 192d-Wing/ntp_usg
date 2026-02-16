@@ -22,6 +22,15 @@ A Network Time Protocol (NTP) library written in Rust, organized as a Cargo work
 
 ## Features
 
+### 🎯 Version 3.1.0 - 100% RFC Compliance
+
+- **RFC 5905 Full Compliance**: Selection, clustering, clock discipline (PLL/FLL), symmetric modes, and broadcast mode
+- **RFC 4330 SNTP API**: Simplified client API for one-off time queries
+- **RFC 7822 Extension Registry**: Generic dispatch system for extension field handlers
+- **Security**: Eliminated unmaintained rustls-pemfile dependency (RUSTSEC-2025-0134)
+
+### Core Features
+
 - 🔒 **Safe & Secure**: `#![deny(unsafe_code)]` crate-wide; only platform FFI in the optional `clock` module uses unsafe
 - 📚 **Well Documented**: Comprehensive API documentation with examples
 - ⚡ **Configurable Timeouts**: Control request timeouts for different network conditions
@@ -29,13 +38,13 @@ A Network Time Protocol (NTP) library written in Rust, organized as a Cargo work
 - 🕐 **Y2036 Safe**: Era-aware timestamp handling for the NTP 32-bit rollover
 - 🌍 **Multi-Server Support**: Query multiple NTP servers for improved reliability
 - 🔐 **Network Time Security**: NTS (RFC 8915) with TLS 1.3 key establishment and AEAD authentication
-- 📡 **Continuous Client**: Adaptive poll interval, multi-peer, and interleaved mode (RFC 9769)
+- 📡 **Continuous Client**: Adaptive poll interval, multi-peer selection, and interleaved mode (RFC 9769)
 - 🌐 **IPv6 Dual-Stack**: Automatic IPv4/IPv6 socket binding
 - 🧩 **`no_std` Support**: Core protocol parsing works without `std` or `alloc`
 - ⏱️ **Clock Adjustment**: Platform-native slew/step correction (Linux, macOS, Windows)
 - 📡 **NTP Server**: Full NTPv4 server with rate limiting, access control, and interleaved mode
 - 🦀 **Modern Rust**: Edition 2024 with MSRV 1.93
-- ✅ **Well Tested**: CI/CD on Linux, macOS, and Windows
+- ✅ **Well Tested**: 290+ tests, CI/CD on Linux, macOS, and Windows
 
 ## Installation
 
@@ -44,13 +53,13 @@ Add the crate(s) you need to your `Cargo.toml`:
 ```toml
 [dependencies]
 # Protocol types only (also supports no_std)
-ntp_usg-proto = "3.0"
+ntp_usg-proto = "3.1"
 
 # NTP client
-ntp_usg-client = { version = "3.0", features = ["tokio"] }
+ntp_usg-client = { version = "3.1", features = ["tokio"] }
 
 # NTP server
-ntp_usg-server = { version = "3.0", features = ["tokio"] }
+ntp_usg-server = { version = "3.1", features = ["tokio"] }
 ```
 
 **Minimum Supported Rust Version (MSRV):** 1.93
@@ -89,13 +98,39 @@ For `no_std` environments, use the proto crate with default features disabled:
 
 ```toml
 [dependencies]
-ntp_usg-proto = { version = "3.0", default-features = false }          # core parsing only
-ntp_usg-proto = { version = "3.0", default-features = false, features = ["alloc"] }  # + Vec-based types
+ntp_usg-proto = { version = "3.1", default-features = false }          # core parsing only
+ntp_usg-proto = { version = "3.1", default-features = false, features = ["alloc"] }  # + Vec-based types
 ```
 
 ## Usage
 
-### Basic Example
+### SNTP (Simple Network Time Protocol)
+
+For simple, one-off time queries, use the SNTP API (RFC 4330 compliant):
+
+```rust
+use ntp_client::sntp;
+
+fn main() -> std::io::Result<()> {
+    let result = sntp::request("time.nist.gov:123")?;
+    println!("Clock offset: {:.6} seconds", result.offset_seconds);
+    println!("Round-trip delay: {:.6} seconds", result.delay_seconds);
+    Ok(())
+}
+```
+
+With async:
+
+```rust
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    let result = sntp::async_request("time.cloudflare.com:123").await?;
+    println!("Offset: {:.6}s", result.offset_seconds);
+    Ok(())
+}
+```
+
+### Basic Example (Full NTP)
 
 ```rust
 use chrono::TimeZone;
@@ -125,7 +160,7 @@ Enable the `tokio` feature:
 
 ```toml
 [dependencies]
-ntp_usg-client = { version = "3.0", features = ["tokio"] }
+ntp_usg-client = { version = "3.1", features = ["tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -171,7 +206,7 @@ Enable the `nts` feature for authenticated NTP:
 
 ```toml
 [dependencies]
-ntp_usg-client = { version = "3.0", features = ["nts"] }
+ntp_usg-client = { version = "3.1", features = ["nts"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -219,7 +254,7 @@ Enable the `smol-runtime` feature:
 
 ```toml
 [dependencies]
-ntp_usg-client = { version = "3.0", features = ["smol-runtime"] }
+ntp_usg-client = { version = "3.1", features = ["smol-runtime"] }
 smol = "2"
 ```
 
@@ -267,7 +302,7 @@ Enable the `clock` feature to correct the system clock based on NTP measurements
 
 ```toml
 [dependencies]
-ntp_usg-client = { version = "3.0", features = ["clock", "tokio"] }
+ntp_usg-client = { version = "3.1", features = ["clock", "tokio"] }
 ```
 
 ```rust
@@ -289,7 +324,7 @@ Enable the `tokio` feature on the server crate:
 
 ```toml
 [dependencies]
-ntp_usg-server = { version = "3.0", features = ["tokio"] }
+ntp_usg-server = { version = "3.1", features = ["tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
