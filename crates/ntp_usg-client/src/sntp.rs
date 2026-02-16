@@ -177,10 +177,7 @@ pub fn request<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
 /// )?;
 /// # Ok::<(), std::io::Error>(())
 /// ```
-pub fn request_with_timeout<A: ToSocketAddrs>(
-    addr: A,
-    timeout: Duration,
-) -> io::Result<NtpResult> {
+pub fn request_with_timeout<A: ToSocketAddrs>(addr: A, timeout: Duration) -> io::Result<NtpResult> {
     crate::request_with_timeout(addr, timeout)
 }
 
@@ -283,10 +280,7 @@ pub async fn smol_request(addr: &str) -> io::Result<NtpResult> {
 /// }
 /// ```
 #[cfg(feature = "smol-runtime")]
-pub async fn smol_request_with_timeout(
-    addr: &str,
-    timeout: Duration,
-) -> io::Result<NtpResult> {
+pub async fn smol_request_with_timeout(addr: &str, timeout: Duration) -> io::Result<NtpResult> {
     crate::smol_ntp::request_with_timeout(addr, timeout).await
 }
 

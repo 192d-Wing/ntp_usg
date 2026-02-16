@@ -168,8 +168,9 @@ mod tests {
         let buf = serialize_broadcast_packet(&state, 6).unwrap();
         assert_eq!(buf.len(), protocol::Packet::PACKED_SIZE_BYTES);
 
-        let parsed: protocol::Packet =
-            (&buf[..protocol::Packet::PACKED_SIZE_BYTES]).read_bytes().unwrap();
+        let parsed: protocol::Packet = (&buf[..protocol::Packet::PACKED_SIZE_BYTES])
+            .read_bytes()
+            .unwrap();
         assert_eq!(parsed.mode, protocol::Mode::Broadcast);
         assert_eq!(parsed.stratum, protocol::Stratum(2));
     }
@@ -177,7 +178,10 @@ mod tests {
     #[test]
     fn test_broadcast_config_default() {
         let config = BroadcastConfig::default();
-        assert_eq!(config.dest_addr, "224.0.1.1:123".parse::<SocketAddr>().unwrap());
+        assert_eq!(
+            config.dest_addr,
+            "224.0.1.1:123".parse::<SocketAddr>().unwrap()
+        );
         assert_eq!(config.interval_secs, 64);
         assert_eq!(config.poll_exponent, 6);
     }

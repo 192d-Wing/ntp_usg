@@ -336,9 +336,8 @@ pub(crate) fn parse_and_validate_response(
     #[cfg(not(feature = "symmetric"))]
     let valid_mode = response.mode == protocol::Mode::Server;
     #[cfg(feature = "symmetric")]
-    let valid_mode =
-        response.mode == protocol::Mode::Server
-            || response.mode == protocol::Mode::SymmetricPassive;
+    let valid_mode = response.mode == protocol::Mode::Server
+        || response.mode == protocol::Mode::SymmetricPassive;
 
     if !valid_mode {
         return Err(io::Error::new(

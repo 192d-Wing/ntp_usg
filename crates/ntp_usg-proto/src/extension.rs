@@ -480,7 +480,10 @@ impl ExtensionRegistry {
         }
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            format!("no handler registered for extension field type 0x{:04X}", field.field_type),
+            format!(
+                "no handler registered for extension field type 0x{:04X}",
+                field.field_type
+            ),
         ))
     }
 
@@ -489,7 +492,11 @@ impl ExtensionRegistry {
     /// Processes each field in sequence. Stops and returns an error on the
     /// first failure. Ignores fields with no registered handler unless
     /// `require_handlers` is true.
-    pub fn dispatch_all(&self, fields: &[ExtensionField], require_handlers: bool) -> io::Result<()> {
+    pub fn dispatch_all(
+        &self,
+        fields: &[ExtensionField],
+        require_handlers: bool,
+    ) -> io::Result<()> {
         for field in fields {
             if let Err(e) = self.dispatch(field) {
                 if require_handlers || e.kind() != io::ErrorKind::Unsupported {

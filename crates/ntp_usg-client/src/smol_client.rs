@@ -179,7 +179,6 @@ impl PeerState {
             }
         }
     }
-
 }
 
 /// Builder for configuring and creating an [`NtpClient`].
@@ -455,14 +454,14 @@ impl NtpClient {
                         let now = std::time::Instant::now()
                             .duration_since(discipline_epoch)
                             .as_secs_f64();
-                        if let Some(output) = discipline.update(
-                            offset,
-                            jitter,
-                            now,
-                            self.peers[idx].poll_exponent,
-                        ) {
+                        if let Some(output) =
+                            discipline.update(offset, jitter, now, self.peers[idx].poll_exponent)
+                        {
                             if output.step {
-                                debug!("discipline: stepping clock by {:.6}s", output.phase_correction);
+                                debug!(
+                                    "discipline: stepping clock by {:.6}s",
+                                    output.phase_correction
+                                );
                                 if let Err(e) = crate::clock::step_clock(output.phase_correction) {
                                     warn!("discipline: step_clock failed: {}", e);
                                 }

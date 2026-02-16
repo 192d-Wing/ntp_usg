@@ -1292,7 +1292,10 @@ mod tests {
             ..make_client_request_packet(protocol::Version::V4)
         };
         let state = test_server_state();
-        let t2 = protocol::TimestampFormat { seconds: 100, fraction: 0 };
+        let t2 = protocol::TimestampFormat {
+            seconds: 100,
+            fraction: 0,
+        };
         let response = build_symmetric_passive_response(&request, &state, t2);
         assert_eq!(response.mode, protocol::Mode::SymmetricPassive);
         assert_eq!(response.origin_timestamp, request.transmit_timestamp);
@@ -1323,10 +1326,10 @@ mod tests {
 
         match result {
             HandleResult::Response(response_buf) => {
-                let response: protocol::Packet =
-                    (&response_buf[..protocol::Packet::PACKED_SIZE_BYTES])
-                        .read_bytes()
-                        .unwrap();
+                let response: protocol::Packet = (&response_buf
+                    [..protocol::Packet::PACKED_SIZE_BYTES])
+                    .read_bytes()
+                    .unwrap();
                 assert_eq!(response.mode, protocol::Mode::SymmetricPassive);
             }
             HandleResult::Drop => panic!("expected Response, got Drop"),

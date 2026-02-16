@@ -48,10 +48,7 @@ pub struct BroadcastPacket {
 /// - The server is synchronized (LI != Unknown with non-zero stratum)
 ///
 /// Returns the parsed packet and the local receive timestamp (T4).
-pub fn parse_broadcast_packet(
-    recv_buf: &[u8],
-    recv_len: usize,
-) -> io::Result<BroadcastPacket> {
+pub fn parse_broadcast_packet(recv_buf: &[u8], recv_len: usize) -> io::Result<BroadcastPacket> {
     use protocol::{ConstPackedSizeBytes, ReadBytes};
 
     // Record T4 immediately.
@@ -71,10 +68,7 @@ pub fn parse_broadcast_packet(
     if packet.mode != protocol::Mode::Broadcast {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!(
-                "expected broadcast mode (5), got {:?}",
-                packet.mode
-            ),
+            format!("expected broadcast mode (5), got {:?}", packet.mode),
         ));
     }
 
@@ -111,10 +105,7 @@ pub fn parse_broadcast_packet(
 /// - calibration_delay = estimated one-way propagation delay (from unicast calibration)
 ///
 /// A positive offset means the local clock is behind the server.
-pub fn compute_broadcast_offset(
-    broadcast: &BroadcastPacket,
-    calibration_delay: f64,
-) -> f64 {
+pub fn compute_broadcast_offset(broadcast: &BroadcastPacket, calibration_delay: f64) -> f64 {
     let t3 = unix_time::Instant::from(broadcast.packet.transmit_timestamp);
     let t4 = unix_time::Instant::from(broadcast.destination_timestamp);
 
@@ -213,11 +204,8 @@ mod tests {
 
     #[test]
     fn test_parse_rejects_zero_transmit() {
-        let buf = make_broadcast_packet(
-            protocol::Stratum(2),
-            protocol::LeapIndicator::NoWarning,
-            0,
-        );
+        let buf =
+            make_broadcast_packet(protocol::Stratum(2), protocol::LeapIndicator::NoWarning, 0);
         let result = parse_broadcast_packet(&buf, 48);
         assert!(result.is_err());
         assert!(
@@ -276,10 +264,7 @@ mod tests {
             destination_timestamp: ts,
         };
         let offset = compute_broadcast_offset(&bcast, 0.0);
-        assert!(
-            offset.abs() < 0.001,
-            "expected ~0 offset, got {offset}"
-        );
+        assert!(offset.abs() < 0.001, "expected ~0 offset, got {offset}");
     }
 
     #[test]

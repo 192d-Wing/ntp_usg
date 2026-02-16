@@ -98,8 +98,9 @@ mod tests {
     fn test_build_symmetric_request_mode() {
         let state = LocalSystemState::default();
         let (buf, _t1) = build_symmetric_request(&state).unwrap();
-        let packet: protocol::Packet =
-            (&buf[..protocol::Packet::PACKED_SIZE_BYTES]).read_bytes().unwrap();
+        let packet: protocol::Packet = (&buf[..protocol::Packet::PACKED_SIZE_BYTES])
+            .read_bytes()
+            .unwrap();
         assert_eq!(packet.mode, protocol::Mode::SymmetricActive);
     }
 
@@ -122,8 +123,9 @@ mod tests {
             },
         };
         let (buf, _t1) = build_symmetric_request(&state).unwrap();
-        let packet: protocol::Packet =
-            (&buf[..protocol::Packet::PACKED_SIZE_BYTES]).read_bytes().unwrap();
+        let packet: protocol::Packet = (&buf[..protocol::Packet::PACKED_SIZE_BYTES])
+            .read_bytes()
+            .unwrap();
 
         assert_eq!(packet.stratum, protocol::Stratum(2));
         assert_eq!(packet.root_delay.fraction, 100);
@@ -135,8 +137,9 @@ mod tests {
     fn test_build_symmetric_request_has_transmit_timestamp() {
         let state = LocalSystemState::default();
         let (buf, t1) = build_symmetric_request(&state).unwrap();
-        let packet: protocol::Packet =
-            (&buf[..protocol::Packet::PACKED_SIZE_BYTES]).read_bytes().unwrap();
+        let packet: protocol::Packet = (&buf[..protocol::Packet::PACKED_SIZE_BYTES])
+            .read_bytes()
+            .unwrap();
         assert_eq!(packet.transmit_timestamp, t1);
         assert!(t1.seconds > 0);
     }
@@ -153,8 +156,9 @@ mod tests {
     fn test_build_symmetric_request_version() {
         let state = LocalSystemState::default();
         let (buf, _) = build_symmetric_request(&state).unwrap();
-        let packet: protocol::Packet =
-            (&buf[..protocol::Packet::PACKED_SIZE_BYTES]).read_bytes().unwrap();
+        let packet: protocol::Packet = (&buf[..protocol::Packet::PACKED_SIZE_BYTES])
+            .read_bytes()
+            .unwrap();
         assert_eq!(packet.version, protocol::Version::V4);
     }
 

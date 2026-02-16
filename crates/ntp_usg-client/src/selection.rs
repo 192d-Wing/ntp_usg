@@ -291,7 +291,13 @@ pub fn combine(survivors: &[PeerCandidate]) -> Option<CombinedEstimate> {
 mod tests {
     use super::*;
 
-    fn make_candidate(idx: usize, offset: f64, root_delay: f64, root_disp: f64, jitter: f64) -> PeerCandidate {
+    fn make_candidate(
+        idx: usize,
+        offset: f64,
+        root_delay: f64,
+        root_disp: f64,
+        jitter: f64,
+    ) -> PeerCandidate {
         PeerCandidate {
             peer_index: idx,
             offset,
@@ -324,7 +330,11 @@ mod tests {
             make_candidate(2, 0.009, 0.050, 0.005, 0.001),
         ];
         let result = select_truechimers(&candidates);
-        assert_eq!(result.len(), 3, "all 3 agreeing peers should be truechimers");
+        assert_eq!(
+            result.len(),
+            3,
+            "all 3 agreeing peers should be truechimers"
+        );
     }
 
     #[test]
@@ -491,10 +501,8 @@ mod tests {
         assert!(!tc_indices.contains(&3), "falseticker should be rejected");
 
         // Step 2: Build survivor list and cluster.
-        let mut survivors: Vec<PeerCandidate> = tc_indices
-            .iter()
-            .map(|&i| candidates[i].clone())
-            .collect();
+        let mut survivors: Vec<PeerCandidate> =
+            tc_indices.iter().map(|&i| candidates[i].clone()).collect();
         cluster_survivors(&mut survivors);
         assert!(survivors.len() >= NMIN.min(tc_indices.len()));
 
@@ -520,10 +528,8 @@ mod tests {
         let tc_indices = select_truechimers(&candidates);
         assert_eq!(tc_indices.len(), 5, "all peers should be truechimers");
 
-        let mut survivors: Vec<PeerCandidate> = tc_indices
-            .iter()
-            .map(|&i| candidates[i].clone())
-            .collect();
+        let mut survivors: Vec<PeerCandidate> =
+            tc_indices.iter().map(|&i| candidates[i].clone()).collect();
         cluster_survivors(&mut survivors);
 
         let estimate = combine(&survivors).unwrap();
