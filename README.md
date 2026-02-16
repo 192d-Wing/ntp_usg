@@ -15,7 +15,7 @@ A Network Time Protocol (NTP) packet parsing and client library written in Rust.
 - 🔒 **Safe & Secure**: `#![deny(unsafe_code)]` crate-wide; only platform FFI in the optional `clock` module uses unsafe
 - 📚 **Well Documented**: Comprehensive API documentation with examples
 - ⚡ **Configurable Timeouts**: Control request timeouts for different network conditions
-- 🔄 **Async Ready**: Optional async support via Tokio or async-std
+- 🔄 **Async Ready**: Optional async support via Tokio or smol
 - 🕐 **Y2036 Safe**: Era-aware timestamp handling for the NTP 32-bit rollover
 - 🌍 **Multi-Server Support**: Query multiple NTP servers for improved reliability
 - 🔐 **Network Time Security**: NTS (RFC 8915) with TLS 1.3 key establishment and AEAD authentication
@@ -45,9 +45,9 @@ ntp_usg = "1.2"
 | `std` | Yes | Full I/O, networking, and `byteorder`-based APIs |
 | `alloc` | No | `Vec`-based extension field types without full `std` |
 | `tokio` | No | Async NTP client using Tokio |
-| `async-std-runtime` | No | Async NTP client using async-std |
+| `smol-runtime` | No | Async NTP client using smol |
 | `nts` | No | NTS authentication (Tokio + rustls) |
-| `nts-async-std` | No | NTS authentication (async-std + futures-rustls) |
+| `nts-smol` | No | NTS authentication (smol + futures-rustls) |
 | `clock` | No | System clock slew/step adjustment (Linux, macOS, Windows) |
 
 For `no_std` environments, disable default features:
@@ -178,49 +178,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Async with async-std
+### Async with smol
 
-Enable the `async-std-runtime` feature:
+Enable the `smol-runtime` feature:
 
 ```toml
 [dependencies]
-ntp_usg = { version = "1.2", features = ["async-std-runtime"] }
-async-std = { version = "1", features = ["attributes"] }
+ntp_usg = { version = "1.2", features = ["smol-runtime"] }
+smol = "2"
 ```
 
 ```rust
 use std::time::Duration;
 
-#[async_std::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let result = ntp::async_std_ntp::request_with_timeout(
-        "pool.ntp.org:123",
-        Duration::from_secs(5),
-    ).await?;
-    println!("Offset: {:.6} seconds", result.offset_seconds);
-    Ok(())
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    smol::block_on(async {
+        let result = ntp::smol_ntp::request_with_timeout(
+            "pool.ntp.org:123",
+            Duration::from_secs(5),
+        ).await?;
+        println!("Offset: {:.6} seconds", result.offset_seconds);
+        Ok(())
+    })
 }
 ```
 
-The async-std continuous client uses `Arc<RwLock<NtpSyncState>>` for state sharing:
+The smol continuous client uses `Arc<RwLock<NtpSyncState>>` for state sharing:
 
 ```rust
-use ntp::async_std_client::NtpClient;
+use ntp::smol_client::NtpClient;
 
-#[async_std::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (client, state) = NtpClient::builder()
-        .server("pool.ntp.org:123")
-        .build()
-        .await?;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    smol::block_on(async {
+        let (client, state) = NtpClient::builder()
+            .server("pool.ntp.org:123")
+            .build()
+            .await?;
 
-    async_std::task::spawn(client.run());
+        smol::spawn(client.run()).detach();
 
-    loop {
-        async_std::task::sleep(std::time::Duration::from_secs(5)).await;
-        let s = state.read().unwrap();
-        println!("Offset: {:.6}s, Delay: {:.6}s", s.offset, s.delay);
-    }
+        loop {
+            smol::Timer::after(std::time::Duration::from_secs(5)).await;
+            let s = state.read().unwrap();
+            println!("Offset: {:.6}s, Delay: {:.6}s", s.offset, s.delay);
+        }
+    })
 }
 ```
 
@@ -279,11 +281,11 @@ cargo run --example nts_request --features nts
 # NTS continuous client (requires nts feature)
 cargo run --example nts_continuous --features nts
 
-# Async-std one-shot request
-cargo run --example async_std_request --features async-std-runtime
+# Smol one-shot request
+cargo run --example smol_request --features smol-runtime
 
-# Async-std continuous client
-cargo run --example async_std_continuous --features async-std-runtime
+# Smol continuous client
+cargo run --example smol_continuous --features smol-runtime
 
 # Clock adjustment (requires root/sudo on Unix, Administrator on Windows)
 cargo run --example clock_adjust --features "clock tokio"
@@ -299,7 +301,7 @@ cargo run --example clock_adjust --features "clock tokio"
 - [x] Network Time Security (RFC 8915)
 - [x] IO-independent parsing (`FromBytes`/`ToBytes` traits)
 - [x] `no_std` support (with optional `alloc`)
-- [x] async-std support (one-shot, continuous, and NTS)
+- [x] smol support (one-shot, continuous, and NTS)
 - [x] System clock adjustment (slew/step on Linux, macOS, Windows)
 - [ ] NTP server functionality
 
