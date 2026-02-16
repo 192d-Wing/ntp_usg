@@ -1,9 +1,10 @@
 # ntp_usg
 
-[![Documentation](https://docs.rs/ntp_usg/badge.svg)](https://docs.rs/ntp_usg)
-[![Crates.io](https://img.shields.io/crates/v/ntp_usg.svg)](https://crates.io/crates/ntp_usg)
-[![License](https://img.shields.io/crates/l/ntp_usg.svg)](https://github.com/192d-Wing/ntp_usg#license)
-[![CI](https://github.com/192d-Wing/ntp_usg/actions/workflows/ci.yml/badge.svg)](https://github.com/192d-Wing/ntp_usg/actions/workflows/ci.yml)
+![docs.rs](https://img.shields.io/docsrs/ntp_usg?style=for-the-badge&logo=rust)
+[![Crates.io](https://img.shields.io/crates/v/ntp_usg.svg?style=for-the-badge&logo=rust)](https://crates.io/crates/ntp_usg)
+![Crates.io Total Downloads](https://img.shields.io/crates/d/ntp_usg?style=for-the-badge&logo=rust)
+[![License](https://img.shields.io/crates/l/ntp_usg.svg?style=for-the-badge)](https://github.com/192d-Wing/ntp_usg#license)
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/192d-Wing/ntp_usg/ci.yml?branch=master&style=for-the-badge&logo=github)
 
 A Network Time Protocol (NTP) packet parsing and client library written in Rust.
 
