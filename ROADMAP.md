@@ -14,7 +14,7 @@ This document outlines the planned features and improvements for `ntp_usg`.
 - [x] **IO-independent parsing** — `FromBytes`/`ToBytes` traits for buffer-based parsing decoupled from `std::io`
 - [x] **no_std support** — Core parsing works without `std` or `alloc`; `alloc` feature enables `Vec`-based types
 - [x] **async-std support** — `async_std_ntp`, `async_std_client`, and `async_std_nts` modules mirroring the tokio API surface
-- [x] **System clock adjustment** — Platform-native slew/step correction on Linux and macOS via `clock` feature
+- [x] **System clock adjustment** — Platform-native slew/step correction on Linux, macOS, and Windows via `clock` feature
 
 ## Planned
 
