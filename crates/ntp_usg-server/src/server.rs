@@ -39,6 +39,11 @@ use crate::server_common::{
     handle_request,
 };
 
+#[cfg(feature = "refclock")]
+use ntp_client::refclock::RefClock;
+#[cfg(feature = "refclock")]
+use tokio::task::JoinHandle;
+
 /// Builder for configuring and creating an [`NtpServer`].
 pub struct NtpServerBuilder {
     listen_addr: String,
@@ -48,6 +53,8 @@ pub struct NtpServerBuilder {
     rate_limit: Option<RateLimitConfig>,
     enable_interleaved: bool,
     max_clients: usize,
+    #[cfg(feature = "refclock")]
+    reference_clock: Option<Box<dyn RefClock>>,
 }
 
 impl NtpServerBuilder {
@@ -60,6 +67,8 @@ impl NtpServerBuilder {
             rate_limit: None,
             enable_interleaved: false,
             max_clients: 100_000,
+            #[cfg(feature = "refclock")]
+            reference_clock: None,
         }
     }
 
@@ -142,18 +151,127 @@ impl NtpServerBuilder {
         self
     }
 
+    /// Set a reference clock for Stratum 1 operation.
+    ///
+    /// When a reference clock is provided, the server will:
+    /// - Automatically set stratum to the clock's stratum value
+    /// - Use the clock's reference ID
+    /// - Periodically update system state from the clock
+    /// - Update root delay/dispersion based on clock samples
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "refclock")]
+    /// # async fn example() -> std::io::Result<()> {
+    /// use ntp_server::server::NtpServer;
+    /// use ntp_client::refclock::LocalClock;
+    ///
+    /// let clock = LocalClock::new(0.001);
+    ///
+    /// let server = NtpServer::builder()
+    ///     .listen("0.0.0.0:123")
+    ///     .reference_clock(clock)  // Auto-sets stratum and ref ID
+    ///     .build()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(feature = "refclock")]
+    pub fn reference_clock(mut self, clock: impl RefClock + 'static) -> Self {
+        // Get stratum and reference ID from the clock
+        let stratum = protocol::Stratum(clock.stratum());
+        let ref_id_bytes = clock.reference_id();
+
+        // Convert reference ID bytes to appropriate type based on stratum
+        let reference_id = if stratum == protocol::Stratum::PRIMARY {
+            // Stratum 1: interpret as primary source (GPS, PPS, etc.)
+            // Map common reference IDs to PrimarySource variants
+            let reference_id = match &ref_id_bytes {
+                b"GPS\0" => protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Gps),
+                b"PPS\0" => protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Pps),
+                b"IRIG" => protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Irig),
+                b"NIST" => protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Nist),
+                b"LOCL" => protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Locl),
+                _ => {
+                    // Unknown primary source - use as-is
+                    protocol::ReferenceIdentifier::SecondaryOrClient(ref_id_bytes)
+                }
+            };
+            reference_id
+        } else {
+            // Stratum 2+: treat as opaque bytes
+            protocol::ReferenceIdentifier::SecondaryOrClient(ref_id_bytes)
+        };
+
+        self.system_state.stratum = stratum;
+        self.system_state.reference_id = reference_id;
+        self.reference_clock = Some(Box::new(clock));
+        self
+    }
+
     /// Build the server. Binds to the configured listen address.
     pub async fn build(self) -> io::Result<NtpServer> {
         let sock = UdpSocket::bind(&self.listen_addr).await?;
         debug!("NTP server listening on {}", self.listen_addr);
 
+        #[cfg(feature = "refclock")]
+        let refclock_task = if let Some(mut clock) = self.reference_clock {
+            let system_state = Arc::new(RwLock::new(self.system_state.clone()));
+            let state_clone = system_state.clone();
+
+            // Spawn background task to update system state from reference clock
+            Some(tokio::spawn(async move {
+                loop {
+                    match clock.read_sample().await {
+                        Ok(sample) => {
+                            if let Ok(mut state) = state_clone.write() {
+                                // Update reference timestamp
+                                state.reference_timestamp = sample.timestamp.into();
+
+                                // Update root dispersion from clock sample
+                                // ShortFormat represents seconds in 16.16 fixed point
+                                let disp_fixed = (sample.dispersion * 65536.0) as u32;
+                                state.root_dispersion = protocol::ShortFormat { seconds: (disp_fixed >> 16) as u16, fraction: (disp_fixed & 0xFFFF) as u16 };
+
+                                debug!(
+                                    "RefClock update: offset={:.9}s, dispersion={:.9}s, quality={}",
+                                    sample.offset, sample.dispersion, sample.quality
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            debug!("RefClock read error: {}", e);
+                        }
+                    }
+
+                    // Wait for next poll interval
+                    tokio::time::sleep(clock.poll_interval()).await;
+                }
+            }))
+        } else {
+            None
+        };
+
+        #[cfg(feature = "refclock")]
+        let system_state = if refclock_task.is_some() {
+            Arc::new(RwLock::new(self.system_state))
+        } else {
+            Arc::new(RwLock::new(self.system_state))
+        };
+
+        #[cfg(not(feature = "refclock"))]
+        let system_state = Arc::new(RwLock::new(self.system_state));
+
         Ok(NtpServer {
             sock,
-            system_state: Arc::new(RwLock::new(self.system_state)),
+            system_state,
             access_control: AccessControl::new(self.allow_list, self.deny_list),
             rate_limit: self.rate_limit,
             client_table: ClientTable::new(self.max_clients),
             enable_interleaved: self.enable_interleaved,
+            #[cfg(feature = "refclock")]
+            _refclock_task: refclock_task,
         })
     }
 }
@@ -169,6 +287,8 @@ pub struct NtpServer {
     rate_limit: Option<RateLimitConfig>,
     client_table: ClientTable,
     enable_interleaved: bool,
+    #[cfg(feature = "refclock")]
+    _refclock_task: Option<JoinHandle<()>>,
 }
 
 impl NtpServer {

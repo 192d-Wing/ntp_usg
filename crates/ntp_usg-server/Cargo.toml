@@ -29,6 +29,9 @@ nts = [
 ]
 symmetric = []
 broadcast = []
+refclock = ["tokio", "dep:ntp_usg-client", "dep:async-trait"]
+gps = ["refclock", "ntp_usg-client/gps"]
+pps = ["refclock", "ntp_usg-client/pps"]
 smol-runtime = ["dep:smol", "dep:futures-lite"]
 nts-smol = [
     "smol-runtime",
@@ -41,6 +44,7 @@ nts-smol = [
 
 [dependencies]
 ntp_usg-proto = { workspace = true }
+ntp_usg-client = { path = "../ntp_usg-client", optional = true, default-features = false, features = ["refclock"] }
 log = { workspace = true }
 tokio = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
@@ -50,9 +54,11 @@ smol = { workspace = true, optional = true }
 futures-rustls = { workspace = true, optional = true }
 futures-lite = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
+async-trait = { version = "0.1", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+env_logger = "0.11"
 
 [[example]]
 name = "server"
@@ -61,3 +67,7 @@ required-features = ["tokio"]
 [[example]]
 name = "nts_server"
 required-features = ["nts"]
+
+[[example]]
+name = "stratum1_server"
+required-features = ["refclock"]
