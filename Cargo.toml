@@ -37,7 +37,7 @@ nts = [
     "dep:rand",
     "tokio",
 ]
-clock = ["std", "dep:libc"]
+clock = ["std", "dep:libc", "dep:windows-sys"]
 async-std-runtime = ["std", "dep:async-std"]
 nts-async-std = [
     "async-std-runtime",
@@ -77,6 +77,13 @@ futures-lite = { version = "2", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", optional = true, features = [
+    "Win32_System_SystemInformation",
+    "Win32_System_Time",
+    "Win32_Foundation",
+] }
 
 [[example]]
 name = "async_request"
