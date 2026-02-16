@@ -47,6 +47,24 @@ pub mod protocol;
 /// (seconds since 1900-01-01) and Unix timestamps (seconds since 1970-01-01).
 pub mod unix_time;
 
+/// Clock sample filtering for the continuous NTP client.
+///
+/// Implements a simplified version of the RFC 5905 Section 10 clock filter
+/// algorithm.
+#[cfg(feature = "tokio")]
+pub mod filter;
+
+/// Continuous NTP client with adaptive poll interval management and interleaved mode.
+///
+/// Enable with the `tokio` feature flag:
+///
+/// ```toml
+/// [dependencies]
+/// ntp_usg = { version = "0.9", features = ["tokio"] }
+/// ```
+#[cfg(feature = "tokio")]
+pub mod client;
+
 /// Async NTP client functions using the Tokio runtime.
 ///
 /// Enable with the `tokio` feature flag:
@@ -57,13 +75,6 @@ pub mod unix_time;
 /// ```
 ///
 /// See [`async_ntp::request`] and [`async_ntp::request_with_timeout`] for details.
-/// Clock sample filtering for the continuous NTP client.
-///
-/// Implements a simplified version of the RFC 5905 Section 10 clock filter
-/// algorithm.
-#[cfg(feature = "tokio")]
-pub mod filter;
-
 #[cfg(feature = "tokio")]
 pub mod async_ntp;
 
