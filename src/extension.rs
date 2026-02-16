@@ -321,9 +321,7 @@ impl NtsAuthenticator {
         // Pad nonce to 4-byte boundary.
         let nonce_padded = (2 + self.nonce.len() + 3) & !3;
         let nonce_pad = nonce_padded - (2 + self.nonce.len());
-        for _ in 0..nonce_pad {
-            value.push(0);
-        }
+        value.extend(core::iter::repeat_n(0u8, nonce_pad));
         // Ciphertext length (u16 BE) + ciphertext.
         value.extend_from_slice(&(self.ciphertext.len() as u16).to_be_bytes());
         value.extend_from_slice(&self.ciphertext);
