@@ -27,6 +27,8 @@ nts = [
     "dep:rustls-pemfile",
     "dep:rand",
 ]
+symmetric = []
+broadcast = []
 smol-runtime = ["dep:smol", "dep:futures-lite"]
 nts-smol = [
     "smol-runtime",

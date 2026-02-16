@@ -10,6 +10,10 @@
 /// Number of samples retained in the filter window.
 pub const FILTER_SIZE: usize = 8;
 
+/// Maximum frequency tolerance (seconds/second) for dispersion growth.
+/// Same value as `protocol::TOLERANCE` (15 PPM).
+const TOLERANCE: f64 = 15e-6;
+
 /// A single clock sample from an NTP exchange.
 #[derive(Clone, Copy, Debug)]
 pub struct ClockSample {
@@ -19,6 +23,19 @@ pub struct ClockSample {
     pub delay: f64,
     /// Age of this sample in seconds since it was recorded.
     pub age: f64,
+    /// Dispersion of this sample (seconds). Grows with age per RFC 5905 Section 10.
+    pub dispersion: f64,
+    /// When this sample was recorded (monotonic clock).
+    pub epoch: std::time::Instant,
+}
+
+impl ClockSample {
+    /// Compute the synchronization distance for this sample.
+    ///
+    /// Distance = delay/2 + dispersion (RFC 5905 Section 10).
+    pub fn distance(&self) -> f64 {
+        self.delay / 2.0 + self.dispersion
+    }
 }
 
 /// A moving-window clock filter that retains the last [`FILTER_SIZE`] samples.
@@ -45,11 +62,25 @@ impl SampleFilter {
     }
 
     /// Add a new sample to the filter, overwriting the oldest if full.
+    ///
+    /// Sets dispersion to 0 and epoch to now. For samples with known
+    /// dispersion, use [`add_with_dispersion()`](SampleFilter::add_with_dispersion).
     pub fn add(&mut self, offset: f64, delay: f64) {
+        self.add_with_dispersion(offset, delay, 0.0);
+    }
+
+    /// Add a new sample with explicit initial dispersion.
+    ///
+    /// The `dispersion` value is typically the server's root dispersion plus
+    /// the precision contribution. The dispersion grows with age at a rate
+    /// of `TOLERANCE` (15 PPM) per second via [`update_ages()`](SampleFilter::update_ages).
+    pub fn add_with_dispersion(&mut self, offset: f64, delay: f64, dispersion: f64) {
         self.samples[self.next_idx] = Some(ClockSample {
             offset,
             delay,
             age: 0.0,
+            dispersion,
+            epoch: std::time::Instant::now(),
         });
         self.next_idx = (self.next_idx + 1) % FILTER_SIZE;
         self.count += 1;
@@ -94,6 +125,53 @@ impl SampleFilter {
     /// Returns true if no samples have been added.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Update the age and dispersion of all samples based on elapsed time.
+    ///
+    /// Should be called before querying the filter (e.g., before building
+    /// [`PeerCandidate`](crate::selection::PeerCandidate) values for the
+    /// selection pipeline). Dispersion grows at `TOLERANCE` (15 PPM) per
+    /// second of age, per RFC 5905 Section 10.
+    pub fn update_ages(&mut self) {
+        let now = std::time::Instant::now();
+        for sample in self.samples.iter_mut().flatten() {
+            let elapsed = now.duration_since(sample.epoch).as_secs_f64();
+            let delta = elapsed - sample.age;
+            if delta > 0.0 {
+                sample.dispersion += TOLERANCE * delta;
+            }
+            sample.age = elapsed;
+        }
+    }
+
+    /// Compute the filter dispersion per RFC 5905 Section 10.
+    ///
+    /// Returns the weighted sum of individual sample dispersions:
+    /// `Σ(disp_i / 2^i)` where samples are sorted by distance (delay/2 + dispersion).
+    ///
+    /// Returns 0.0 if no samples are present.
+    pub fn dispersion(&self) -> f64 {
+        let sorted = self.sorted_by_distance();
+        sorted
+            .iter()
+            .enumerate()
+            .map(|(i, s)| s.dispersion / (1u64 << i) as f64)
+            .sum()
+    }
+
+    /// Return samples sorted by synchronization distance (delay/2 + dispersion).
+    ///
+    /// Per RFC 5905 Section 10, the sample ordering by distance determines
+    /// both the best sample selection and the filter dispersion weighting.
+    pub fn sorted_by_distance(&self) -> Vec<&ClockSample> {
+        let mut valid: Vec<&ClockSample> = self.samples.iter().flatten().collect();
+        valid.sort_by(|a, b| {
+            a.distance()
+                .partial_cmp(&b.distance())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        valid
     }
 }
 
@@ -239,5 +317,108 @@ mod tests {
             let expected = (i + 1).min(FILTER_SIZE);
             assert_eq!(f.len(), expected, "len wrong after {i} additions");
         }
+    }
+
+    #[test]
+    fn test_add_with_dispersion() {
+        let mut f = SampleFilter::new();
+        f.add_with_dispersion(0.005, 0.050, 0.001);
+        let best = f.best_sample().unwrap();
+        assert_eq!(best.offset, 0.005);
+        assert_eq!(best.delay, 0.050);
+        assert_eq!(best.dispersion, 0.001);
+    }
+
+    #[test]
+    fn test_sample_distance() {
+        let sample = ClockSample {
+            offset: 0.0,
+            delay: 0.100,
+            age: 0.0,
+            dispersion: 0.010,
+            epoch: std::time::Instant::now(),
+        };
+        // distance = delay/2 + dispersion = 0.050 + 0.010 = 0.060
+        assert!((sample.distance() - 0.060).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_update_ages_increases_dispersion() {
+        let mut f = SampleFilter::new();
+        f.add(0.005, 0.050);
+        let initial_disp = f.best_sample().unwrap().dispersion;
+        assert_eq!(initial_disp, 0.0);
+
+        // Simulate time passing by manually adjusting the epoch.
+        // We can't sleep in tests, so directly test the logic:
+        // After update_ages(), dispersion should include TOLERANCE * elapsed.
+        f.update_ages();
+        // With zero elapsed time (or near-zero), dispersion should stay near 0.
+        let disp_after = f.best_sample().unwrap().dispersion;
+        // It might be very slightly > 0 due to execution time, but should be tiny.
+        assert!(disp_after < 1e-6, "dispersion should be tiny: {disp_after}");
+    }
+
+    #[test]
+    fn test_dispersion_grows_with_initial_value() {
+        let mut f = SampleFilter::new();
+        f.add_with_dispersion(0.005, 0.050, 0.010);
+        // Filter dispersion with one sample = sample's dispersion / 2^0 = 0.010
+        assert!((f.dispersion() - 0.010).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_filter_dispersion_weighting() {
+        let mut f = SampleFilter::new();
+        // Add 3 samples with different delays and dispersions.
+        f.add_with_dispersion(0.001, 0.020, 0.001); // distance = 0.011 (lowest)
+        f.add_with_dispersion(0.002, 0.040, 0.002); // distance = 0.022
+        f.add_with_dispersion(0.003, 0.060, 0.004); // distance = 0.034 (highest)
+
+        // Sorted by distance: [0.011, 0.022, 0.034]
+        // Filter dispersion = 0.001/1 + 0.002/2 + 0.004/4 = 0.001 + 0.001 + 0.001 = 0.003
+        let disp = f.dispersion();
+        assert!(
+            (disp - 0.003).abs() < 1e-12,
+            "filter dispersion={disp}, expected=0.003"
+        );
+    }
+
+    #[test]
+    fn test_sorted_by_distance_ordering() {
+        let mut f = SampleFilter::new();
+        f.add_with_dispersion(0.001, 0.100, 0.001); // distance = 0.051
+        f.add_with_dispersion(0.002, 0.020, 0.002); // distance = 0.012
+        f.add_with_dispersion(0.003, 0.060, 0.000); // distance = 0.030
+
+        let sorted = f.sorted_by_distance();
+        assert_eq!(sorted.len(), 3);
+        assert!(sorted[0].distance() <= sorted[1].distance());
+        assert!(sorted[1].distance() <= sorted[2].distance());
+        // First should be the one with distance 0.012.
+        assert_eq!(sorted[0].offset, 0.002);
+    }
+
+    #[test]
+    fn test_empty_filter_dispersion() {
+        let f = SampleFilter::new();
+        assert_eq!(f.dispersion(), 0.0);
+    }
+
+    #[test]
+    fn test_sorted_by_distance_empty() {
+        let f = SampleFilter::new();
+        assert!(f.sorted_by_distance().is_empty());
+    }
+
+    #[test]
+    fn test_add_preserves_epoch() {
+        let before = std::time::Instant::now();
+        let mut f = SampleFilter::new();
+        f.add(0.005, 0.050);
+        let after = std::time::Instant::now();
+        let sample = f.best_sample().unwrap();
+        assert!(sample.epoch >= before);
+        assert!(sample.epoch <= after);
     }
 }

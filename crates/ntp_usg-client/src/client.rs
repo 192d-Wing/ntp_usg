@@ -41,8 +41,9 @@ use std::time::Duration;
 use tokio::net::UdpSocket;
 
 pub use crate::client_common::NtpSyncState;
-use crate::client_common::classify_and_compute;
+use crate::client_common::{classify_and_compute, short_format_to_secs};
 use crate::filter::{ClockSample, SampleFilter};
+use crate::selection::{self, PeerCandidate};
 use crate::{KissOfDeathError, build_request_packet, parse_and_validate_response, protocol};
 
 #[cfg(feature = "nts")]
@@ -89,6 +90,10 @@ struct PeerState {
     filter: SampleFilter,
     /// Last stratum received from this peer.
     stratum: Option<protocol::Stratum>,
+    /// Root delay from the peer's last response (seconds).
+    root_delay_secs: f64,
+    /// Root dispersion from the peer's last response (seconds).
+    root_dispersion_secs: f64,
     /// Our transmit timestamp (T1) from the previous exchange (for interleaved mode).
     prev_t1: Option<protocol::TimestampFormat>,
     /// Our receive timestamp (T4) from the previous exchange (for interleaved mode).
@@ -112,6 +117,8 @@ impl PeerState {
             reachability: 0,
             filter: SampleFilter::new(),
             stratum: None,
+            root_delay_secs: 0.0,
+            root_dispersion_secs: 0.0,
             prev_t1: None,
             prev_t4: None,
             current_t1: None,
@@ -137,6 +144,8 @@ impl PeerState {
             reachability: 0,
             filter: SampleFilter::new(),
             stratum: None,
+            root_delay_secs: 0.0,
+            root_dispersion_secs: 0.0,
             prev_t1: None,
             prev_t4: None,
             current_t1: None,
@@ -196,14 +205,6 @@ impl PeerState {
         }
     }
 
-    /// Compute synchronization distance (used to select best peer).
-    /// Lower is better.
-    fn sync_distance(&self) -> f64 {
-        match self.filter.best_sample() {
-            Some(s) => s.delay.abs() / 2.0 + self.filter.jitter(),
-            None => f64::MAX,
-        }
-    }
 }
 
 /// Classify a response as basic or interleaved mode and compute the clock sample.
@@ -217,6 +218,8 @@ pub struct NtpClientBuilder {
     min_poll: u8,
     max_poll: u8,
     initial_poll: Option<u8>,
+    #[cfg(feature = "discipline")]
+    enable_discipline: bool,
 }
 
 impl NtpClientBuilder {
@@ -228,6 +231,8 @@ impl NtpClientBuilder {
             min_poll: protocol::MINPOLL,
             max_poll: protocol::MAXPOLL,
             initial_poll: None,
+            #[cfg(feature = "discipline")]
+            enable_discipline: false,
         }
     }
 
@@ -262,6 +267,21 @@ impl NtpClientBuilder {
     /// Set initial poll exponent. Defaults to min_poll.
     pub fn initial_poll(mut self, exponent: u8) -> Self {
         self.initial_poll = Some(exponent);
+        self
+    }
+
+    /// Enable the clock discipline loop (PLL/FLL) and periodic clock adjustment.
+    ///
+    /// When enabled, the client feeds offset measurements from the selection
+    /// pipeline into the RFC 5905 Section 11.3 discipline loop and applies
+    /// phase/frequency corrections to the system clock via the Section 12
+    /// periodic adjustment process.
+    ///
+    /// Requires the `discipline` feature (which implies `clock`).
+    /// Clock corrections require elevated privileges (root/admin).
+    #[cfg(feature = "discipline")]
+    pub fn enable_discipline(mut self, enable: bool) -> Self {
+        self.enable_discipline = enable;
         self
     }
 
@@ -341,6 +361,18 @@ impl NtpClientBuilder {
                 min_poll,
                 max_poll,
                 total_responses: 0,
+                #[cfg(feature = "discipline")]
+                discipline: if self.enable_discipline {
+                    Some(crate::discipline::ClockDiscipline::new())
+                } else {
+                    None
+                },
+                #[cfg(feature = "discipline")]
+                adjuster: if self.enable_discipline {
+                    Some(crate::clock_adjust::ClockAdjuster::new())
+                } else {
+                    None
+                },
             },
             state_rx,
         ))
@@ -357,6 +389,12 @@ pub struct NtpClient {
     min_poll: u8,
     max_poll: u8,
     total_responses: u64,
+    /// Clock discipline loop (PLL/FLL) per RFC 5905 Section 11.3.
+    #[cfg(feature = "discipline")]
+    discipline: Option<crate::discipline::ClockDiscipline>,
+    /// Periodic clock adjuster per RFC 5905 Section 12.
+    #[cfg(feature = "discipline")]
+    adjuster: Option<crate::clock_adjust::ClockAdjuster>,
 }
 
 impl NtpClient {
@@ -378,7 +416,30 @@ impl NtpClient {
             .map(|_| tokio::time::Instant::now())
             .collect();
 
+        // Monotonic epoch for the discipline loop.
+        #[cfg(feature = "discipline")]
+        let discipline_epoch = std::time::Instant::now();
+
+        // Track time for the 1-second adjuster tick.
+        #[cfg(feature = "discipline")]
+        let mut last_adjust_tick = std::time::Instant::now();
+
         loop {
+            // Run any pending adjuster ticks before the next poll.
+            #[cfg(feature = "discipline")]
+            if let Some(adjuster) = &mut self.adjuster {
+                let now = std::time::Instant::now();
+                while now.duration_since(last_adjust_tick) >= Duration::from_secs(1) {
+                    last_adjust_tick += Duration::from_secs(1);
+                    let adj = adjuster.tick();
+                    if adj.abs() > 1e-15
+                        && let Err(e) = crate::clock::slew_clock(adj)
+                    {
+                        debug!("adjuster: slew_clock failed: {}", e);
+                    }
+                }
+            }
+
             // Find the peer with the earliest next poll time that isn't demobilized.
             let next = next_poll
                 .iter()
@@ -394,7 +455,26 @@ impl NtpClient {
                 }
             };
 
-            // Sleep until the deadline.
+            // Sleep until the next poll deadline, but wake up for adjuster ticks.
+            #[cfg(feature = "discipline")]
+            {
+                let sleep_until = if self.adjuster.is_some() {
+                    // Wake up at most 1 second from the last tick.
+                    let next_tick = last_adjust_tick + Duration::from_secs(1);
+                    let next_tick_tokio = tokio::time::Instant::now()
+                        + next_tick.saturating_duration_since(std::time::Instant::now());
+                    deadline.min(next_tick_tokio)
+                } else {
+                    deadline
+                };
+                tokio::time::sleep_until(sleep_until).await;
+                // If we woke for the adjuster tick but not the poll, loop back.
+                if tokio::time::Instant::now() < deadline {
+                    continue;
+                }
+            }
+
+            #[cfg(not(feature = "discipline"))]
             tokio::time::sleep_until(deadline).await;
 
             debug!(
@@ -414,7 +494,37 @@ impl NtpClient {
                     peer.interleaved = interleaved;
                     peer.adjust_poll(self.min_poll, self.max_poll);
                     self.total_responses += 1;
-                    self.publish_best_state();
+
+                    let _estimate = self.publish_best_state();
+
+                    // Feed the discipline loop if enabled.
+                    #[cfg(feature = "discipline")]
+                    if let (Some(discipline), Some(adjuster), Some((offset, jitter))) =
+                        (&mut self.discipline, &mut self.adjuster, _estimate)
+                    {
+                        let now = std::time::Instant::now()
+                            .duration_since(discipline_epoch)
+                            .as_secs_f64();
+                        if let Some(output) = discipline.update(
+                            offset,
+                            jitter,
+                            now,
+                            self.peers[idx].poll_exponent,
+                        ) {
+                            if output.step {
+                                debug!("discipline: stepping clock by {:.6}s", output.phase_correction);
+                                if let Err(e) = crate::clock::step_clock(output.phase_correction) {
+                                    warn!("discipline: step_clock failed: {}", e);
+                                }
+                            } else {
+                                adjuster.set_correction(
+                                    output.phase_correction,
+                                    output.frequency_correction,
+                                );
+                            }
+                        }
+                    }
+
                     debug!(
                         "peer {}: offset={:.6}s delay={:.6}s interleaved={}",
                         self.peers[idx].addr, sample.offset, sample.delay, interleaved
@@ -494,8 +604,10 @@ impl NtpClient {
                 Err(e)
             }
             Ok((response, t4)) => {
-                // Update stratum from response.
+                // Update peer state from response.
                 peer.stratum = Some(response.stratum);
+                peer.root_delay_secs = short_format_to_secs(&response.root_delay);
+                peer.root_dispersion_secs = short_format_to_secs(&response.root_dispersion);
 
                 // Classify as basic or interleaved and compute sample.
                 let (sample, interleaved) =
@@ -598,8 +710,10 @@ impl NtpClient {
                 )?;
                 nts_state.cookies.extend(new_cookies);
 
-                // Update stratum.
+                // Update peer state from response.
                 peer.stratum = Some(response.stratum);
+                peer.root_delay_secs = short_format_to_secs(&response.root_delay);
+                peer.root_dispersion_secs = short_format_to_secs(&response.root_dispersion);
 
                 // Classify as basic or interleaved and compute sample.
                 let (sample, interleaved) =
@@ -614,39 +728,156 @@ impl NtpClient {
         }
     }
 
-    /// Select the best peer and publish its state to the watch channel.
-    fn publish_best_state(&self) {
-        let best = self
+    /// Select the best peer(s) using the RFC 5905 Section 11.2 selection,
+    /// clustering, and combining pipeline, then publish the system state.
+    ///
+    /// For single-peer configurations, falls back to simple min-sync-distance
+    /// selection for efficiency.
+    ///
+    /// Returns `Some((offset, jitter))` if a valid system estimate was
+    /// produced, for feeding to the clock discipline loop.
+    fn publish_best_state(&mut self) -> Option<(f64, f64)> {
+        // Update ages and dispersion for all peer filters.
+        for peer in &mut self.peers {
+            peer.filter.update_ages();
+        }
+
+        // Build candidate list from non-demobilized peers with samples.
+        let candidates: Vec<(usize, PeerCandidate)> = self
             .peers
             .iter()
-            .filter(|p| !p.demobilized && p.filter.best_sample().is_some())
-            .min_by(|a, b| {
-                a.sync_distance()
-                    .partial_cmp(&b.sync_distance())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
+            .enumerate()
+            .filter(|(_, p)| !p.demobilized && p.filter.best_sample().is_some())
+            .map(|(i, p)| {
+                let best = p.filter.best_sample().unwrap();
+                (
+                    i,
+                    PeerCandidate {
+                        peer_index: i,
+                        offset: best.offset,
+                        root_delay: p.root_delay_secs,
+                        root_dispersion: p.root_dispersion_secs,
+                        jitter: p.filter.jitter(),
+                        stratum: p.stratum.map_or(protocol::MAXSTRAT, |s| s.0),
+                    },
+                )
+            })
+            .collect();
 
-        if let Some(peer) = best
-            && let Some(sample) = peer.filter.best_sample()
-        {
-            #[cfg(feature = "nts")]
-            let nts_authenticated = peer.nts_state.is_some();
-            #[cfg(not(feature = "nts"))]
-            let nts_authenticated = false;
-
-            let state = NtpSyncState {
-                offset: sample.offset,
-                delay: sample.delay,
-                jitter: peer.filter.jitter(),
-                stratum: peer.stratum.map_or(protocol::MAXSTRAT, |s| s.0),
-                interleaved: peer.interleaved,
-                last_update: std::time::Instant::now(),
-                total_responses: self.total_responses,
-                nts_authenticated,
-            };
-            // Ignore send errors (no receivers).
-            let _ = self.state_tx.send(state);
+        if candidates.is_empty() {
+            return None;
         }
+
+        // For 1-2 peers, use simple min-sync-distance (selection algorithm
+        // needs a majority, which requires at least 3 peers).
+        let (offset, delay, jitter, peer_idx, system_peer_count, root_delay, root_dispersion) =
+            if candidates.len() < 3 {
+                let (best_idx, _) = candidates
+                    .iter()
+                    .min_by(|(_, a), (_, b)| {
+                        a.root_distance()
+                            .partial_cmp(&b.root_distance())
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .unwrap();
+                let peer = &self.peers[*best_idx];
+                let sample = peer.filter.best_sample().unwrap();
+                (
+                    sample.offset,
+                    sample.delay,
+                    peer.filter.jitter(),
+                    *best_idx,
+                    candidates.len(),
+                    peer.root_delay_secs,
+                    peer.root_dispersion_secs,
+                )
+            } else {
+                // Full RFC 5905 pipeline: select → cluster → combine.
+                let peer_candidates: Vec<PeerCandidate> =
+                    candidates.iter().map(|(_, c)| c.clone()).collect();
+
+                let tc_indices = selection::select_truechimers(&peer_candidates);
+                if tc_indices.is_empty() {
+                    // No majority agreement — fall back to best single peer.
+                    debug!("selection: no truechimer majority, falling back to best peer");
+                    let (best_idx, _) = candidates
+                        .iter()
+                        .min_by(|(_, a), (_, b)| {
+                            a.root_distance()
+                                .partial_cmp(&b.root_distance())
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                        .unwrap();
+                    let peer = &self.peers[*best_idx];
+                    let sample = peer.filter.best_sample().unwrap();
+                    (
+                        sample.offset,
+                        sample.delay,
+                        peer.filter.jitter(),
+                        *best_idx,
+                        1,
+                        peer.root_delay_secs,
+                        peer.root_dispersion_secs,
+                    )
+                } else {
+                    let mut survivors: Vec<PeerCandidate> = tc_indices
+                        .iter()
+                        .map(|&i| peer_candidates[i].clone())
+                        .collect();
+                    selection::cluster_survivors(&mut survivors);
+
+                    match selection::combine(&survivors) {
+                        Some(est) => {
+                            let sys_peer = &self.peers[est.system_peer_index];
+                            let sample = sys_peer.filter.best_sample().unwrap();
+                            (
+                                est.offset,
+                                sample.delay,
+                                est.jitter,
+                                est.system_peer_index,
+                                survivors.len(),
+                                sys_peer.root_delay_secs,
+                                sys_peer.root_dispersion_secs,
+                            )
+                        }
+                        None => return None,
+                    }
+                }
+            };
+
+        let peer = &self.peers[peer_idx];
+
+        #[cfg(feature = "nts")]
+        let nts_authenticated = peer.nts_state.is_some();
+        #[cfg(not(feature = "nts"))]
+        let nts_authenticated = false;
+
+        #[cfg(feature = "discipline")]
+        let (frequency, discipline_state) = match &self.discipline {
+            Some(d) => (d.frequency(), format!("{:?}", d.state())),
+            None => (0.0, String::new()),
+        };
+        #[cfg(not(feature = "discipline"))]
+        let (frequency, discipline_state) = (0.0, String::new());
+
+        let state = NtpSyncState {
+            offset,
+            delay,
+            jitter,
+            stratum: peer.stratum.map_or(protocol::MAXSTRAT, |s| s.0),
+            interleaved: peer.interleaved,
+            last_update: std::time::Instant::now(),
+            total_responses: self.total_responses,
+            nts_authenticated,
+            root_delay,
+            root_dispersion,
+            system_peer_count,
+            frequency,
+            discipline_state,
+        };
+        // Ignore send errors (no receivers).
+        let _ = self.state_tx.send(state);
+        Some((offset, jitter))
     }
 }
 
@@ -734,21 +965,6 @@ mod tests {
         let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), 8);
         peer.decrease_poll(protocol::MINPOLL);
         assert_eq!(peer.poll_exponent, 7);
-    }
-
-    #[test]
-    fn test_sync_distance_no_samples() {
-        let peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
-        assert_eq!(peer.sync_distance(), f64::MAX);
-    }
-
-    #[test]
-    fn test_sync_distance_with_samples() {
-        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
-        peer.filter.add(0.001, 0.100);
-        let dist = peer.sync_distance();
-        assert!(dist > 0.0);
-        assert!(dist < f64::MAX);
     }
 
     #[test]

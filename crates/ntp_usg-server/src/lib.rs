@@ -54,3 +54,9 @@ pub mod nts_ke_server;
 /// using the smol async runtime and futures-rustls.
 #[cfg(feature = "nts-smol")]
 pub mod smol_nts_ke_server;
+
+/// NTP broadcast mode (mode 5) packet building per RFC 5905 Section 8.
+///
+/// Deprecated by BCP 223 (RFC 8633) but implemented for spec completeness.
+#[cfg(all(feature = "broadcast", any(feature = "tokio", feature = "smol-runtime")))]
+pub mod broadcast;

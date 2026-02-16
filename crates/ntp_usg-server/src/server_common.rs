@@ -88,7 +88,13 @@ pub(crate) fn validate_client_request(
     let request: protocol::Packet =
         (&recv_buf[..protocol::Packet::PACKED_SIZE_BYTES]).read_bytes()?;
 
-    if request.mode != protocol::Mode::Client {
+    #[cfg(not(feature = "symmetric"))]
+    let valid_mode = request.mode == protocol::Mode::Client;
+    #[cfg(feature = "symmetric")]
+    let valid_mode =
+        request.mode == protocol::Mode::Client || request.mode == protocol::Mode::SymmetricActive;
+
+    if !valid_mode {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
@@ -136,6 +142,33 @@ pub(crate) fn build_server_response(
         leap_indicator: server_state.leap_indicator,
         version: request.version,
         mode: protocol::Mode::Server,
+        stratum: server_state.stratum,
+        poll: request.poll,
+        precision: server_state.precision,
+        root_delay: server_state.root_delay,
+        root_dispersion: server_state.root_dispersion,
+        reference_id: server_state.reference_id,
+        reference_timestamp: server_state.reference_timestamp,
+        origin_timestamp: request.transmit_timestamp,
+        receive_timestamp: t2,
+        transmit_timestamp: protocol::TimestampFormat::default(),
+    }
+}
+
+/// Build a symmetric passive response (mode 2) for a symmetric active request.
+///
+/// Per RFC 5905 Section 8, a symmetric passive response is identical to a
+/// server response but uses `Mode::SymmetricPassive` instead of `Mode::Server`.
+#[cfg(feature = "symmetric")]
+pub(crate) fn build_symmetric_passive_response(
+    request: &protocol::Packet,
+    server_state: &ServerSystemState,
+    t2: protocol::TimestampFormat,
+) -> protocol::Packet {
+    protocol::Packet {
+        leap_indicator: server_state.leap_indicator,
+        version: request.version,
+        mode: protocol::Mode::SymmetricPassive,
         stratum: server_state.stratum,
         poll: request.poll,
         precision: server_state.precision,
@@ -602,8 +635,14 @@ pub(crate) fn handle_request(
         None
     };
 
-    // 6. Build response (basic or interleaved).
-    let response = response.unwrap_or_else(|| build_server_response(&request, server_state, t2));
+    // 6. Build response (basic, interleaved, or symmetric passive).
+    let response = response.unwrap_or_else(|| {
+        #[cfg(feature = "symmetric")]
+        if request.mode == protocol::Mode::SymmetricActive {
+            return build_symmetric_passive_response(&request, server_state, t2);
+        }
+        build_server_response(&request, server_state, t2)
+    });
 
     // 7. Serialize with T3.
     let buf = match serialize_response_with_t3(&response) {
@@ -1230,5 +1269,79 @@ mod tests {
             false,
         );
         assert!(matches!(result, HandleResult::Drop));
+    }
+
+    // ── symmetric mode ─────────────────────────────────────────────
+
+    #[cfg(feature = "symmetric")]
+    #[test]
+    fn test_validate_accepts_symmetric_active() {
+        let mut pkt = make_client_request_packet(protocol::Version::V4);
+        pkt.mode = protocol::Mode::SymmetricActive;
+        let buf = serialize_packet(&pkt);
+        let result = validate_client_request(&buf, 48);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().mode, protocol::Mode::SymmetricActive);
+    }
+
+    #[cfg(feature = "symmetric")]
+    #[test]
+    fn test_symmetric_passive_response_mode() {
+        let request = protocol::Packet {
+            mode: protocol::Mode::SymmetricActive,
+            ..make_client_request_packet(protocol::Version::V4)
+        };
+        let state = test_server_state();
+        let t2 = protocol::TimestampFormat { seconds: 100, fraction: 0 };
+        let response = build_symmetric_passive_response(&request, &state, t2);
+        assert_eq!(response.mode, protocol::Mode::SymmetricPassive);
+        assert_eq!(response.origin_timestamp, request.transmit_timestamp);
+        assert_eq!(response.receive_timestamp, t2);
+        assert_eq!(response.stratum, state.stratum);
+    }
+
+    #[cfg(feature = "symmetric")]
+    #[test]
+    fn test_handle_symmetric_active_returns_passive() {
+        let mut pkt = make_client_request_packet(protocol::Version::V4);
+        pkt.mode = protocol::Mode::SymmetricActive;
+        let buf = serialize_packet(&pkt);
+        let state = test_server_state();
+        let ac = AccessControl::default();
+        let mut table = ClientTable::new(100);
+
+        let result = handle_request(
+            &buf,
+            48,
+            "127.0.0.1".parse().unwrap(),
+            &state,
+            &ac,
+            None,
+            &mut table,
+            false,
+        );
+
+        match result {
+            HandleResult::Response(response_buf) => {
+                let response: protocol::Packet =
+                    (&response_buf[..protocol::Packet::PACKED_SIZE_BYTES])
+                        .read_bytes()
+                        .unwrap();
+                assert_eq!(response.mode, protocol::Mode::SymmetricPassive);
+            }
+            HandleResult::Drop => panic!("expected Response, got Drop"),
+        }
+    }
+
+    #[test]
+    fn test_validate_still_rejects_symmetric_without_feature() {
+        // Without the symmetric feature, SymmetricActive should be rejected.
+        // With the symmetric feature, this test verifies that Server mode is
+        // still rejected (the feature only adds SymmetricActive acceptance).
+        let mut pkt = make_client_request_packet(protocol::Version::V4);
+        pkt.mode = protocol::Mode::Server;
+        let buf = serialize_packet(&pkt);
+        let result = validate_client_request(&buf, 48);
+        assert!(result.is_err());
     }
 }

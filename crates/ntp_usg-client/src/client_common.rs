@@ -9,6 +9,11 @@ use std::io;
 use crate::filter::ClockSample;
 use crate::{compute_offset_delay, protocol, unix_time};
 
+/// Convert an NTP [`ShortFormat`](protocol::ShortFormat) value to seconds as `f64`.
+pub(crate) fn short_format_to_secs(sf: &protocol::ShortFormat) -> f64 {
+    sf.seconds as f64 + sf.fraction as f64 / 65536.0
+}
+
 /// The current synchronization state published by the continuous NTP client.
 ///
 /// Available to consumers via `tokio::sync::watch::Receiver<NtpSyncState>`
@@ -31,6 +36,18 @@ pub struct NtpSyncState {
     pub total_responses: u64,
     /// Whether the best peer is using NTS authentication.
     pub nts_authenticated: bool,
+    /// Root delay of the best peer (seconds).
+    pub root_delay: f64,
+    /// Root dispersion of the best peer (seconds).
+    pub root_dispersion: f64,
+    /// Number of peers that survived the selection/clustering pipeline.
+    pub system_peer_count: usize,
+    /// Current frequency correction from the clock discipline (seconds/second).
+    /// Only populated when the `discipline` feature is enabled.
+    pub frequency: f64,
+    /// Current discipline state (e.g., "Nset", "Fset", "Sync", "Spik").
+    /// Only populated when the `discipline` feature is enabled.
+    pub discipline_state: String,
 }
 
 impl Default for NtpSyncState {
@@ -44,6 +61,11 @@ impl Default for NtpSyncState {
             last_update: std::time::Instant::now(),
             total_responses: 0,
             nts_authenticated: false,
+            root_delay: 0.0,
+            root_dispersion: 0.0,
+            system_peer_count: 0,
+            frequency: 0.0,
+            discipline_state: String::new(),
         }
     }
 }
@@ -73,6 +95,8 @@ pub(crate) fn classify_and_compute(
                 offset,
                 delay,
                 age: 0.0,
+                dispersion: 0.0,
+                epoch: std::time::Instant::now(),
             },
             false,
         ))
@@ -93,6 +117,8 @@ pub(crate) fn classify_and_compute(
                     offset,
                     delay,
                     age: 0.0,
+                    dispersion: 0.0,
+                    epoch: std::time::Instant::now(),
                 },
                 true,
             ))
@@ -296,5 +322,10 @@ mod tests {
         assert!(!state.interleaved);
         assert_eq!(state.total_responses, 0);
         assert!(!state.nts_authenticated);
+        assert_eq!(state.root_delay, 0.0);
+        assert_eq!(state.root_dispersion, 0.0);
+        assert_eq!(state.system_peer_count, 0);
+        assert_eq!(state.frequency, 0.0);
+        assert!(state.discipline_state.is_empty());
     }
 }

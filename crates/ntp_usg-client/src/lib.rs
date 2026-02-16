@@ -41,6 +41,10 @@ pub(crate) use ntp_proto::nts_common;
 #[cfg(any(feature = "tokio", feature = "smol-runtime"))]
 pub mod filter;
 
+/// Peer selection, clustering, and combining algorithms per RFC 5905 Section 11.2.
+#[cfg(any(feature = "tokio", feature = "smol-runtime"))]
+pub mod selection;
+
 /// Shared types and logic for the continuous NTP client.
 #[cfg(any(feature = "tokio", feature = "smol-runtime"))]
 pub mod client_common;
@@ -62,6 +66,33 @@ pub mod nts;
 /// (immediate) the system clock. Requires elevated privileges (root/admin).
 #[cfg(feature = "clock")]
 pub mod clock;
+
+/// Clock discipline algorithm (PLL/FLL) per RFC 5905 Section 11.3.
+///
+/// Converts raw offset measurements into phase and frequency corrections
+/// using a hybrid phase-locked / frequency-locked loop state machine.
+#[cfg(feature = "discipline")]
+pub mod discipline;
+
+/// Periodic clock adjustment process per RFC 5905 Section 12.
+///
+/// Drains residual phase error and applies frequency corrections on a
+/// 1-second tick cycle.
+#[cfg(feature = "discipline")]
+pub mod clock_adjust;
+
+/// Symmetric active/passive mode support per RFC 5905 Sections 8-9.
+///
+/// Enables peer-to-peer time synchronization using NTP modes 1 and 2.
+#[cfg(feature = "symmetric")]
+pub mod symmetric;
+
+/// NTP broadcast client support per RFC 5905 Section 8.
+///
+/// Parses and validates mode-5 broadcast packets and computes clock offset
+/// using a calibrated one-way delay. Deprecated by BCP 223 (RFC 8633).
+#[cfg(feature = "broadcast")]
+pub mod broadcast_client;
 
 /// Async NTP client functions using the Tokio runtime.
 ///
@@ -292,8 +323,15 @@ pub(crate) fn parse_and_validate_response(
     let response: protocol::Packet =
         (&recv_buf[..protocol::Packet::PACKED_SIZE_BYTES]).read_bytes()?;
 
-    // Validate server mode (RFC 5905 Section 8).
-    if response.mode != protocol::Mode::Server {
+    // Validate response mode (RFC 5905 Section 8).
+    #[cfg(not(feature = "symmetric"))]
+    let valid_mode = response.mode == protocol::Mode::Server;
+    #[cfg(feature = "symmetric")]
+    let valid_mode =
+        response.mode == protocol::Mode::Server
+            || response.mode == protocol::Mode::SymmetricPassive;
+
+    if !valid_mode {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "unexpected response mode (expected Server)",

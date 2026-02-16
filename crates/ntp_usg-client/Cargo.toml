@@ -27,6 +27,9 @@ nts = [
     "dep:webpki-roots",
 ]
 clock = ["dep:libc", "dep:windows-sys"]
+discipline = ["clock"]
+symmetric = []
+broadcast = []
 smol-runtime = ["dep:smol", "dep:futures-lite"]
 nts-smol = [
     "smol-runtime",
