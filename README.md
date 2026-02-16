@@ -22,7 +22,7 @@ A Network Time Protocol (NTP) packet parsing and client library written in Rust.
 - 📡 **Continuous Client**: Adaptive poll interval, multi-peer, and interleaved mode (RFC 9769)
 - 🌐 **IPv6 Dual-Stack**: Automatic IPv4/IPv6 socket binding
 - 🧩 **`no_std` Support**: Core parsing works without `std` or `alloc`
-- ⏱️ **Clock Adjustment**: Platform-native slew/step correction (Unix)
+- ⏱️ **Clock Adjustment**: Platform-native slew/step correction (Linux, macOS, Windows)
 - 🦀 **Modern Rust**: Edition 2024 with MSRV 1.93
 - ✅ **Well Tested**: CI/CD on Linux, macOS, and Windows
 
@@ -48,7 +48,7 @@ ntp_usg = "1.2"
 | `async-std-runtime` | No | Async NTP client using async-std |
 | `nts` | No | NTS authentication (Tokio + rustls) |
 | `nts-async-std` | No | NTS authentication (async-std + futures-rustls) |
-| `clock` | No | System clock slew/step adjustment (Unix only) |
+| `clock` | No | System clock slew/step adjustment (Linux, macOS, Windows) |
 
 For `no_std` environments, disable default features:
 
@@ -224,7 +224,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Clock Adjustment (Unix)
+### Clock Adjustment
 
 Enable the `clock` feature to correct the system clock based on NTP measurements:
 
@@ -285,7 +285,7 @@ cargo run --example async_std_request --features async-std-runtime
 # Async-std continuous client
 cargo run --example async_std_continuous --features async-std-runtime
 
-# Clock adjustment (requires root/sudo on Unix)
+# Clock adjustment (requires root/sudo on Unix, Administrator on Windows)
 cargo run --example clock_adjust --features "clock tokio"
 ```
 
@@ -300,7 +300,7 @@ cargo run --example clock_adjust --features "clock tokio"
 - [x] IO-independent parsing (`FromBytes`/`ToBytes` traits)
 - [x] `no_std` support (with optional `alloc`)
 - [x] async-std support (one-shot, continuous, and NTS)
-- [x] System clock adjustment (slew/step on Unix)
+- [x] System clock adjustment (slew/step on Linux, macOS, Windows)
 - [ ] NTP server functionality
 
 ## Contributing
