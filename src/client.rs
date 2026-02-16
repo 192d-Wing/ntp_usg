@@ -46,6 +46,9 @@ use crate::{
     KissOfDeathError,
 };
 
+#[cfg(feature = "nts")]
+use crate::nts;
+
 /// The current synchronization state, available to consumers via
 /// `tokio::sync::watch::Receiver<NtpSyncState>`.
 #[derive(Clone, Debug)]
@@ -64,6 +67,8 @@ pub struct NtpSyncState {
     pub last_update: std::time::Instant,
     /// Number of successful responses received across all peers.
     pub total_responses: u64,
+    /// Whether the best peer is using NTS authentication.
+    pub nts_authenticated: bool,
 }
 
 impl Default for NtpSyncState {
@@ -76,6 +81,7 @@ impl Default for NtpSyncState {
             interleaved: false,
             last_update: std::time::Instant::now(),
             total_responses: 0,
+            nts_authenticated: false,
         }
     }
 }
@@ -88,6 +94,23 @@ enum PollResult {
     RateKissCode,
     /// Server sent DENY or RSTR kiss code.
     DenyKissCode,
+}
+
+/// NTS-specific state for a peer, separated to avoid borrow checker issues.
+#[cfg(feature = "nts")]
+struct NtsPeerState {
+    /// Client-to-server AEAD key.
+    c2s_key: Vec<u8>,
+    /// Server-to-client AEAD key.
+    s2c_key: Vec<u8>,
+    /// Cookies for NTP requests (each used exactly once).
+    cookies: Vec<Vec<u8>>,
+    /// Negotiated AEAD algorithm ID.
+    aead_algorithm: u16,
+    /// NTS-KE server hostname for re-keying when cookies run low.
+    nts_ke_server: String,
+    /// Cookie length from initial NTS-KE (for placeholder sizing).
+    cookie_len: usize,
 }
 
 /// State maintained for a single NTP server peer.
@@ -112,6 +135,9 @@ struct PeerState {
     interleaved: bool,
     /// If true, we have received DENY or RSTR and must stop polling.
     demobilized: bool,
+    /// NTS state, present only for NTS-authenticated peers.
+    #[cfg(feature = "nts")]
+    nts_state: Option<NtsPeerState>,
 }
 
 impl PeerState {
@@ -127,6 +153,39 @@ impl PeerState {
             current_t1: None,
             interleaved: false,
             demobilized: false,
+            #[cfg(feature = "nts")]
+            nts_state: None,
+        }
+    }
+
+    /// Create a peer with NTS state from a completed NTS-KE exchange.
+    #[cfg(feature = "nts")]
+    fn new_nts(
+        addr: SocketAddr,
+        initial_poll: u8,
+        ke: nts::NtsKeResult,
+        nts_ke_server: String,
+    ) -> Self {
+        let cookie_len = ke.cookies.first().map_or(0, |c| c.len());
+        PeerState {
+            addr,
+            poll_exponent: initial_poll,
+            reachability: 0,
+            filter: SampleFilter::new(),
+            stratum: None,
+            prev_t1: None,
+            prev_t4: None,
+            current_t1: None,
+            interleaved: false,
+            demobilized: false,
+            nts_state: Some(NtsPeerState {
+                c2s_key: ke.c2s_key,
+                s2c_key: ke.s2c_key,
+                cookies: ke.cookies,
+                aead_algorithm: ke.aead_algorithm,
+                nts_ke_server,
+                cookie_len,
+            }),
         }
     }
 
@@ -248,6 +307,8 @@ fn classify_and_compute(
 /// Builder for configuring and creating an [`NtpClient`].
 pub struct NtpClientBuilder {
     servers: Vec<String>,
+    #[cfg(feature = "nts")]
+    nts_servers: Vec<String>,
     min_poll: u8,
     max_poll: u8,
     initial_poll: Option<u8>,
@@ -257,6 +318,8 @@ impl NtpClientBuilder {
     fn new() -> Self {
         NtpClientBuilder {
             servers: Vec::new(),
+            #[cfg(feature = "nts")]
+            nts_servers: Vec::new(),
             min_poll: protocol::MINPOLL,
             max_poll: protocol::MAXPOLL,
             initial_poll: None,
@@ -281,6 +344,16 @@ impl NtpClientBuilder {
         self
     }
 
+    /// Add an NTS server hostname.
+    ///
+    /// Performs NTS Key Establishment during [`build()`](NtpClientBuilder::build)
+    /// and uses authenticated NTP requests for this peer.
+    #[cfg(feature = "nts")]
+    pub fn nts_server(mut self, hostname: impl Into<String>) -> Self {
+        self.nts_servers.push(hostname.into());
+        self
+    }
+
     /// Set initial poll exponent. Defaults to min_poll.
     pub fn initial_poll(mut self, exponent: u8) -> Self {
         self.initial_poll = Some(exponent);
@@ -296,7 +369,12 @@ impl NtpClientBuilder {
         NtpClient,
         tokio::sync::watch::Receiver<NtpSyncState>,
     )> {
-        if self.servers.is_empty() {
+        #[cfg(feature = "nts")]
+        let has_nts = !self.nts_servers.is_empty();
+        #[cfg(not(feature = "nts"))]
+        let has_nts = false;
+
+        if self.servers.is_empty() && !has_nts {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "at least one server address is required",
@@ -324,6 +402,31 @@ impl NtpClientBuilder {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     format!("address resolved to no socket addresses: {server}"),
+                ));
+            }
+        }
+
+        // Perform NTS-KE for each NTS server and create NTS peers.
+        #[cfg(feature = "nts")]
+        for nts_server in &self.nts_servers {
+            let ke = nts::nts_ke(nts_server).await?;
+            let addr_str = format!("{}:{}", ke.ntp_server, ke.ntp_port);
+            let addrs: Vec<SocketAddr> =
+                tokio::net::lookup_host(addr_str.as_str()).await?.collect();
+            if let Some(&addr) = addrs.first() {
+                peers.push(PeerState::new_nts(
+                    addr,
+                    initial_poll,
+                    ke,
+                    nts_server.clone(),
+                ));
+            } else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!(
+                        "NTS NTP server resolved to no socket addresses: {}",
+                        nts_server
+                    ),
                 ));
             }
         }
@@ -445,6 +548,15 @@ impl NtpClient {
 
     /// Poll a single peer and return the result.
     async fn poll_peer(peer: &mut PeerState) -> io::Result<PollResult> {
+        // Dispatch to NTS poll path if this peer has NTS state.
+        #[cfg(feature = "nts")]
+        if peer.nts_state.is_some() {
+            let mut nts = peer.nts_state.take().unwrap();
+            let result = Self::poll_peer_nts(peer, &mut nts).await;
+            peer.nts_state = Some(nts);
+            return result;
+        }
+
         let bind_addr = crate::bind_addr_for(&peer.addr);
         let sock = UdpSocket::bind(bind_addr).await?;
 
@@ -510,6 +622,122 @@ impl NtpClient {
         }
     }
 
+    /// Poll a single NTS-authenticated peer and return the result.
+    #[cfg(feature = "nts")]
+    async fn poll_peer_nts(
+        peer: &mut PeerState,
+        nts_state: &mut NtsPeerState,
+    ) -> io::Result<PollResult> {
+        // Replenish cookies if running low.
+        if nts_state.cookies.len() <= nts::COOKIE_REKEY_THRESHOLD {
+            debug!(
+                "peer {}: {} cookies remaining, attempting NTS-KE re-key",
+                peer.addr,
+                nts_state.cookies.len()
+            );
+            match nts::nts_ke(&nts_state.nts_ke_server).await {
+                Ok(ke) => {
+                    nts_state.c2s_key = ke.c2s_key;
+                    nts_state.s2c_key = ke.s2c_key;
+                    nts_state.cookies = ke.cookies;
+                    nts_state.aead_algorithm = ke.aead_algorithm;
+                    nts_state.cookie_len =
+                        nts_state.cookies.first().map_or(0, |c| c.len());
+                    debug!(
+                        "peer {}: NTS-KE re-key successful, {} cookies",
+                        peer.addr,
+                        nts_state.cookies.len()
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "peer {}: NTS-KE re-key failed: {}",
+                        peer.addr, e
+                    );
+                    // Continue with remaining cookies; will error at zero.
+                }
+            }
+        }
+
+        // Pop a cookie.
+        let cookie = nts_state.cookies.pop().ok_or_else(|| {
+            io::Error::other("no NTS cookies remaining")
+        })?;
+
+        // Build NTS-authenticated request packet.
+        let (send_buf, t1, uid_data) =
+            nts::build_nts_request(&nts_state.c2s_key, nts_state.aead_algorithm, cookie)?;
+        peer.current_t1 = Some(t1);
+
+        let bind_addr = crate::bind_addr_for(&peer.addr);
+        let sock = UdpSocket::bind(bind_addr).await?;
+        let timeout = Duration::from_secs(5);
+
+        // Send with timeout.
+        tokio::time::timeout(timeout, sock.send_to(&send_buf, peer.addr))
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP send timed out"))??;
+
+        // Receive with timeout (larger buffer for NTS extension fields).
+        let mut recv_buf = [0u8; 2048];
+        let (recv_len, src_addr) =
+            tokio::time::timeout(timeout, sock.recv_from(&mut recv_buf))
+                .await
+                .map_err(|_| {
+                    io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out")
+                })??;
+
+        // Parse and validate the NTP header.
+        let parse_result =
+            parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
+
+        match parse_result {
+            Err(e) => {
+                if let Some(kod) = e
+                    .get_ref()
+                    .and_then(|inner| inner.downcast_ref::<KissOfDeathError>())
+                {
+                    return match kod.code {
+                        protocol::KissOfDeath::Rate => Ok(PollResult::RateKissCode),
+                        protocol::KissOfDeath::Deny | protocol::KissOfDeath::Rstr => {
+                            Ok(PollResult::DenyKissCode)
+                        }
+                    };
+                }
+                Err(e)
+            }
+            Ok((response, t4)) => {
+                // Validate NTS extension fields and extract new cookies.
+                let new_cookies = nts::validate_nts_response(
+                    &nts_state.s2c_key,
+                    nts_state.aead_algorithm,
+                    &uid_data,
+                    &recv_buf,
+                    recv_len,
+                )?;
+                nts_state.cookies.extend(new_cookies);
+
+                // Update stratum.
+                peer.stratum = Some(response.stratum);
+
+                // Classify as basic or interleaved and compute sample.
+                let (sample, interleaved) = classify_and_compute(
+                    &response,
+                    t4,
+                    t1,
+                    peer.prev_t1,
+                    peer.prev_t4,
+                )?;
+
+                // Rotate timestamps for next exchange.
+                peer.prev_t1 = peer.current_t1;
+                peer.prev_t4 = Some(t4);
+
+                Ok(PollResult::Sample(sample, interleaved))
+            }
+        }
+    }
+
     /// Select the best peer and publish its state to the watch channel.
     fn publish_best_state(&self) {
         let best = self
@@ -525,6 +753,11 @@ impl NtpClient {
         if let Some(peer) = best
             && let Some(sample) = peer.filter.best_sample()
         {
+            #[cfg(feature = "nts")]
+            let nts_authenticated = peer.nts_state.is_some();
+            #[cfg(not(feature = "nts"))]
+            let nts_authenticated = false;
+
             let state = NtpSyncState {
                 offset: sample.offset,
                 delay: sample.delay,
@@ -533,6 +766,7 @@ impl NtpClient {
                 interleaved: peer.interleaved,
                 last_update: std::time::Instant::now(),
                 total_responses: self.total_responses,
+                nts_authenticated,
             };
             // Ignore send errors (no receivers).
             let _ = self.state_tx.send(state);
