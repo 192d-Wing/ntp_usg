@@ -32,7 +32,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ntp_usg = "1.2"
+ntp_usg = "2.0"
 ```
 
 **Minimum Supported Rust Version (MSRV):** 1.93
@@ -54,8 +54,8 @@ For `no_std` environments, disable default features:
 
 ```toml
 [dependencies]
-ntp_usg = { version = "1.2", default-features = false }          # core parsing only
-ntp_usg = { version = "1.2", default-features = false, features = ["alloc"] }  # + Vec-based types
+ntp_usg = { version = "2.0", default-features = false }          # core parsing only
+ntp_usg = { version = "2.0", default-features = false, features = ["alloc"] }  # + Vec-based types
 ```
 
 ## Usage
@@ -90,7 +90,7 @@ Enable the `tokio` feature:
 
 ```toml
 [dependencies]
-ntp_usg = { version = "1.2", features = ["tokio"] }
+ntp_usg = { version = "2.0", features = ["tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -136,7 +136,7 @@ Enable the `nts` feature for authenticated NTP:
 
 ```toml
 [dependencies]
-ntp_usg = { version = "1.2", features = ["nts"] }
+ntp_usg = { version = "2.0", features = ["nts"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -184,7 +184,7 @@ Enable the `smol-runtime` feature:
 
 ```toml
 [dependencies]
-ntp_usg = { version = "1.2", features = ["smol-runtime"] }
+ntp_usg = { version = "2.0", features = ["smol-runtime"] }
 smol = "2"
 ```
 
@@ -232,7 +232,7 @@ Enable the `clock` feature to correct the system clock based on NTP measurements
 
 ```toml
 [dependencies]
-ntp_usg = { version = "1.2", features = ["clock", "tokio"] }
+ntp_usg = { version = "2.0", features = ["clock", "tokio"] }
 ```
 
 ```rust
