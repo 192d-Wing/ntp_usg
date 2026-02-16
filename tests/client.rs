@@ -10,7 +10,7 @@ use ntp::client::NtpClient;
 #[tokio::test]
 async fn test_continuous_client_single_poll() {
     let (client, mut state_rx) = NtpClient::builder()
-        .server("pool.ntp.org:123")
+        .server("time.nist.gov:123")
         .min_poll(4)
         .max_poll(4)
         .build()

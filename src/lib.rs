@@ -568,16 +568,16 @@ pub fn request_with_timeout<A: ToSocketAddrs>(addr: A, timeout: Duration) -> io:
 
 #[cfg(all(test, feature = "std"))]
 #[test]
-fn test_request_ntp_org() {
-    let res = request("0.pool.ntp.org:123");
-    let _ = res.expect("Failed to get a ntp packet from ntp.org");
+fn test_request_nist() {
+    let res = request("time.nist.gov:123");
+    let _ = res.expect("Failed to get a ntp packet from time.nist.gov");
 }
 
 #[cfg(all(test, feature = "std"))]
 #[test]
-fn test_request_google() {
-    let res = request("time.google.com:123");
-    let _ = res.expect("Failed to get a ntp packet from time.google.com");
+fn test_request_nist_alt() {
+    let res = request("time-a-g.nist.gov:123");
+    let _ = res.expect("Failed to get a ntp packet from time-a-g.nist.gov");
 }
 
 #[cfg(all(test, feature = "std"))]
