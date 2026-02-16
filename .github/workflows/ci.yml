@@ -11,12 +11,24 @@ env:
 
 jobs:
   test-linux:
-    name: Test (Linux, ${{ matrix.rust }})
-    runs-on: ubuntu-latest
+    name: Test (Linux ${{ matrix.arch }}, ${{ matrix.rust }})
+    runs-on: ${{ matrix.runner }}
     container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     strategy:
       matrix:
-        rust: [stable, beta]
+        include:
+          - runner: ubuntu-latest
+            arch: x64
+            rust: stable
+          - runner: ubuntu-latest
+            arch: x64
+            rust: beta
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            rust: stable
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            rust: beta
     steps:
       - uses: actions/checkout@v6
       - name: Install beta toolchain
