@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] - 2026-02-16
+
+### Fixed
+
+- CI container jobs failing due to missing `packages: read` permission for GHCR
+- Clock tests failing on Windows CI runners that have admin privileges
+- Publish workflow now uses CI container image (drops manual toolchain install)
+
+### Changed
+
+- Updated `windows-sys` dependency from 0.59 to 0.61
+- Improved unit test coverage from 71% to 74% (protocol, clock, client modules)
+
 ## [2.0.2] - 2026-02-15
 
 ### Changed
@@ -279,6 +292,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[2.0.3]: https://github.com/192d-Wing/ntp_usg/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/192d-Wing/ntp_usg/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/192d-Wing/ntp_usg/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/192d-Wing/ntp_usg/compare/v1.2.0...v2.0.0
