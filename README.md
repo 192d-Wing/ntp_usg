@@ -350,6 +350,36 @@ See [crates/ntp_usg-client/examples/multiple_servers.rs](crates/ntp_usg-client/e
 
 ## Examples
 
+### Production Examples (v3.1.0+)
+
+The following examples demonstrate production-ready deployments with comprehensive monitoring and error handling:
+
+**Multi-Peer Deployment** - [examples/multi_peer_deployment.rs](crates/ntp_usg-client/examples/multi_peer_deployment.rs)
+
+```bash
+cargo run -p ntp_usg-client --example multi_peer_deployment --features ntp_usg-client/tokio
+```
+
+Demonstrates RFC 5905 selection, clustering, and combine algorithms with 5 diverse NTP servers. Includes real-time health assessment and offset trend analysis.
+
+**NTS Multi-Peer** - [examples/nts_multi_peer.rs](crates/ntp_usg-client/examples/nts_multi_peer.rs)
+
+```bash
+cargo run -p ntp_usg-client --example nts_multi_peer --features ntp_usg-client/nts
+```
+
+Mixed NTS-authenticated and standard NTP deployment for maximum security and resilience. Tracks security posture with NTS failure monitoring.
+
+**System Daemon** - [examples/daemon.rs](crates/ntp_usg-client/examples/daemon.rs)
+
+```bash
+cargo run -p ntp_usg-client --example daemon --features ntp_usg-client/tokio
+```
+
+Production-ready long-running service with structured logging, health-based alerts, and systemd integration documentation.
+
+### Basic Examples
+
 Run the included examples to see the library in action:
 
 ```bash
