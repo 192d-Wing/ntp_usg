@@ -18,8 +18,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Press Ctrl+C to stop.\n");
 
     let (client, mut state_rx) = NtpClient::builder()
-        .server("pool.ntp.org:123")
-        .server("time.google.com:123")
+        .server("time.nist.gov:123")
+        .server("time-a-g.nist.gov:123")
         .min_poll(4) // 16 seconds
         .max_poll(6) // 64 seconds
         .build()

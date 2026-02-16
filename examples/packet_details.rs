@@ -6,7 +6,7 @@
 use chrono::TimeZone;
 
 fn main() {
-    let address = "pool.ntp.org:123";
+    let address = "time.nist.gov:123";
 
     println!("Requesting NTP packet from {}...\n", address);
 

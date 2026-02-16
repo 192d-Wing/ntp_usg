@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-02-15
+
+### Changed
+
+- Migrated all examples, doc comments, and README to use NIST NTP servers (`time.nist.gov`, `time-a-g.nist.gov`) for consistency with tests
+- Custom Docker CI runner image on ghcr.io with pre-installed tools (nextest, llvm-cov, audit, deny) for faster CI
+- Multi-arch CI image (linux/amd64 + linux/arm64) built via QEMU + buildx
+- Expanded CI test matrix: Linux x64/arm64, Windows x64/arm64, macOS arm64 (10 jobs total)
+- Switched CI from `cargo test` to `cargo-nextest` for parallel test execution
+- Added `cargo-llvm-cov` coverage reporting to Codecov
+
+### Added
+
+- Integration tests for smol runtime (`tests/smol_ntp.rs`, `tests/smol_client.rs`)
+- Nextest configuration (`.config/nextest.toml`) with per-test timeout control
+
 ## [2.0.1] - 2026-02-15
 
 ### Changed
@@ -263,6 +279,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[2.0.2]: https://github.com/192d-Wing/ntp_usg/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/192d-Wing/ntp_usg/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/192d-Wing/ntp_usg/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/192d-Wing/ntp_usg/compare/v1.1.0...v1.2.0

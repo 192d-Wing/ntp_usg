@@ -16,7 +16,7 @@
 //!
 //! ```no_run
 //! # async fn example() -> std::io::Result<()> {
-//! let result = ntp::async_ntp::request("pool.ntp.org:123").await?;
+//! let result = ntp::async_ntp::request("time.nist.gov:123").await?;
 //! println!("Offset: {:.6} seconds", result.offset_seconds);
 //! # Ok(())
 //! # }
@@ -36,13 +36,13 @@ use crate::{NtpResult, build_request_packet, validate_response};
 ///
 /// # Arguments
 ///
-/// * `addr` - Any valid socket address (e.g., `"pool.ntp.org:123"` or `"192.168.1.1:123"`)
+/// * `addr` - Any valid socket address (e.g., `"time.nist.gov:123"` or `"192.168.1.1:123"`)
 ///
 /// # Examples
 ///
 /// ```no_run
 /// # async fn example() -> std::io::Result<()> {
-/// let result = ntp::async_ntp::request("pool.ntp.org:123").await?;
+/// let result = ntp::async_ntp::request("time.nist.gov:123").await?;
 /// println!("Offset: {:.6} seconds", result.offset_seconds);
 /// # Ok(())
 /// # }
@@ -58,7 +58,7 @@ pub async fn request<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
 ///
 /// # Arguments
 ///
-/// * `addr` - Any valid socket address (e.g., `"pool.ntp.org:123"` or `"192.168.1.1:123"`)
+/// * `addr` - Any valid socket address (e.g., `"time.nist.gov:123"` or `"192.168.1.1:123"`)
 /// * `timeout` - Maximum duration for the entire request (DNS + send + receive)
 ///
 /// # Examples
@@ -67,7 +67,7 @@ pub async fn request<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
 /// # async fn example() -> std::io::Result<()> {
 /// use std::time::Duration;
 /// let result = ntp::async_ntp::request_with_timeout(
-///     "pool.ntp.org:123",
+///     "time.nist.gov:123",
 ///     Duration::from_secs(10),
 /// ).await?;
 /// println!("Offset: {:.6} seconds", result.offset_seconds);

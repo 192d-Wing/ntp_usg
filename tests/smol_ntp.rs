@@ -1,0 +1,32 @@
+// Copyright 2026 U.S. Federal Government (in countries where recognized)
+// SPDX-License-Identifier: Apache-2.0
+
+#![cfg(feature = "smol-runtime")]
+
+use std::time::Duration;
+
+#[test]
+fn test_smol_request_nist() {
+    smol::block_on(async {
+        let res = ntp::smol_ntp::request("time.nist.gov:123").await;
+        let _ = res.expect("Failed to get an NTP packet from time.nist.gov");
+    });
+}
+
+#[test]
+fn test_smol_request_nist_alt() {
+    smol::block_on(async {
+        let res = ntp::smol_ntp::request("time-a-g.nist.gov:123").await;
+        let _ = res.expect("Failed to get an NTP packet from time-a-g.nist.gov");
+    });
+}
+
+#[test]
+fn test_smol_request_timeout() {
+    smol::block_on(async {
+        let res =
+            ntp::smol_ntp::request_with_timeout("time.nist.gov:123", Duration::from_nanos(1))
+                .await;
+        assert!(res.is_err());
+    });
+}

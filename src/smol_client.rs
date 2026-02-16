@@ -19,8 +19,8 @@
 //! ```no_run
 //! # async fn example() -> std::io::Result<()> {
 //! let (client, state) = ntp::smol_client::NtpClient::builder()
-//!     .server("pool.ntp.org:123")
-//!     .server("time.google.com:123")
+//!     .server("time.nist.gov:123")
+//!     .server("time-a-g.nist.gov:123")
 //!     .min_poll(4)
 //!     .max_poll(10)
 //!     .build()

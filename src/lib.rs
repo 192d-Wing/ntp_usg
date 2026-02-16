@@ -10,7 +10,7 @@ extern crate ntp;
 use chrono::TimeZone;
 
 fn main() {
-    let address = "0.pool.ntp.org:123";
+    let address = "time.nist.gov:123";
     let result = ntp::request(address).unwrap();
     let unix_time = ntp::unix_time::Instant::from(result.transmit_timestamp);
     let local_time = chrono::Local.timestamp_opt(unix_time.secs(), unix_time.subsec_nanos() as _).unwrap();
@@ -190,7 +190,7 @@ pub(crate) fn bind_addr_for(target: &SocketAddr) -> &'static str {
 /// ```no_run
 /// # use std::error::Error;
 /// # fn main() -> Result<(), Box<dyn Error>> {
-/// match ntp::request("pool.ntp.org:123") {
+/// match ntp::request("time.nist.gov:123") {
 ///     Ok(result) => println!("Offset: {:.6}s", result.offset_seconds),
 ///     Err(e) => {
 ///         if let Some(kod) = e.get_ref().and_then(|inner| inner.downcast_ref::<ntp::KissOfDeathError>()) {
@@ -450,7 +450,7 @@ pub(crate) fn validate_response(
 ///
 /// # Arguments
 ///
-/// * `addr` - Any valid socket address (e.g., `"pool.ntp.org:123"` or `"192.168.1.1:123"`)
+/// * `addr` - Any valid socket address (e.g., `"time.nist.gov:123"` or `"192.168.1.1:123"`)
 ///
 /// # Returns
 ///
@@ -462,8 +462,8 @@ pub(crate) fn validate_response(
 /// ```no_run
 /// # use std::error::Error;
 /// # fn main() -> Result<(), Box<dyn Error>> {
-/// // Request time from NTP pool
-/// let result = ntp::request("pool.ntp.org:123")?;
+/// // Request time from NTP server
+/// let result = ntp::request("time.nist.gov:123")?;
 ///
 /// // Access packet fields directly via Deref
 /// println!("Server time: {:?}", result.transmit_timestamp);
@@ -498,7 +498,7 @@ pub fn request<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
 ///
 /// # Arguments
 ///
-/// * `addr` - Any valid socket address (e.g., `"pool.ntp.org:123"` or `"192.168.1.1:123"`)
+/// * `addr` - Any valid socket address (e.g., `"time.nist.gov:123"` or `"192.168.1.1:123"`)
 /// * `timeout` - Maximum duration to wait for both sending and receiving the NTP packet
 ///
 /// # Returns
@@ -513,7 +513,7 @@ pub fn request<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
 /// # use std::time::Duration;
 /// # fn main() -> Result<(), Box<dyn Error>> {
 /// // Request time with a 10 second timeout
-/// let result = ntp::request_with_timeout("pool.ntp.org:123", Duration::from_secs(10))?;
+/// let result = ntp::request_with_timeout("time.nist.gov:123", Duration::from_secs(10))?;
 /// println!("Offset: {:.6} seconds", result.offset_seconds);
 /// println!("Delay: {:.6} seconds", result.delay_seconds);
 /// # Ok(())
