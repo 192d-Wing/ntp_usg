@@ -1,6 +1,6 @@
 [package]
 name = "ntp_usg"
-version = "3.0.0"
+version = "3.0.1"
 authors = [
     "Jeff Belgum <jeffbelgum@gmail.com>",
     "John Willman <john.willman.1@us.af.mil>",
@@ -16,6 +16,6 @@ categories = ["network-programming", "date-and-time"]
 readme = "README.md"
 
 [dependencies]
-ntp_usg-proto = { version = "3.0.0", path = "../ntp_usg-proto" }
-ntp_usg-client = { version = "3.0.0", path = "../ntp_usg-client" }
-ntp_usg-server = { version = "3.0.0", path = "../ntp_usg-server" }
+ntp_usg-proto = { version = "3.0.1", path = "../ntp_usg-proto" }
+ntp_usg-client = { version = "3.0.1", path = "../ntp_usg-client" }
+ntp_usg-server = { version = "3.0.1", path = "../ntp_usg-server" }
