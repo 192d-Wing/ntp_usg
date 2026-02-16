@@ -1,10 +1,10 @@
 // Copyright 2026 U.S. Federal Government (in countries where recognized)
 // SPDX-License-Identifier: Apache-2.0
 
-//! Continuous NTP client using the async-std runtime.
+//! Continuous NTP client using the smol runtime.
 //!
 //! This module provides the same continuous NTP client functionality as
-//! [`crate::client`] but using async-std instead of tokio. It maintains
+//! [`crate::client`] but using smol instead of tokio. It maintains
 //! associations with one or more NTP servers, polling them at adaptive
 //! intervals per RFC 5905 Section 7.3 and supporting interleaved mode per
 //! RFC 9769.
@@ -18,7 +18,7 @@
 //!
 //! ```no_run
 //! # async fn example() -> std::io::Result<()> {
-//! let (client, state) = ntp::async_std_client::NtpClient::builder()
+//! let (client, state) = ntp::smol_client::NtpClient::builder()
 //!     .server("pool.ntp.org:123")
 //!     .server("time.google.com:123")
 //!     .min_poll(4)
@@ -27,7 +27,7 @@
 //!     .await?;
 //!
 //! // Spawn the poll loop.
-//! async_std::task::spawn(client.run());
+//! smol::spawn(client.run()).detach();
 //!
 //! // Read the latest sync state at any time.
 //! let state = state.read().unwrap();
@@ -36,8 +36,8 @@
 //! # }
 //! ```
 
-use async_std::net::UdpSocket;
 use log::{debug, warn};
+use smol::net::UdpSocket;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
@@ -49,8 +49,8 @@ use crate::{
     protocol, unix_time,
 };
 
-#[cfg(feature = "nts-async-std")]
-use crate::async_std_nts;
+#[cfg(feature = "nts-smol")]
+use crate::smol_nts;
 
 /// The current synchronization state, available to consumers via
 /// `Arc<RwLock<NtpSyncState>>`.
@@ -100,7 +100,7 @@ enum PollResult {
 }
 
 /// NTS-specific state for a peer.
-#[cfg(feature = "nts-async-std")]
+#[cfg(feature = "nts-smol")]
 struct NtsPeerState {
     c2s_key: Vec<u8>,
     s2c_key: Vec<u8>,
@@ -122,7 +122,7 @@ struct PeerState {
     current_t1: Option<protocol::TimestampFormat>,
     interleaved: bool,
     demobilized: bool,
-    #[cfg(feature = "nts-async-std")]
+    #[cfg(feature = "nts-smol")]
     nts_state: Option<NtsPeerState>,
 }
 
@@ -139,16 +139,16 @@ impl PeerState {
             current_t1: None,
             interleaved: false,
             demobilized: false,
-            #[cfg(feature = "nts-async-std")]
+            #[cfg(feature = "nts-smol")]
             nts_state: None,
         }
     }
 
-    #[cfg(feature = "nts-async-std")]
+    #[cfg(feature = "nts-smol")]
     fn new_nts(
         addr: SocketAddr,
         initial_poll: u8,
-        ke: async_std_nts::NtsKeResult,
+        ke: smol_nts::NtsKeResult,
         nts_ke_server: String,
     ) -> Self {
         let cookie_len = ke.cookies.first().map_or(0, |c| c.len());
@@ -275,7 +275,7 @@ fn classify_and_compute(
 /// Builder for configuring and creating an [`NtpClient`].
 pub struct NtpClientBuilder {
     servers: Vec<String>,
-    #[cfg(feature = "nts-async-std")]
+    #[cfg(feature = "nts-smol")]
     nts_servers: Vec<String>,
     min_poll: u8,
     max_poll: u8,
@@ -286,7 +286,7 @@ impl NtpClientBuilder {
     fn new() -> Self {
         NtpClientBuilder {
             servers: Vec::new(),
-            #[cfg(feature = "nts-async-std")]
+            #[cfg(feature = "nts-smol")]
             nts_servers: Vec::new(),
             min_poll: protocol::MINPOLL,
             max_poll: protocol::MAXPOLL,
@@ -313,7 +313,7 @@ impl NtpClientBuilder {
     }
 
     /// Add an NTS server hostname.
-    #[cfg(feature = "nts-async-std")]
+    #[cfg(feature = "nts-smol")]
     pub fn nts_server(mut self, hostname: impl Into<String>) -> Self {
         self.nts_servers.push(hostname.into());
         self
@@ -329,11 +329,9 @@ impl NtpClientBuilder {
     ///
     /// Returns the client (to be spawned) and a shared state handle.
     pub async fn build(self) -> io::Result<(NtpClient, Arc<RwLock<NtpSyncState>>)> {
-        use async_std::net::ToSocketAddrs;
-
-        #[cfg(feature = "nts-async-std")]
+        #[cfg(feature = "nts-smol")]
         let has_nts = !self.nts_servers.is_empty();
-        #[cfg(not(feature = "nts-async-std"))]
+        #[cfg(not(feature = "nts-smol"))]
         let has_nts = false;
 
         if self.servers.is_empty() && !has_nts {
@@ -356,7 +354,7 @@ impl NtpClientBuilder {
 
         let mut peers = Vec::new();
         for server in &self.servers {
-            let addrs: Vec<SocketAddr> = server.as_str().to_socket_addrs().await?.collect();
+            let addrs: Vec<SocketAddr> = smol::net::resolve(server.as_str()).await?;
             if let Some(&addr) = addrs.first() {
                 peers.push(PeerState::new(addr, initial_poll));
             } else {
@@ -367,11 +365,11 @@ impl NtpClientBuilder {
             }
         }
 
-        #[cfg(feature = "nts-async-std")]
+        #[cfg(feature = "nts-smol")]
         for nts_server in &self.nts_servers {
-            let ke = async_std_nts::nts_ke(nts_server).await?;
+            let ke = smol_nts::nts_ke(nts_server).await?;
             let addr_str = format!("{}:{}", ke.ntp_server, ke.ntp_port);
-            let addrs: Vec<SocketAddr> = addr_str.as_str().to_socket_addrs().await?.collect();
+            let addrs: Vec<SocketAddr> = smol::net::resolve(addr_str.as_str()).await?;
             if let Some(&addr) = addrs.first() {
                 peers.push(PeerState::new_nts(
                     addr,
@@ -405,10 +403,10 @@ impl NtpClientBuilder {
     }
 }
 
-/// A continuous NTP client using the async-std runtime.
+/// A continuous NTP client using the smol runtime.
 ///
 /// Created via [`NtpClient::builder()`]. Call [`run()`](NtpClient::run) to start
-/// the poll loop (typically via `async_std::task::spawn`).
+/// the poll loop (typically via `smol::spawn(...).detach()`).
 pub struct NtpClient {
     peers: Vec<PeerState>,
     state: Arc<RwLock<NtpSyncState>>,
@@ -451,7 +449,7 @@ impl NtpClient {
 
             // Sleep until the deadline.
             if deadline > now {
-                async_std::task::sleep(deadline - now).await;
+                smol::Timer::after(deadline - now).await;
             }
 
             debug!(
@@ -501,7 +499,7 @@ impl NtpClient {
 
     /// Poll a single peer and return the result.
     async fn poll_peer(peer: &mut PeerState) -> io::Result<PollResult> {
-        #[cfg(feature = "nts-async-std")]
+        #[cfg(feature = "nts-smol")]
         if peer.nts_state.is_some() {
             let mut nts = peer.nts_state.take().unwrap();
             let result = Self::poll_peer_nts(peer, &mut nts).await;
@@ -518,16 +516,20 @@ impl NtpClient {
         let timeout = Duration::from_secs(5);
 
         // Send with timeout.
-        async_std::future::timeout(timeout, sock.send_to(&send_buf, peer.addr))
-            .await
-            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP send timed out"))??;
+        futures_lite::future::or(sock.send_to(&send_buf, peer.addr), async {
+            smol::Timer::after(timeout).await;
+            Err(io::Error::new(io::ErrorKind::TimedOut, "NTP send timed out"))
+        })
+        .await?;
 
         // Receive with timeout.
         let mut recv_buf = [0u8; 1024];
         let (recv_len, src_addr) =
-            async_std::future::timeout(timeout, sock.recv_from(&mut recv_buf))
-                .await
-                .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out"))??;
+            futures_lite::future::or(sock.recv_from(&mut recv_buf), async {
+                smol::Timer::after(timeout).await;
+                Err(io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out"))
+            })
+            .await?;
 
         let parse_result = parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
 
@@ -560,19 +562,19 @@ impl NtpClient {
         }
     }
 
-    #[cfg(feature = "nts-async-std")]
+    #[cfg(feature = "nts-smol")]
     async fn poll_peer_nts(
         peer: &mut PeerState,
         nts_state: &mut NtsPeerState,
     ) -> io::Result<PollResult> {
         // Replenish cookies if running low.
-        if nts_state.cookies.len() <= async_std_nts::COOKIE_REKEY_THRESHOLD {
+        if nts_state.cookies.len() <= smol_nts::COOKIE_REKEY_THRESHOLD {
             debug!(
                 "peer {}: {} cookies remaining, attempting NTS-KE re-key",
                 peer.addr,
                 nts_state.cookies.len()
             );
-            match async_std_nts::nts_ke(&nts_state.nts_ke_server).await {
+            match smol_nts::nts_ke(&nts_state.nts_ke_server).await {
                 Ok(ke) => {
                     nts_state.c2s_key = ke.c2s_key;
                     nts_state.s2c_key = ke.s2c_key;
@@ -597,22 +599,26 @@ impl NtpClient {
             .ok_or_else(|| io::Error::other("no NTS cookies remaining"))?;
 
         let (send_buf, t1, uid_data) =
-            async_std_nts::build_nts_request(&nts_state.c2s_key, nts_state.aead_algorithm, cookie)?;
+            smol_nts::build_nts_request(&nts_state.c2s_key, nts_state.aead_algorithm, cookie)?;
         peer.current_t1 = Some(t1);
 
         let bind_addr = crate::bind_addr_for(&peer.addr);
         let sock = UdpSocket::bind(bind_addr).await?;
         let timeout = Duration::from_secs(5);
 
-        async_std::future::timeout(timeout, sock.send_to(&send_buf, peer.addr))
-            .await
-            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP send timed out"))??;
+        futures_lite::future::or(sock.send_to(&send_buf, peer.addr), async {
+            smol::Timer::after(timeout).await;
+            Err(io::Error::new(io::ErrorKind::TimedOut, "NTP send timed out"))
+        })
+        .await?;
 
         let mut recv_buf = [0u8; 2048];
         let (recv_len, src_addr) =
-            async_std::future::timeout(timeout, sock.recv_from(&mut recv_buf))
-                .await
-                .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out"))??;
+            futures_lite::future::or(sock.recv_from(&mut recv_buf), async {
+                smol::Timer::after(timeout).await;
+                Err(io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out"))
+            })
+            .await?;
 
         let parse_result = parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
 
@@ -632,7 +638,7 @@ impl NtpClient {
                 Err(e)
             }
             Ok((response, t4)) => {
-                let new_cookies = async_std_nts::validate_nts_response(
+                let new_cookies = smol_nts::validate_nts_response(
                     &nts_state.s2c_key,
                     nts_state.aead_algorithm,
                     &uid_data,
@@ -669,9 +675,9 @@ impl NtpClient {
         if let Some(peer) = best
             && let Some(sample) = peer.filter.best_sample()
         {
-            #[cfg(feature = "nts-async-std")]
+            #[cfg(feature = "nts-smol")]
             let nts_authenticated = peer.nts_state.is_some();
-            #[cfg(not(feature = "nts-async-std"))]
+            #[cfg(not(feature = "nts-smol"))]
             let nts_authenticated = false;
 
             let state = NtpSyncState {
