@@ -1,4 +1,4 @@
-name: Publish to crates.io
+name: Publish
 
 on:
   push:
@@ -8,9 +8,12 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: write
+
 jobs:
   publish:
-    name: Publish to crates.io
+    name: Release & Publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -37,6 +40,24 @@ jobs:
 
       - name: Check documentation
         run: cargo doc --no-deps
+
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          # Extract the section for this version from CHANGELOG.md
+          NOTES=$(awk "/^## \[${TAG_VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md)
+          # Write to file to preserve formatting
+          echo "$NOTES" > /tmp/release-notes.md
+          echo "notes_file=/tmp/release-notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file "${{ steps.changelog.outputs.notes_file }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Publish to crates.io
         run: cargo publish --token ${{ secrets.CRATES_IO }}
