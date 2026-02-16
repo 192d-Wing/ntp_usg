@@ -34,6 +34,7 @@ use std::sync::{Arc, RwLock};
 
 use log::debug;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls_pki_types::pem::PemObject;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
@@ -62,12 +63,12 @@ pub struct NtsKeServerConfig {
 impl NtsKeServerConfig {
     /// Create a config from PEM-encoded certificate and private key bytes.
     pub fn from_pem(cert_pem: &[u8], key_pem: &[u8]) -> io::Result<Self> {
-        let certs = rustls_pemfile::certs(&mut &*cert_pem)
+        let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_slice_iter(cert_pem)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-        let key = rustls_pemfile::private_key(&mut &*key_pem)?
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no private key found"))?;
+        let key = PrivateKeyDer::from_pem_slice(key_pem)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         Ok(NtsKeServerConfig {
             cert_chain: certs,

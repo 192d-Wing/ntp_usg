@@ -24,7 +24,7 @@ nts = [
     "ntp_usg-proto/nts",
     "dep:rustls",
     "dep:tokio-rustls",
-    "dep:rustls-pemfile",
+    "dep:rustls-pki-types",
     "dep:rand",
 ]
 symmetric = []
@@ -35,7 +35,7 @@ nts-smol = [
     "ntp_usg-proto/nts",
     "dep:rustls",
     "dep:futures-rustls",
-    "dep:rustls-pemfile",
+    "dep:rustls-pki-types",
     "dep:rand",
 ]
 
@@ -45,7 +45,7 @@ log = { workspace = true }
 tokio = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 tokio-rustls = { workspace = true, optional = true }
-rustls-pemfile = { workspace = true, optional = true }
+rustls-pki-types = { workspace = true, optional = true }
 smol = { workspace = true, optional = true }
 futures-rustls = { workspace = true, optional = true }
 futures-lite = { workspace = true, optional = true }
