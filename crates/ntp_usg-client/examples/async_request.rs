@@ -23,7 +23,8 @@ async fn main() {
         .map(|&server| {
             tokio::spawn(async move {
                 let result =
-                    ntp_client::async_ntp::request_with_timeout(server, Duration::from_secs(5)).await;
+                    ntp_client::async_ntp::request_with_timeout(server, Duration::from_secs(5))
+                        .await;
                 (server, result)
             })
         })

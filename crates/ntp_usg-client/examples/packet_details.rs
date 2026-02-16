@@ -100,12 +100,18 @@ fn main() {
             }
 
             match packet.leap_indicator {
-                ntp_client::protocol::LeapIndicator::NoWarning => println!("  ✓ No leap second warning"),
-                ntp_client::protocol::LeapIndicator::AddOne => println!("  ⚠ Leap second will be added"),
+                ntp_client::protocol::LeapIndicator::NoWarning => {
+                    println!("  ✓ No leap second warning")
+                }
+                ntp_client::protocol::LeapIndicator::AddOne => {
+                    println!("  ⚠ Leap second will be added")
+                }
                 ntp_client::protocol::LeapIndicator::SubOne => {
                     println!("  ⚠ Leap second will be subtracted")
                 }
-                ntp_client::protocol::LeapIndicator::Unknown => println!("  ✗ Clock not synchronized"),
+                ntp_client::protocol::LeapIndicator::Unknown => {
+                    println!("  ✗ Clock not synchronized")
+                }
             }
 
             // Timing information (RFC 5905 Section 8)

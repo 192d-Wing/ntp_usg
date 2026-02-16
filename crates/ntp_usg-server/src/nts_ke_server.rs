@@ -248,9 +248,9 @@ async fn handle_nts_ke_connection(
         s2c_key,
     };
     let cookies: Vec<Vec<u8>> = {
-        let store = key_store.read().map_err(|_| {
-            io::Error::other("master key store lock poisoned")
-        })?;
+        let store = key_store
+            .read()
+            .map_err(|_| io::Error::other("master key store lock poisoned"))?;
         (0..cookie_count)
             .map(|_| store.encrypt_cookie(&cookie_contents))
             .collect::<io::Result<Vec<_>>>()?

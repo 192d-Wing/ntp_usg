@@ -16,10 +16,7 @@ async fn main() -> std::io::Result<()> {
         .build()
         .await?;
 
-    println!(
-        "NTP server listening on {}",
-        server.local_addr()?
-    );
+    println!("NTP server listening on {}", server.local_addr()?);
 
     server.run().await
 }

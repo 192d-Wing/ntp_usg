@@ -30,9 +30,7 @@ async fn main() -> std::io::Result<()> {
     let key_pem = std::fs::read(&key_path)?;
 
     // Shared master key store with 24-hour grace period for retired keys.
-    let key_store = Arc::new(RwLock::new(MasterKeyStore::new(Duration::from_secs(
-        86400,
-    ))));
+    let key_store = Arc::new(RwLock::new(MasterKeyStore::new(Duration::from_secs(86400))));
 
     // NTS-KE server (TLS on port 4460).
     let ke_config = NtsKeServerConfig::from_pem(&cert_pem, &key_pem)?;
@@ -45,10 +43,7 @@ async fn main() -> std::io::Result<()> {
         .build()
         .await?;
 
-    println!(
-        "NTP server listening on {}",
-        ntp_server.local_addr()?
-    );
+    println!("NTP server listening on {}", ntp_server.local_addr()?);
     println!("NTS-KE server listening on 0.0.0.0:4460");
 
     // Run both servers concurrently.

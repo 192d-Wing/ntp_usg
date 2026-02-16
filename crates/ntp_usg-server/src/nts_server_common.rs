@@ -24,7 +24,7 @@ use std::io;
 use std::time::{Duration, Instant};
 
 use crate::extension::{
-    self, ExtensionField, NtsAuthenticator, NtsCookie, UniqueIdentifier, UNIQUE_IDENTIFIER,
+    self, ExtensionField, NtsAuthenticator, NtsCookie, UNIQUE_IDENTIFIER, UniqueIdentifier,
 };
 use crate::nts_common::{
     self, AEAD_AES_SIV_CMAC_256, aead_decrypt, aead_encrypt, aead_key_length,
@@ -297,21 +297,16 @@ pub(crate) fn process_nts_extensions(
         .iter()
         .find(|ef| ef.field_type == extension::NTS_COOKIE)
         .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "NTS server: missing NTS Cookie",
-            )
+            io::Error::new(io::ErrorKind::InvalidData, "NTS server: missing NTS Cookie")
         })?;
 
     // 4. Decrypt the cookie to recover session keys.
-    let cookie_contents = key_store
-        .decrypt_cookie(&cookie_ef.value)?
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "NTS server: failed to decrypt cookie (expired or invalid)",
-            )
-        })?;
+    let cookie_contents = key_store.decrypt_cookie(&cookie_ef.value)?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NTS server: failed to decrypt cookie (expired or invalid)",
+        )
+    })?;
 
     // 5. Extract the NTS Authenticator.
     let auth_ef = ext_fields
@@ -578,8 +573,7 @@ mod tests {
             nts_common::build_nts_request(&c2s_key, aead_algorithm, cookie).unwrap();
 
         // Server validates the NTS extensions.
-        let ctx =
-            process_nts_extensions(&request_buf, request_buf.len(), &store).unwrap();
+        let ctx = process_nts_extensions(&request_buf, request_buf.len(), &store).unwrap();
 
         // Verify context.
         assert_eq!(ctx.uid_data, uid_data);

@@ -233,7 +233,9 @@ impl IpNet {
                 if self.prefix_len == 0 {
                     return true;
                 }
-                let mask = u32::MAX.checked_shl(32 - self.prefix_len as u32).unwrap_or(0);
+                let mask = u32::MAX
+                    .checked_shl(32 - self.prefix_len as u32)
+                    .unwrap_or(0);
                 (u32::from(*net) & mask) == (u32::from(*addr) & mask)
             }
             (IpAddr::V6(net), IpAddr::V6(addr)) => {
@@ -288,14 +290,16 @@ impl AccessControl {
     pub(crate) fn check(&self, client_ip: &IpAddr) -> AccessResult {
         // Deny list checked first.
         if let Some(deny) = &self.deny_list
-            && deny.iter().any(|net| net.contains(client_ip)) {
-                return AccessResult::Deny;
-            }
+            && deny.iter().any(|net| net.contains(client_ip))
+        {
+            return AccessResult::Deny;
+        }
         // If allow list exists, client must match.
         if let Some(allow) = &self.allow_list
-            && !allow.iter().any(|net| net.contains(client_ip)) {
-                return AccessResult::Restrict;
-            }
+            && !allow.iter().any(|net| net.contains(client_ip))
+        {
+            return AccessResult::Restrict;
+        }
         AccessResult::Allow
     }
 }
@@ -418,9 +422,9 @@ impl ClientTable {
                 .iter()
                 .min_by_key(|(_, state)| state.last_request_time)
                 .map(|(ip, _)| *ip)
-            {
-                self.entries.remove(&oldest_ip);
-            }
+        {
+            self.entries.remove(&oldest_ip);
+        }
     }
 }
 
@@ -862,9 +866,7 @@ mod tests {
         // Parse it back.
         let parsed: protocol::Packet = (&buf[..48]).read_bytes().unwrap();
         // T3 should be non-zero (patched to current time).
-        assert!(
-            parsed.transmit_timestamp.seconds != 0 || parsed.transmit_timestamp.fraction != 0
-        );
+        assert!(parsed.transmit_timestamp.seconds != 0 || parsed.transmit_timestamp.fraction != 0);
     }
 
     // ── IpNet ─────────────────────────────────────────────────────

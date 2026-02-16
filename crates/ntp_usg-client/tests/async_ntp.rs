@@ -7,7 +7,9 @@ use std::time::Duration;
 
 #[tokio::test]
 async fn test_async_request_nist() {
-    match ntp_client::async_ntp::request_with_timeout("time.nist.gov:123", Duration::from_secs(10)).await {
+    match ntp_client::async_ntp::request_with_timeout("time.nist.gov:123", Duration::from_secs(10))
+        .await
+    {
         Ok(_) => {}
         Err(e)
             if e.kind() == std::io::ErrorKind::WouldBlock
@@ -21,8 +23,11 @@ async fn test_async_request_nist() {
 
 #[tokio::test]
 async fn test_async_request_nist_alt() {
-    match ntp_client::async_ntp::request_with_timeout("time-a-g.nist.gov:123", Duration::from_secs(10))
-        .await
+    match ntp_client::async_ntp::request_with_timeout(
+        "time-a-g.nist.gov:123",
+        Duration::from_secs(10),
+    )
+    .await
     {
         Ok(_) => {}
         Err(e)
@@ -38,6 +43,7 @@ async fn test_async_request_nist_alt() {
 #[tokio::test]
 async fn test_async_request_timeout() {
     let res =
-        ntp_client::async_ntp::request_with_timeout("time.nist.gov:123", Duration::from_nanos(1)).await;
+        ntp_client::async_ntp::request_with_timeout("time.nist.gov:123", Duration::from_nanos(1))
+            .await;
     assert!(res.is_err());
 }

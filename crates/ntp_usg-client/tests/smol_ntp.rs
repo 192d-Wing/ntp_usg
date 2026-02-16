@@ -8,8 +8,11 @@ use std::time::Duration;
 #[test]
 fn test_smol_request_nist() {
     smol::block_on(async {
-        match ntp_client::smol_ntp::request_with_timeout("time.nist.gov:123", Duration::from_secs(10))
-            .await
+        match ntp_client::smol_ntp::request_with_timeout(
+            "time.nist.gov:123",
+            Duration::from_secs(10),
+        )
+        .await
         {
             Ok(_) => {}
             Err(e)
@@ -26,8 +29,11 @@ fn test_smol_request_nist() {
 #[test]
 fn test_smol_request_nist_alt() {
     smol::block_on(async {
-        match ntp_client::smol_ntp::request_with_timeout("time-a-g.nist.gov:123", Duration::from_secs(10))
-            .await
+        match ntp_client::smol_ntp::request_with_timeout(
+            "time-a-g.nist.gov:123",
+            Duration::from_secs(10),
+        )
+        .await
         {
             Ok(_) => {}
             Err(e)
@@ -44,8 +50,11 @@ fn test_smol_request_nist_alt() {
 #[test]
 fn test_smol_request_timeout() {
     smol::block_on(async {
-        let res =
-            ntp_client::smol_ntp::request_with_timeout("time.nist.gov:123", Duration::from_nanos(1)).await;
+        let res = ntp_client::smol_ntp::request_with_timeout(
+            "time.nist.gov:123",
+            Duration::from_nanos(1),
+        )
+        .await;
         assert!(res.is_err());
     });
 }

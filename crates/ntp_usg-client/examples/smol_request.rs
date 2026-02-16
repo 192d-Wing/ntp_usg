@@ -23,7 +23,8 @@ fn main() {
             .map(|&server| {
                 smol::spawn(async move {
                     let result =
-                        ntp_client::smol_ntp::request_with_timeout(server, Duration::from_secs(5)).await;
+                        ntp_client::smol_ntp::request_with_timeout(server, Duration::from_secs(5))
+                            .await;
                     (server, result)
                 })
             })
