@@ -187,7 +187,7 @@ impl NtpServerBuilder {
         let reference_id = if stratum == protocol::Stratum::PRIMARY {
             // Stratum 1: interpret as primary source (GPS, PPS, etc.)
             // Map common reference IDs to PrimarySource variants
-            let reference_id = match &ref_id_bytes {
+            match &ref_id_bytes {
                 b"GPS\0" => {
                     protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Gps)
                 }
@@ -207,8 +207,7 @@ impl NtpServerBuilder {
                     // Unknown primary source - use as-is
                     protocol::ReferenceIdentifier::SecondaryOrClient(ref_id_bytes)
                 }
-            };
-            reference_id
+            }
         } else {
             // Stratum 2+: treat as opaque bytes
             protocol::ReferenceIdentifier::SecondaryOrClient(ref_id_bytes)
@@ -267,11 +266,7 @@ impl NtpServerBuilder {
         };
 
         #[cfg(feature = "refclock")]
-        let system_state = if refclock_task.is_some() {
-            Arc::new(RwLock::new(self.system_state))
-        } else {
-            Arc::new(RwLock::new(self.system_state))
-        };
+        let system_state = Arc::new(RwLock::new(self.system_state));
 
         #[cfg(not(feature = "refclock"))]
         let system_state = Arc::new(RwLock::new(self.system_state));

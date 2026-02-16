@@ -217,7 +217,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("────────────────────────────────────────");
 
                 // Process GPS sample
-                match gps_result {
+                match &gps_result {
                     Ok(gps_sample) => {
                         let gps_drift = gps_sample.offset - last_gps_offset;
                         last_gps_offset = gps_sample.offset;
