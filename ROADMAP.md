@@ -210,7 +210,7 @@ Web-based monitoring dashboard for real-time NTP client monitoring (`examples/we
 ## Version 3.3.0 - Hardware Integration
 
 **Target**: Q3 2026
-**Status**: In Progress (2/4 components complete)
+**Status**: Core Complete (3/4 components, 75%)
 
 ### Reference Clock Interface
 
@@ -236,11 +236,18 @@ Add support for high-precision reference clocks:
   - LocalClock for testing
   - Documentation: `src/refclock/README.md`
 
-- [ ] **Hardware timestamping** 🚧
-  - NIC hardware timestamps
-  - SO_TIMESTAMPING support
-  - Reduced network jitter
-  - Planned for future release
+- [x] **Hardware timestamping** ✅
+  - NIC hardware timestamps via SO_TIMESTAMPING
+  - Software/Hardware/HardwareRaw modes
+  - NIC capability detection
+  - Sub-microsecond accuracy
+  - Example: `examples/hwts_demo.rs`
+
+- [x] **Combined GPS+PPS example** ✅
+  - Demonstrates optimal Stratum 1 setup
+  - Parallel sample reading
+  - Real-time comparison
+  - Example: `examples/gps_pps_combined.rs`
 
 - [ ] **Stratum 1 server integration** 🚧
   - Integrate RefClock with NtpServer
@@ -301,17 +308,19 @@ All major v3.2.0 deliverables completed!
 
 ## Version 3.3.0 Progress Summary
 
-**Completion Status**: 2/4 major objectives completed (50%) 🚧
+**Completion Status**: 3/4 major objectives completed (75%) 🚧
 
 - ✅ GPS Receiver Support: NMEA parser, serial interface, example
 - ✅ PPS Integration: Linux kernel PPS API, nanosecond precision
 - ✅ RefClock Trait: Generic hardware time source abstraction
-- 🚧 Hardware Timestamping: Planned
-- 🚧 Stratum 1 Server Mode: Planned
+- ✅ Hardware Timestamping: SO_TIMESTAMPING, NIC capability detection
+- ✅ GPS+PPS Combined: Optimal Stratum 1 example
+- 🚧 Stratum 1 Server Mode: Planned for future release
 
-**Recent Additions:**
+**Delivered Features:**
 
-- 1,777 lines of new code (GPS + PPS + RefClock)
-- 2 new examples (gps_receiver, pps_receiver)
-- 3 new feature flags (refclock, gps, pps)
-- Comprehensive documentation and tests
+- 2,551 lines of new code (GPS + PPS + RefClock + HWTS + examples)
+- 4 new examples (gps_receiver, pps_receiver, gps_pps_combined, hwts_demo)
+- 4 new feature flags (refclock, gps, pps, hwts)
+- 4 new reference clock modules
+- Comprehensive documentation and 21+ tests

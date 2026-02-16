@@ -62,24 +62,47 @@ On Linux, you may need to add your user to the `dialout` group:
 sudo usermod -a -G dialout $USER
 ```
 
-### PPS (Pulse Per Second) - Coming Soon
+### PPS (Pulse Per Second) ✅
 
 High-precision timing via PPS signals from GPS receivers or atomic clocks.
 
-**Planned Features:**
-- Kernel PPS support on Linux
-- Hardware timestamping
+**Features:**
+- Linux kernel PPS API support
+- Assert/Clear/Both edge capture
 - Nanosecond-level precision
-- Automatic drift compensation
+- Automatic sequence tracking
 
-### Hardware Timestamping - Coming Soon
+**Typical Accuracy:**
+- < 1 µs offset with GPS PPS output
+- < 100 ns offset with atomic clock PPS
+- < 10 ns jitter with stable PPS source
+
+### Hardware Timestamping ✅
 
 Network Interface Card (NIC) hardware timestamps for reduced network jitter.
 
-**Planned Features:**
-- `SO_TIMESTAMPING` support
-- PTP hardware clock integration
+**Features:**
+- `SO_TIMESTAMPING` support on Linux
+- Hardware TX/RX timestamps
+- Software fallback
+- NIC capability detection
+
+**Benefits:**
+- Eliminates kernel scheduling jitter
 - Sub-microsecond NTP accuracy
+- Deterministic packet timestamps
+- Critical for Stratum 1 servers
+
+**Supported NICs:**
+- Intel i210, i350 (igb driver)
+- Intel X540, X550 (ixgbe driver)
+- Broadcom NetXtreme (bnxt_en driver)
+- Mellanox ConnectX (mlx5 driver)
+
+**Check support:**
+```bash
+sudo ethtool -T eth0
+```
 
 ## RefClock Trait
 
@@ -142,6 +165,21 @@ This demonstrates optimal time synchronization by combining:
 - GPS for coarse time (100µs - 1ms accuracy)
 - PPS for fine precision (< 1µs accuracy)
 
+### Hardware Timestamping
+
+See [`examples/hwts_demo.rs`](../../examples/hwts_demo.rs) for hardware timestamping capabilities.
+
+**Run the example:**
+```bash
+sudo cargo run -p ntp_usg-client --example hwts_demo --features hwts
+```
+
+Demonstrates:
+- NIC capability detection
+- SO_TIMESTAMPING configuration
+- Hardware vs software timestamping
+- Expected accuracy improvements
+
 ## Testing
 
 GPS receiver functionality requires actual hardware. For testing without hardware, use the `LocalClock` implementation:
@@ -176,8 +214,8 @@ let server = NtpServer::builder()
 | Feature | Linux | macOS | Windows | Embedded |
 |---------|-------|-------|---------|----------|
 | GPS NMEA | ✅ | ✅ | ✅ | ✅ (no_std with alloc) |
-| PPS | 🚧 Planned (Linux kernel PPS) | ❌ | ❌ | 🚧 Planned |
-| Hardware Timestamping | 🚧 Planned | ❌ | ❌ | ❌ |
+| PPS | ✅ (kernel PPS) | ❌ | ❌ | ❌ |
+| Hardware Timestamping | ✅ (SO_TIMESTAMPING) | ❌ | ❌ | ❌ |
 
 ## Performance
 
