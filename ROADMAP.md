@@ -13,7 +13,7 @@ This document outlines the planned features and improvements for `ntp_usg`.
 - [x] **NTS in continuous client** — `NtpClientBuilder::nts_server()` with cookie replenishment and re-keying
 - [x] **IO-independent parsing** — `FromBytes`/`ToBytes` traits for buffer-based parsing decoupled from `std::io`
 - [x] **no_std support** — Core parsing works without `std` or `alloc`; `alloc` feature enables `Vec`-based types
-- [x] **async-std support** — `async_std_ntp`, `async_std_client`, and `async_std_nts` modules mirroring the tokio API surface
+- [x] **smol support** — `smol_ntp`, `smol_client`, and `smol_nts` modules mirroring the tokio API surface
 - [x] **System clock adjustment** — Platform-native slew/step correction on Linux, macOS, and Windows via `clock` feature
 
 ## Planned
