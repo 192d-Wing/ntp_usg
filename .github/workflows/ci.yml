@@ -23,12 +23,31 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
-      - name: Run tests
+      - name: Run tests (default)
         run: cargo test --verbose
-      - name: Run tests (with tokio feature)
+      - name: Run tests (tokio)
         run: cargo test --verbose --features tokio
-      - name: Run tests (with nts feature)
+      - name: Run tests (nts)
         run: cargo test --verbose --features nts
+      - name: Run tests (async-std-runtime)
+        run: cargo test --verbose --features async-std-runtime
+      - name: Run tests (nts-async-std)
+        run: cargo test --verbose --features nts-async-std
+      - name: Run tests (clock)
+        if: runner.os == 'Linux' || runner.os == 'Windows'
+        run: cargo test --verbose --features clock
+
+  no-std:
+    name: no_std
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check no_std (no features)
+        run: cargo check --no-default-features --verbose
+      - name: Check no_std + alloc
+        run: cargo check --no-default-features --features alloc --verbose
 
   clippy:
     name: Clippy
