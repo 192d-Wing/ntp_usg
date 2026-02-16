@@ -27,6 +27,8 @@ jobs:
         run: cargo test --verbose
       - name: Run tests (with tokio feature)
         run: cargo test --verbose --features tokio
+      - name: Run tests (with nts feature)
+        run: cargo test --verbose --features nts
 
   clippy:
     name: Clippy
