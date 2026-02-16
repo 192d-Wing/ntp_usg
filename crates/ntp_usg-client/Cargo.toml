@@ -30,8 +30,8 @@ clock = ["dep:libc", "dep:windows-sys"]
 discipline = ["clock"]
 symmetric = []
 broadcast = []
-refclock = ["tokio"]
-gps = ["refclock", "dep:serialport", "dep:async-trait"]
+refclock = ["tokio", "dep:async-trait"]
+gps = ["refclock", "dep:serialport"]
 pps = ["refclock"]
 smol-runtime = ["dep:smol", "dep:futures-lite"]
 nts-smol = [
@@ -128,6 +128,10 @@ required-features = ["tokio"]
 [[example]]
 name = "gps_receiver"
 required-features = ["gps"]
+
+[[example]]
+name = "pps_receiver"
+required-features = ["pps"]
 
 [[bench]]
 name = "selection_benchmark"
