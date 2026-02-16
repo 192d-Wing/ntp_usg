@@ -583,7 +583,7 @@ fn version_is_known() {
 
     // Parse a packet with VN=0 to get an unknown version.
     let mut buf = make_test_packet(4, [192, 168, 1, 1]);
-    buf[0] = buf[0] & 0xC7; // Clear version bits (VN=0)
+    buf[0] &= 0xC7; // Clear version bits (VN=0)
     let packet = (&buf[..]).read_bytes::<Packet>().unwrap();
     assert!(!packet.version.is_known());
 
