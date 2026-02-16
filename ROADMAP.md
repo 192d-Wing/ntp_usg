@@ -15,15 +15,11 @@ This document outlines the planned features and improvements for `ntp_usg`.
 - [x] **no_std support** — Core parsing works without `std` or `alloc`; `alloc` feature enables `Vec`-based types
 - [x] **smol support** — `smol_ntp`, `smol_client`, and `smol_nts` modules mirroring the tokio API surface
 - [x] **System clock adjustment** — Platform-native slew/step correction on Linux, macOS, and Windows via `clock` feature
+- [x] **NTP server** — NTPv4 server mode with builder pattern, KoD generation, IP-based access control, per-client rate limiting (RFC 8633), interleaved mode (RFC 9769), and both tokio and smol runtimes
+- [x] **NTS server** — Server-side NTS support (RFC 8915) including NTS-KE TLS 1.3 key establishment, cookie generation/validation with master key rotation, and AEAD-authenticated NTP request processing
 
 ## Planned
 
-### NTP server functionality
+### Reference clock interface
 
-Implement an NTP server that can respond to client requests. This would include:
-
-- Basic NTPv4 server mode responding with accurate timestamps
-- Reference clock interface for disciplining to hardware sources (GPS, PPS)
-- Kiss-o'-Death response generation for rate limiting
-- Access control lists
-- NTS server support (requires server-side cookie generation and AEAD)
+Disciplining to hardware sources (GPS, PPS) for stratum-1 operation.

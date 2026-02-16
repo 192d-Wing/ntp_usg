@@ -1,0 +1,99 @@
+[package]
+name = "ntp_usg-client"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "NTP client library with sync, async (tokio/smol), and NTS support."
+documentation = "https://docs.rs/ntp_usg-client/"
+readme = "../../README.md"
+keywords = ["protocol", "network", "time", "ntp", "client"]
+categories = ["date-and-time", "network-programming"]
+
+[lib]
+name = "ntp_client"
+
+[features]
+default = []
+tokio = ["dep:tokio"]
+nts = [
+    "tokio",
+    "ntp_usg-proto/nts",
+    "dep:rustls",
+    "dep:tokio-rustls",
+    "dep:webpki-roots",
+]
+clock = ["dep:libc", "dep:windows-sys"]
+smol-runtime = ["dep:smol", "dep:futures-lite"]
+nts-smol = [
+    "smol-runtime",
+    "ntp_usg-proto/nts",
+    "dep:rustls",
+    "dep:futures-rustls",
+    "dep:webpki-roots",
+]
+
+[dependencies]
+ntp_usg-proto = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+tokio-rustls = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
+smol = { workspace = true, optional = true }
+futures-rustls = { workspace = true, optional = true }
+futures-lite = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true, optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, optional = true }
+
+[dev-dependencies]
+chrono = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+smol = { workspace = true }
+
+[[example]]
+name = "request"
+
+[[example]]
+name = "timeout"
+
+[[example]]
+name = "packet_details"
+
+[[example]]
+name = "multiple_servers"
+
+[[example]]
+name = "async_request"
+required-features = ["tokio"]
+
+[[example]]
+name = "continuous"
+required-features = ["tokio"]
+
+[[example]]
+name = "nts_request"
+required-features = ["nts"]
+
+[[example]]
+name = "nts_continuous"
+required-features = ["nts"]
+
+[[example]]
+name = "clock_adjust"
+required-features = ["clock", "tokio"]
+
+[[example]]
+name = "smol_request"
+required-features = ["smol-runtime"]
+
+[[example]]
+name = "smol_continuous"
+required-features = ["smol-runtime"]

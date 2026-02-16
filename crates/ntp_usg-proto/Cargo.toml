@@ -1,0 +1,34 @@
+[package]
+name = "ntp_usg-proto"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "NTP protocol types, extension fields, and NTS cryptographic primitives."
+documentation = "https://docs.rs/ntp_usg-proto/"
+readme = "../../README.md"
+keywords = ["protocol", "network", "time", "parser", "binary"]
+categories = [
+    "date-and-time",
+    "network-programming",
+    "parser-implementations",
+    "encoding",
+]
+
+[lib]
+name = "ntp_proto"
+
+[features]
+default = ["std"]
+std = ["dep:byteorder", "dep:log"]
+alloc = []
+nts = ["std", "dep:aes-siv", "dep:rand"]
+
+[dependencies]
+byteorder = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+aes-siv = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }

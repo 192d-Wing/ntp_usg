@@ -38,17 +38,17 @@ jobs:
         if: matrix.rust == 'beta'
         run: rustup toolchain install beta && rustup default beta
       - name: Run tests (default)
-        run: cargo nextest run --verbose
+        run: cargo nextest run --workspace --verbose
       - name: Run tests (tokio)
-        run: cargo nextest run --verbose --features tokio
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/tokio -F ntp_usg-server/tokio
       - name: Run tests (nts)
-        run: cargo nextest run --verbose --features nts
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/nts -F ntp_usg-server/nts
       - name: Run tests (smol-runtime)
-        run: cargo nextest run --verbose --features smol-runtime
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/smol-runtime -F ntp_usg-server/smol-runtime
       - name: Run tests (nts-smol)
-        run: cargo nextest run --verbose --features nts-smol
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/nts-smol -F ntp_usg-server/nts-smol
       - name: Run tests (clock)
-        run: cargo nextest run --verbose --features clock
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/clock
 
   test-windows:
     name: Test (${{ matrix.runner }}, ${{ matrix.rust }})
@@ -65,17 +65,17 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
       - name: Run tests (default)
-        run: cargo nextest run --verbose
+        run: cargo nextest run --workspace --verbose
       - name: Run tests (tokio)
-        run: cargo nextest run --verbose --features tokio
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/tokio -F ntp_usg-server/tokio
       - name: Run tests (nts)
-        run: cargo nextest run --verbose --features nts
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/nts -F ntp_usg-server/nts
       - name: Run tests (smol-runtime)
-        run: cargo nextest run --verbose --features smol-runtime
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/smol-runtime -F ntp_usg-server/smol-runtime
       - name: Run tests (nts-smol)
-        run: cargo nextest run --verbose --features nts-smol
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/nts-smol -F ntp_usg-server/nts-smol
       - name: Run tests (clock)
-        run: cargo nextest run --verbose --features clock
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/clock
 
   test-macos:
     name: Test (macOS, ${{ matrix.rust }})
@@ -91,17 +91,17 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
       - name: Run tests (default)
-        run: cargo nextest run --verbose
+        run: cargo nextest run --workspace --verbose
       - name: Run tests (tokio)
-        run: cargo nextest run --verbose --features tokio
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/tokio -F ntp_usg-server/tokio
       - name: Run tests (nts)
-        run: cargo nextest run --verbose --features nts
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/nts -F ntp_usg-server/nts
       - name: Run tests (smol-runtime)
-        run: cargo nextest run --verbose --features smol-runtime
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/smol-runtime -F ntp_usg-server/smol-runtime
       - name: Run tests (nts-smol)
-        run: cargo nextest run --verbose --features nts-smol
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/nts-smol -F ntp_usg-server/nts-smol
       - name: Run tests (clock)
-        run: cargo nextest run --verbose --features clock
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/clock
 
   coverage:
     name: Coverage
@@ -110,7 +110,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Generate coverage (all features)
-        run: cargo llvm-cov nextest --all-features --lcov --output-path lcov.info
+        run: cargo llvm-cov nextest --workspace --all-features --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
@@ -126,9 +126,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Check no_std (no features)
-        run: cargo check --no-default-features --verbose
+        run: cargo check -p ntp_usg-proto --no-default-features --verbose
       - name: Check no_std + alloc
-        run: cargo check --no-default-features --features alloc --verbose
+        run: cargo check -p ntp_usg-proto --no-default-features --features alloc --verbose
 
   clippy:
     name: Clippy
@@ -137,7 +137,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   fmt:
     name: Format
@@ -166,4 +166,4 @@ jobs:
       - name: Install MSRV toolchain
         run: rustup toolchain install 1.93 && rustup default 1.93
       - name: Check MSRV
-        run: cargo check --verbose
+        run: cargo check --workspace --verbose
