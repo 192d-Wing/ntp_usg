@@ -38,12 +38,11 @@ nts = [
     "tokio",
 ]
 clock = ["std", "dep:libc", "dep:windows-sys"]
-async-std-runtime = ["std", "dep:async-std"]
-nts-async-std = [
-    "async-std-runtime",
+smol-runtime = ["std", "dep:smol", "dep:futures-lite"]
+nts-smol = [
+    "smol-runtime",
     "dep:rustls",
     "dep:futures-rustls",
-    "dep:futures-lite",
     "dep:webpki-roots",
     "dep:aes-siv",
     "dep:rand",
@@ -69,7 +68,7 @@ tokio-rustls = { version = "0.26", optional = true, default-features = false, fe
 aes-siv = { version = "0.7", optional = true }
 rand = { version = "0.10", optional = true }
 webpki-roots = { version = "1", optional = true }
-async-std = { version = "1", optional = true }
+smol = { version = "2", optional = true }
 futures-rustls = { version = "0.26", optional = true, default-features = false, features = [
     "tls12",
 ] }
@@ -106,14 +105,14 @@ name = "clock_adjust"
 required-features = ["clock", "tokio"]
 
 [[example]]
-name = "async_std_request"
-required-features = ["async-std-runtime"]
+name = "smol_request"
+required-features = ["smol-runtime"]
 
 [[example]]
-name = "async_std_continuous"
-required-features = ["async-std-runtime"]
+name = "smol_continuous"
+required-features = ["smol-runtime"]
 
 [dev-dependencies]
 chrono = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
-async-std = { version = "1", features = ["attributes"] }
+smol = "2"
