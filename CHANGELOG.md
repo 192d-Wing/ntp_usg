@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [3.2.0] - 2026-02-16
+
+### Added
+
+#### Production Examples
+
+- **Multi-peer deployment** (`examples/multi_peer_deployment.rs`) - 5-peer configuration with RFC 5905 selection/clustering, health monitoring, and offset trend analysis
+- **NTS multi-peer** (`examples/nts_multi_peer.rs`) - Mixed NTS + standard NTP deployment with security posture tracking
+- **System daemon** (`examples/daemon.rs`) - Production-ready service with structured logging, health-based alerts, and systemd integration
+- **Web dashboard** (`examples/web_dashboard.rs`) - Real-time monitoring with Chart.js, 3 API endpoints (HTML, JSON, Prometheus metrics), auto-refresh, comprehensive documentation
+
+#### Integration Tests (16 tests)
+
+- **Basic NTP tests** (`tests/integration.rs`) - 10 tests against NIST, Cloudflare, Google, NTP Pool with multi-server consistency validation, IPv6, SNTP API
+- **NTS tests** (`tests/nts_integration.rs`) - 6 tests for NTS-KE, cookie rotation, continuous client, mixed deployment
+- **Resilient framework** - Graceful network failure handling, `SKIP_NETWORK_TESTS` env var, comprehensive documentation in `tests/README.md`
+
+#### Docker Testing Environment
+
+- **Three Dockerfiles** - NTP server, NTS server with auto-generated certificates, test runner
+- **Docker Compose** - Full orchestration with health checks, isolated network, automatic certificate generation, documented in `docker/README.md`
+- **CI/CD ready** - GitHub Actions and GitLab CI examples, fast layer caching (~10s builds)
+
+#### Documentation
+
+- `ALGORITHMS.md` - 600+ lines documenting RFC 5905 algorithms (filter, selection, clustering, combine, discipline)
+- `PERFORMANCE.md` - Performance analysis, benchmarks, optimization recommendations
+- `examples/WEB_DASHBOARD.md` - Complete web dashboard documentation with deployment guides
+- `tests/README.md` - Integration test documentation
+- `docker/README.md` - Docker environment guide with troubleshooting
+
+### Changed
+
+- Updated README with production examples section
+- Enhanced ROADMAP.md with v3.2.0 completion status (4/4 objectives complete)
+- Docker base images updated to `rust:1-slim` and `debian:trixie-slim`
+
+### Dependencies
+
+- Added `serde_json` to dev-dependencies
+- Added tokio `net` and `io-util` features
+
+## [3.1.0] - 2026-02-16
+
+### Added
+
+- **RFC 5905 full compliance** - Selection (Marzullo), clustering, combine, clock discipline PLL/FLL, enhanced filter, symmetric modes, broadcast mode
+- **RFC 4330 SNTP API** - Simple one-off query interface with sync/async variants
+- **RFC 7822 extension registry** - Generic handler trait and dispatch system
+- `ALGORITHMS.md` and `PERFORMANCE.md` documentation
+
+### Changed
+
+- Replaced unmaintained `rustls-pemfile` with `rustls-pki-types`
+- Eliminated RUSTSEC-2025-0134 security advisory
+
 ## [3.0.1] - 2026-02-16
 
 ### Fixed
