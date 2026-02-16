@@ -45,7 +45,7 @@ pub mod unix_time;
 ///
 /// Implements a simplified version of the RFC 5905 Section 10 clock filter
 /// algorithm.
-#[cfg(any(feature = "tokio", feature = "async-std-runtime"))]
+#[cfg(any(feature = "tokio", feature = "smol-runtime"))]
 pub mod filter;
 
 /// Continuous NTP client with adaptive poll interval management and interleaved mode.
@@ -98,43 +98,43 @@ pub mod clock;
 #[cfg(feature = "tokio")]
 pub mod async_ntp;
 
-/// Async NTP client functions using the async-std runtime.
+/// Async NTP client functions using the smol runtime.
 ///
-/// Enable with the `async-std-runtime` feature flag:
-///
-/// ```toml
-/// [dependencies]
-/// ntp_usg = { version = "1.1", features = ["async-std-runtime"] }
-/// ```
-///
-/// See [`async_std_ntp::request`] and [`async_std_ntp::request_with_timeout`] for details.
-#[cfg(feature = "async-std-runtime")]
-pub mod async_std_ntp;
-
-/// Continuous NTP client using the async-std runtime.
-///
-/// Enable with the `async-std-runtime` feature flag:
+/// Enable with the `smol-runtime` feature flag:
 ///
 /// ```toml
 /// [dependencies]
-/// ntp_usg = { version = "1.1", features = ["async-std-runtime"] }
+/// ntp_usg = { version = "1.2", features = ["smol-runtime"] }
 /// ```
-#[cfg(feature = "async-std-runtime")]
-pub mod async_std_client;
-
-/// Network Time Security (NTS) client using the async-std runtime (RFC 8915).
 ///
-/// Provides the same NTS functionality as [`nts`] but using async-std
+/// See [`smol_ntp::request`] and [`smol_ntp::request_with_timeout`] for details.
+#[cfg(feature = "smol-runtime")]
+pub mod smol_ntp;
+
+/// Continuous NTP client using the smol runtime.
+///
+/// Enable with the `smol-runtime` feature flag:
+///
+/// ```toml
+/// [dependencies]
+/// ntp_usg = { version = "1.2", features = ["smol-runtime"] }
+/// ```
+#[cfg(feature = "smol-runtime")]
+pub mod smol_client;
+
+/// Network Time Security (NTS) client using the smol runtime (RFC 8915).
+///
+/// Provides the same NTS functionality as [`nts`] but using smol
 /// and futures-rustls instead of tokio and tokio-rustls.
 ///
-/// Enable with the `nts-async-std` feature flag:
+/// Enable with the `nts-smol` feature flag:
 ///
 /// ```toml
 /// [dependencies]
-/// ntp_usg = { version = "1.1", features = ["nts-async-std"] }
+/// ntp_usg = { version = "1.2", features = ["nts-smol"] }
 /// ```
-#[cfg(feature = "nts-async-std")]
-pub mod async_std_nts;
+#[cfg(feature = "nts-smol")]
+pub mod smol_nts;
 
 // ============================================================================
 // Everything below requires std (networking, blocking I/O, etc.)
