@@ -4,6 +4,7 @@ members = [
     "crates/ntp_usg-proto",
     "crates/ntp_usg-client",
     "crates/ntp_usg-server",
+    "crates/ntp_usg",
 ]
 
 [workspace.package]

@@ -1,0 +1,21 @@
+[package]
+name = "ntp_usg"
+version = "3.0.0"
+authors = [
+    "Jeff Belgum <jeffbelgum@gmail.com>",
+    "John Willman <john.willman.1@us.af.mil>",
+]
+license = "Apache-2.0 OR MIT"
+edition = "2024"
+rust-version = "1.93"
+homepage = "https://github.com/192d-Wing/ntp_usg"
+repository = "https://github.com/192d-Wing/ntp_usg"
+description = "DEPRECATED: This crate has been split into ntp_usg-proto, ntp_usg-client, and ntp_usg-server"
+keywords = ["ntp", "network", "time", "protocol", "deprecated"]
+categories = ["network-programming", "date-and-time"]
+readme = "README.md"
+
+[dependencies]
+ntp_usg-proto = { version = "3.0.0", path = "../ntp_usg-proto" }
+ntp_usg-client = { version = "3.0.0", path = "../ntp_usg-client" }
+ntp_usg-server = { version = "3.0.0", path = "../ntp_usg-server" }
