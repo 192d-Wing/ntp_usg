@@ -3,7 +3,7 @@
 
 //! Custom error types for buffer-based NTP packet parsing and serialization.
 //!
-//! [`ParseError`] is designed to be `no_std`-compatible, using no heap allocation.
+//! [`ParseError`](crate::error::ParseError) is designed to be `no_std`-compatible, using no heap allocation.
 //! When the `std` feature is enabled, it also implements [`std::error::Error`] and
 //! can be converted to [`std::io::Error`].
 
