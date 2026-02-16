@@ -1113,7 +1113,12 @@ impl FromBytes for Packet {
         let (root_dispersion, n) = ShortFormat::from_bytes(&buf[offset..])?;
         offset += n;
 
-        let ref_id_bytes = [buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]];
+        let ref_id_bytes = [
+            buf[offset],
+            buf[offset + 1],
+            buf[offset + 2],
+            buf[offset + 3],
+        ];
         let reference_id = ReferenceIdentifier::from_bytes_with_stratum(ref_id_bytes, stratum);
         offset += 4;
 

@@ -143,7 +143,6 @@ fn aead_key_length(algorithm: u16) -> io::Result<usize> {
 ///
 /// * `server` - NTS-KE server hostname (port 4460 is used by default, or specify `host:port`)
 pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
-
     let (hostname, port) = if let Some(idx) = server.rfind(':') {
         if let Ok(p) = server[idx + 1..].parse::<u16>() {
             (&server[..idx], p)
@@ -368,11 +367,7 @@ impl NtsSession {
     /// Create an NTS session from a previously obtained [`NtsKeResult`].
     pub async fn from_ke_result(ke: NtsKeResult) -> io::Result<Self> {
         let addr_str = format!("{}:{}", ke.ntp_server, ke.ntp_port);
-        let resolved_addrs: Vec<SocketAddr> = addr_str
-            .as_str()
-            .to_socket_addrs()
-            .await?
-            .collect();
+        let resolved_addrs: Vec<SocketAddr> = addr_str.as_str().to_socket_addrs().await?.collect();
         if resolved_addrs.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,

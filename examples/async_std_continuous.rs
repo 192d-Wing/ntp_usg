@@ -31,12 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if s.total_responses > 0 {
             println!(
                 "Offset: {:+.6}s | Delay: {:.6}s | Jitter: {:.6}s | Stratum: {} | Interleaved: {} | Responses: {}",
-                s.offset,
-                s.delay,
-                s.jitter,
-                s.stratum,
-                s.interleaved,
-                s.total_responses
+                s.offset, s.delay, s.jitter, s.stratum, s.interleaved, s.total_responses
             );
         } else {
             println!("Waiting for first response...");

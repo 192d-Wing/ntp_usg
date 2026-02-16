@@ -191,10 +191,7 @@ pub fn parse_extension_fields(data: &[u8]) -> io::Result<Vec<ExtensionField>> {
 #[cfg(feature = "std")]
 pub fn write_extension_fields(fields: &[ExtensionField]) -> io::Result<Vec<u8>> {
     // Calculate total size needed.
-    let total: usize = fields
-        .iter()
-        .map(|f| ((4 + f.value.len()) + 3) & !3)
-        .sum();
+    let total: usize = fields.iter().map(|f| ((4 + f.value.len()) + 3) & !3).sum();
     let mut buf = vec![0u8; total];
     write_extension_fields_buf(fields, &mut buf)?;
     Ok(buf)
@@ -344,9 +341,7 @@ impl NtsAuthenticator {
     }
 
     /// Try to extract from a generic extension field without using `std::io`.
-    pub fn from_extension_field_buf(
-        ef: &ExtensionField,
-    ) -> Result<Option<Self>, ParseError> {
+    pub fn from_extension_field_buf(ef: &ExtensionField) -> Result<Option<Self>, ParseError> {
         if ef.field_type != NTS_AUTHENTICATOR {
             return Ok(None);
         }

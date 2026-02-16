@@ -49,11 +49,7 @@ impl fmt::Display for ParseError {
                 write!(f, "invalid {} value: {}", field, value)
             }
             ParseError::InvalidExtensionLength { declared } => {
-                write!(
-                    f,
-                    "extension field length less than 4: {}",
-                    declared
-                )
+                write!(f, "extension field length less than 4: {}", declared)
             }
             ParseError::ExtensionOverflow => {
                 write!(f, "extension field value extends beyond packet")
@@ -88,10 +84,7 @@ mod tests {
             needed: 48,
             available: 10,
         };
-        assert_eq!(
-            err.to_string(),
-            "buffer too short: needed 48 bytes, got 10"
-        );
+        assert_eq!(err.to_string(), "buffer too short: needed 48 bytes, got 10");
     }
 
     #[test]
@@ -106,10 +99,7 @@ mod tests {
     #[test]
     fn test_display_invalid_extension_length() {
         let err = ParseError::InvalidExtensionLength { declared: 2 };
-        assert_eq!(
-            err.to_string(),
-            "extension field length less than 4: 2"
-        );
+        assert_eq!(err.to_string(), "extension field length less than 4: 2");
     }
 
     #[test]

@@ -239,9 +239,7 @@ mod platform {
     const ERROR_ACCESS_DENIED: i32 = 5;
 
     fn os_error() -> ClockError {
-        let code = std::io::Error::last_os_error()
-            .raw_os_error()
-            .unwrap_or(-1);
+        let code = std::io::Error::last_os_error().raw_os_error().unwrap_or(-1);
         if code == ERROR_ACCESS_DENIED {
             ClockError::PermissionDenied
         } else {
@@ -262,9 +260,8 @@ mod platform {
         let mut adjustment: u32 = 0;
         let mut increment: u32 = 0;
         let mut disabled: i32 = 0;
-        let ret = unsafe {
-            GetSystemTimeAdjustment(&mut adjustment, &mut increment, &mut disabled)
-        };
+        let ret =
+            unsafe { GetSystemTimeAdjustment(&mut adjustment, &mut increment, &mut disabled) };
         if ret == 0 {
             return Err(os_error());
         }
