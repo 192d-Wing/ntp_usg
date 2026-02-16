@@ -306,8 +306,10 @@ mod tests {
                     result.delay_seconds
                 );
             }
-            Err(e) if e.kind() == io::ErrorKind::TimedOut => {
-                eprintln!("Skipping SNTP test: timeout (NTP port may be blocked)");
+            Err(e)
+                if e.kind() == io::ErrorKind::TimedOut || e.kind() == io::ErrorKind::WouldBlock =>
+            {
+                eprintln!("Skipping SNTP test: network unavailable ({})", e);
             }
             Err(e) => panic!("Unexpected error: {}", e),
         }

@@ -51,6 +51,7 @@ async fn test_nts_cloudflare() {
             if e.to_string().contains("timed out")
                 || e.to_string().contains("Connection refused")
                 || e.to_string().contains("Connection reset")
+                || e.to_string().contains("close_notify")
                 || e.kind() == std::io::ErrorKind::TimedOut
                 || e.kind() == std::io::ErrorKind::ConnectionReset
                 || e.kind() == std::io::ErrorKind::ConnectionRefused =>
@@ -98,6 +99,7 @@ async fn test_nts_multiple_requests() {
             if e.to_string().contains("timed out")
                 || e.to_string().contains("Connection refused")
                 || e.to_string().contains("Connection reset")
+                || e.to_string().contains("close_notify")
                 || e.kind() == std::io::ErrorKind::TimedOut
                 || e.kind() == std::io::ErrorKind::ConnectionReset
                 || e.kind() == std::io::ErrorKind::ConnectionRefused =>
@@ -128,6 +130,7 @@ async fn test_nts_continuous_client() {
             if e.to_string().contains("timed out")
                 || e.to_string().contains("Connection refused")
                 || e.to_string().contains("Connection reset")
+                || e.to_string().contains("close_notify")
                 || e.kind() == std::io::ErrorKind::AddrNotAvailable
                 || e.kind() == std::io::ErrorKind::ConnectionReset
                 || e.kind() == std::io::ErrorKind::ConnectionRefused =>
@@ -201,6 +204,7 @@ async fn test_nts_mixed_deployment() {
             if e.to_string().contains("timed out")
                 || e.to_string().contains("Connection refused")
                 || e.to_string().contains("Connection reset")
+                || e.to_string().contains("close_notify")
                 || e.kind() == std::io::ErrorKind::AddrNotAvailable
                 || e.kind() == std::io::ErrorKind::ConnectionReset
                 || e.kind() == std::io::ErrorKind::ConnectionRefused =>
@@ -307,6 +311,7 @@ async fn test_nts_cookie_persistence() {
             if e.to_string().contains("timed out")
                 || e.to_string().contains("Connection refused")
                 || e.to_string().contains("Connection reset")
+                || e.to_string().contains("close_notify")
                 || e.kind() == std::io::ErrorKind::TimedOut
                 || e.kind() == std::io::ErrorKind::ConnectionReset
                 || e.kind() == std::io::ErrorKind::ConnectionRefused =>
