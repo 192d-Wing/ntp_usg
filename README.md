@@ -67,7 +67,7 @@ ntp_usg = { version = "2.0", default-features = false, features = ["alloc"] }  #
 use chrono::TimeZone;
 
 fn main() {
-    let address = "pool.ntp.org:123";
+    let address = "time.nist.gov:123";
     let response = ntp::request(address).unwrap();
     let unix_time = ntp::unix_time::Instant::from(response.transmit_timestamp);
     let local_time = chrono::Local
@@ -82,7 +82,7 @@ fn main() {
 ```rust
 use std::time::Duration;
 
-let response = ntp::request_with_timeout("pool.ntp.org:123", Duration::from_secs(10))?;
+let response = ntp::request_with_timeout("time.nist.gov:123", Duration::from_secs(10))?;
 ```
 
 ### Async with Tokio
@@ -98,7 +98,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```rust
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let result = ntp::async_ntp::request("pool.ntp.org:123").await?;
+    let result = ntp::async_ntp::request("time.nist.gov:123").await?;
     println!("Offset: {:.6} seconds", result.offset_seconds);
     Ok(())
 }
@@ -114,7 +114,7 @@ use ntp::client::NtpClient;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (client, mut state_rx) = NtpClient::builder()
-        .server("pool.ntp.org:123")
+        .server("time.nist.gov:123")
         .min_poll(4)
         .max_poll(10)
         .build()
@@ -195,7 +195,7 @@ use std::time::Duration;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     smol::block_on(async {
         let result = ntp::smol_ntp::request_with_timeout(
-            "pool.ntp.org:123",
+            "time.nist.gov:123",
             Duration::from_secs(5),
         ).await?;
         println!("Offset: {:.6} seconds", result.offset_seconds);
@@ -212,7 +212,7 @@ use ntp::smol_client::NtpClient;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     smol::block_on(async {
         let (client, state) = NtpClient::builder()
-            .server("pool.ntp.org:123")
+            .server("time.nist.gov:123")
             .build()
             .await?;
 

@@ -10,9 +10,9 @@ use std::time::Duration;
 fn main() {
     smol::block_on(async {
         let servers = [
-            "0.pool.ntp.org:123",
-            "time.google.com:123",
-            "time.cloudflare.com:123",
+            "time.nist.gov:123",
+            "time-a-g.nist.gov:123",
+            "time-b-g.nist.gov:123",
         ];
 
         println!("Querying NTP servers concurrently...\n");

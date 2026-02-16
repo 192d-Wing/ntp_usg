@@ -10,7 +10,7 @@ fn local_time(timestamp: ntp::protocol::TimestampFormat) -> chrono::DateTime<chr
 }
 
 fn main() {
-    let address = "0.pool.ntp.org:123";
+    let address = "time.nist.gov:123";
     let result = ntp::request(address).unwrap();
     println!("Timestamps in local time:");
     println!("  reference: {}", local_time(result.reference_timestamp));

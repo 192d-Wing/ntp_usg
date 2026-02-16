@@ -9,11 +9,11 @@ use std::time::Duration;
 fn main() {
     // List of NTP servers to query
     let ntp_servers = [
-        "0.pool.ntp.org:123",
-        "1.pool.ntp.org:123",
-        "2.pool.ntp.org:123",
-        "time.google.com:123",
-        "time.cloudflare.com:123",
+        "time.nist.gov:123",
+        "time-a-g.nist.gov:123",
+        "time-b-g.nist.gov:123",
+        "time-c-g.nist.gov:123",
+        "time-d-g.nist.gov:123",
     ];
 
     println!("Querying multiple NTP servers...\n");
