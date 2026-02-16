@@ -8,7 +8,7 @@ members = [
 ]
 
 [workspace.package]
-version = "3.3.0"
+version = "3.3.1"
 authors = [
     "Jeff Belgum <jeffbelgum@gmail.com>",
     "John Willman <john.willman.1@us.af.mil>",
@@ -20,7 +20,7 @@ homepage = "https://github.com/192d-Wing/ntp_usg"
 repository = "https://github.com/192d-Wing/ntp_usg"
 
 [workspace.dependencies]
-ntp_usg-proto = { path = "crates/ntp_usg-proto", version = "3.3.0" }
+ntp_usg-proto = { path = "crates/ntp_usg-proto", version = "3.3.1" }
 byteorder = "1.5"
 log = "0.4"
 tokio = { version = "1", features = ["net", "time", "sync", "io-util", "rt"] }
