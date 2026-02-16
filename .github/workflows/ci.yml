@@ -48,8 +48,35 @@ jobs:
         run: cargo nextest run --verbose --features clock
 
   test-windows:
-    name: Test (Windows, ${{ matrix.rust }})
-    runs-on: windows-latest
+    name: Test (${{ matrix.runner }}, ${{ matrix.rust }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        runner: [windows-latest, windows-11-arm]
+        rust: [stable, beta]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests (default)
+        run: cargo nextest run --verbose
+      - name: Run tests (tokio)
+        run: cargo nextest run --verbose --features tokio
+      - name: Run tests (nts)
+        run: cargo nextest run --verbose --features nts
+      - name: Run tests (smol-runtime)
+        run: cargo nextest run --verbose --features smol-runtime
+      - name: Run tests (nts-smol)
+        run: cargo nextest run --verbose --features nts-smol
+      - name: Run tests (clock)
+        run: cargo nextest run --verbose --features clock
+
+  test-macos:
+    name: Test (macOS, ${{ matrix.rust }})
+    runs-on: macos-latest
     strategy:
       matrix:
         rust: [stable, beta]
