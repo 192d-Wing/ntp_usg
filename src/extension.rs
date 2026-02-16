@@ -306,7 +306,7 @@ mod tests {
             field_type: UNIQUE_IDENTIFIER,
             value: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
         };
-        let buf = write_extension_fields(&[field.clone()]).unwrap();
+        let buf = write_extension_fields(std::slice::from_ref(&field)).unwrap();
         let parsed = parse_extension_fields(&buf).unwrap();
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0], field);
