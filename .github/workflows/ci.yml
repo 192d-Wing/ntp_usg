@@ -228,6 +228,7 @@ jobs:
         # (serialport → libudev → pkg-config) has no stable minimal version.
         run: >-
           cargo +stable check -p ntp_usg-proto --all-features &&
-          cargo +stable check -p ntp_usg-server --all-features &&
+          cargo +stable check -p ntp_usg-server
+          --features tokio,nts,symmetric,broadcast,refclock,pps,smol-runtime,nts-smol &&
           cargo +stable check -p ntp_usg-client
           --features tokio,nts,clock,discipline,symmetric,broadcast,refclock,pps,hwts,smol-runtime,nts-smol

@@ -6,17 +6,17 @@
 //! The system process runs the following three-stage pipeline after each
 //! successful poll to produce the final system offset estimate:
 //!
-//! 1. **Selection** ([`select_truechimers`]) — Marzullo's algorithm identifies
+//! 1. **Selection** (`select_truechimers`) — Marzullo's algorithm identifies
 //!    "truechimer" peers whose correctness intervals overlap with a majority.
-//! 2. **Clustering** ([`cluster_survivors`]) — Iteratively removes the outlier
+//! 2. **Clustering** (`cluster_survivors`) — Iteratively removes the outlier
 //!    with the highest selection jitter until the remaining set is tight.
-//! 3. **Combining** ([`combine`]) — Produces a weighted-average offset from
+//! 3. **Combining** (`combine`) — Produces a weighted-average offset from
 //!    the surviving peers, weighted inversely by root distance.
 
 /// Minimum number of survivors required after clustering (RFC 5905 Section 11.2.1).
 pub const NMIN: usize = 3;
 
-/// One candidate per reachable peer, constructed from [`PeerState`](super::PeerState)
+/// One candidate per reachable peer, constructed from `PeerState`
 /// and [`SampleFilter`](crate::filter::SampleFilter) data.
 #[derive(Clone, Debug)]
 pub struct PeerCandidate {

@@ -11,7 +11,7 @@
 //! - **Step**: Immediately jumps the clock. Used for large offsets or initial
 //!   synchronization.
 //!
-//! The [`apply_correction`](self::apply_correction) function automatically selects the strategy based
+//! The `apply_correction` function automatically selects the strategy based
 //! on the magnitude of the offset (threshold: 128ms, following ntpd convention).
 //!
 //! # Privileges
@@ -26,7 +26,7 @@
 //! - **Windows**: Uses `SetSystemTimeAdjustment` for slew and `SetSystemTime` for step.
 //!   Note: Windows slew adjusts the tick rate and remains in effect until reset.
 //!   Call `slew_clock(0.0)` to restore the default tick rate.
-//! - **Other platforms**: Returns [`ClockError::Unsupported`](self::ClockError::Unsupported).
+//! - **Other platforms**: Returns `ClockError::Unsupported`.
 
 #![allow(unsafe_code)]
 
