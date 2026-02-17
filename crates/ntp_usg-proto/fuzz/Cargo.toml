@@ -11,7 +11,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-ntp_proto = { path = "..", features = ["std", "nts"] }
+ntp_proto = { package = "ntp_usg-proto", path = "..", features = ["std", "nts"] }
 
 [[bin]]
 name = "fuzz_packet_from_bytes"
