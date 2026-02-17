@@ -42,7 +42,8 @@ use tokio::net::UdpSocket;
 
 pub use crate::client_common::NtpSyncState;
 use crate::client_common::{PeerState, PollResult, check_kod, select_and_build_state};
-use crate::{build_request_packet, parse_and_validate_response, protocol};
+use crate::protocol;
+use crate::request::{bind_addr_for, build_request_packet, parse_and_validate_response};
 
 #[cfg(feature = "nts")]
 use crate::client_common::NtsPeerState;
@@ -405,7 +406,7 @@ impl NtpClient {
             return result;
         }
 
-        let bind_addr = crate::bind_addr_for(&peer.addr);
+        let bind_addr = bind_addr_for(&peer.addr);
         let sock = UdpSocket::bind(bind_addr).await?;
 
         // Build request packet. Record T1.
@@ -481,7 +482,7 @@ impl NtpClient {
             nts_common::build_nts_request(&nts_state.c2s_key, nts_state.aead_algorithm, cookie)?;
         peer.current_t1 = Some(t1);
 
-        let bind_addr = crate::bind_addr_for(&peer.addr);
+        let bind_addr = bind_addr_for(&peer.addr);
         let sock = UdpSocket::bind(bind_addr).await?;
         let timeout = Duration::from_secs(5);
 

@@ -47,9 +47,8 @@ use smol::net::{TcpStream, UdpSocket};
 
 pub use crate::nts_common::NtsKeResult;
 use crate::nts_common::*;
-use crate::{
-    NtpResult, bind_addr_for, compute_offset_delay, parse_and_validate_response, unix_time,
-};
+use crate::request::{bind_addr_for, compute_offset_delay, parse_and_validate_response};
+use crate::{NtpResult, unix_time};
 
 /// Read a single NTS-KE record from the TLS stream.
 async fn read_ke_record(

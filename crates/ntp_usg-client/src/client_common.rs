@@ -15,8 +15,9 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use crate::filter::{ClockSample, SampleFilter};
+use crate::request::compute_offset_delay;
 use crate::selection::{self, PeerCandidate};
-use crate::{KissOfDeathError, compute_offset_delay, protocol, unix_time};
+use crate::{KissOfDeathError, protocol, unix_time};
 
 /// Convert an NTP [`ShortFormat`](protocol::ShortFormat) value to seconds as `f64`.
 pub(crate) fn short_format_to_secs(sf: &protocol::ShortFormat) -> f64 {

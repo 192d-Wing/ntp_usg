@@ -1,16 +1,16 @@
 # Refactoring Guide
 
-Advisory notes on large modules that may benefit from decomposition as the codebase grows. None of these are urgent — the current code is well-structured and functional. These are suggestions for when modules become harder to navigate or when adding new features creates merge conflicts in large files.
+All large-module decompositions identified below have been completed. This document is retained for reference.
 
-## Large Modules
+## Large Modules (All Complete)
 
-| File | Lines | Suggested Split |
-|------|-------|-----------------|
-| `server_common.rs` | ~1,350 | Extract `rate_limit.rs`, `access_control.rs`, `interleaved.rs` |
-| `protocol.rs` | ~1,293 | Split into `protocol/types.rs`, `protocol/traits.rs`, `protocol/io.rs`, `protocol/buf.rs`, `protocol/mod.rs` (re-exports) |
-| `client.rs` | ~1,006 | Extract poll interval management and interleaved state machine |
-| `smol_client.rs` | ~953 | Consider shared trait/macro with `client.rs` to reduce duplication |
-| `lib.rs` (client) | ~897 | Move networking functions to `request.rs` or `sntp_core.rs` |
+| File | Lines | Suggested Split | Status |
+|------|-------|-----------------|--------|
+| `server_common.rs` | ~1,350 | Extract `rate_limit.rs`, `access_control.rs`, `interleaved.rs` | **Done** — split into `server_common/` (9 files) |
+| `protocol.rs` | ~1,293 | Split into `protocol/types.rs`, `protocol/traits.rs`, `protocol/io.rs`, `protocol/buf.rs`, `protocol/mod.rs` (re-exports) | **Done** — split into `protocol/` (5 files) |
+| `client.rs` | ~1,006 | Extract poll interval management and interleaved state machine | **Done** — shared code extracted to `client_common.rs` |
+| `smol_client.rs` | ~953 | Consider shared trait/macro with `client.rs` to reduce duplication | **Done** — ~840 lines deduplicated into `client_common.rs` |
+| `lib.rs` (client) | ~897 | Move networking functions to `request.rs` or `sntp_core.rs` | **Done** — extracted to `request.rs` |
 
 ## Guidelines
 

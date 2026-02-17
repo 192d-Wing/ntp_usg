@@ -28,7 +28,8 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::{ToSocketAddrs, UdpSocket};
 
-use crate::{NtpResult, build_request_packet, validate_response};
+use crate::NtpResult;
+use crate::request::{bind_addr_for, build_request_packet, validate_response};
 
 /// Send an async request to an NTP server with a hardcoded 5 second timeout.
 ///
@@ -99,7 +100,7 @@ async fn request_inner<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
     let (send_buf, t1) = build_request_packet()?;
 
     // Create async UDP socket with address family matching the target.
-    let sock = UdpSocket::bind(crate::bind_addr_for(&target_addr)).await?;
+    let sock = UdpSocket::bind(bind_addr_for(&target_addr)).await?;
 
     // Send the request.
     let sz = sock.send_to(&send_buf, target_addr).await?;
