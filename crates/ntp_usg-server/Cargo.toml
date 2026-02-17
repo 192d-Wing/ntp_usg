@@ -54,7 +54,7 @@ smol = { workspace = true, optional = true }
 futures-rustls = { workspace = true, optional = true }
 futures-lite = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
-async-trait = { version = "0.1", optional = true }
+async-trait = { version = "0.1.50", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }

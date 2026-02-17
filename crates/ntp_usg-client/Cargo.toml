@@ -54,7 +54,7 @@ smol = { workspace = true, optional = true }
 futures-rustls = { workspace = true, optional = true }
 futures-lite = { workspace = true, optional = true }
 serialport = { version = "4.6", optional = true }
-async-trait = { version = "0.1", optional = true }
+async-trait = { version = "0.1.50", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true, optional = true }

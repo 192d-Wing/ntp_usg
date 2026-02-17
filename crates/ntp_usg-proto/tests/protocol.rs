@@ -1,3 +1,5 @@
+#![cfg(feature = "std")]
+
 use ntp_proto::error::ParseError;
 use ntp_proto::protocol::{
     ConstPackedSizeBytes, DateFormat, FromBytes, KissOfDeath, LeapIndicator, Mode, Packet,

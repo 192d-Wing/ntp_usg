@@ -64,6 +64,8 @@ impl<'a> Iterator for ExtensionFieldIter<'a> {
         let field_length = u16::from_be_bytes([remaining[2], remaining[3]]);
 
         if field_length < 4 {
+            // Advance past this header to avoid infinite iteration.
+            self.offset = self.data.len();
             return Some(Err(ParseError::InvalidExtensionLength {
                 declared: field_length,
             }));
@@ -73,6 +75,7 @@ impl<'a> Iterator for ExtensionFieldIter<'a> {
         let value_start = self.offset + 4;
 
         if value_start + value_length > self.data.len() {
+            self.offset = self.data.len();
             return Some(Err(ParseError::ExtensionOverflow));
         }
 
