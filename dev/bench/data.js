@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1771359051677,
+  "lastUpdate": 1771369378671,
   "repoUrl": "https://github.com/192d-Wing/ntp_usg",
   "entries": {
     "Selection Algorithm Benchmarks": [
@@ -323,6 +323,114 @@ window.BENCHMARK_DATA = {
             "name": "full_selection_pipeline/20",
             "value": 2812,
             "range": "± 1082",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "1456055067",
+            "username": "1456055067"
+          },
+          "committer": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "1456055067",
+            "username": "1456055067"
+          },
+          "distinct": true,
+          "id": "6b3d3ba7f47631f360f94dd9291c9a46116c0474",
+          "message": "feat: add Roughtime protocol client with Ed25519 verification\n\nImplement Roughtime (draft-ietf-ntp-roughtime-15) as a feature-gated\nmodule providing authenticated coarse time with cryptographic proof of\nserver malfeasance. Uses ring for Ed25519 signatures and SHA-512 Merkle\ntree verification (zero new dependencies).\n\nProto crate: tag-value map wire codec, request builder, and full\nresponse verification pipeline. Client crate: sync + async (tokio) API\nwith base64 public key helper. Includes integration tests against\nCloudflare Roughtime and CI coverage on all platforms.",
+          "timestamp": "2026-02-17T16:57:33-06:00",
+          "tree_id": "596cc8cdd3d57689d36fb9f77c4415bbe5c3aff5",
+          "url": "https://github.com/192d-Wing/ntp_usg/commit/6b3d3ba7f47631f360f94dd9291c9a46116c0474"
+        },
+        "date": 1771369377885,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "select_truechimers/3",
+            "value": 62,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/5",
+            "value": 138,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/10",
+            "value": 350,
+            "range": "± 23",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/20",
+            "value": 800,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/3",
+            "value": 21,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/5",
+            "value": 107,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/10",
+            "value": 505,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/15",
+            "value": 1359,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/3",
+            "value": 29,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/5",
+            "value": 36,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/10",
+            "value": 52,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/5",
+            "value": 354,
+            "range": "± 323",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/10",
+            "value": 1050,
+            "range": "± 858",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/20",
+            "value": 2831,
+            "range": "± 1064",
             "unit": "ns/iter"
           }
         ]
