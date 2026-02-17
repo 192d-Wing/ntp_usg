@@ -29,3 +29,10 @@ pub mod unix_time;
 /// Used by both client and server NTS implementations.
 #[cfg(feature = "nts")]
 pub mod nts_common;
+
+/// Roughtime protocol types, wire format, and cryptographic verification.
+///
+/// Provides Ed25519 signature verification and SHA-512 Merkle tree proofs
+/// for authenticated coarse time (draft-ietf-ntp-roughtime-15).
+#[cfg(feature = "roughtime")]
+pub mod roughtime;

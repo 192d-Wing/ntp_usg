@@ -26,12 +26,14 @@ default = ["std"]
 std = ["dep:byteorder", "dep:log"]
 alloc = []
 nts = ["std", "dep:aes-siv", "dep:rand"]
+roughtime = ["std", "dep:ring", "dep:rand"]
 
 [dependencies]
 byteorder = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 aes-siv = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
+ring = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

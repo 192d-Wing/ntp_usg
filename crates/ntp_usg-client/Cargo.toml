@@ -37,6 +37,7 @@ refclock = ["tokio", "dep:async-trait"]
 gps = ["refclock", "dep:serialport"]
 pps = ["refclock", "dep:libc"]
 hwts = ["refclock", "dep:libc"]
+roughtime = ["tokio", "ntp_usg-proto/roughtime"]
 smol-runtime = ["dep:smol", "dep:futures-lite"]
 nts-smol = [
     "smol-runtime",
@@ -150,6 +151,10 @@ required-features = ["hwts"]
 [[example]]
 name = "high_precision"
 required-features = ["pps", "hwts"]
+
+[[example]]
+name = "roughtime"
+required-features = ["roughtime"]
 
 [[bench]]
 name = "selection_benchmark"

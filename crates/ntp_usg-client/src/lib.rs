@@ -135,6 +135,13 @@ pub mod smol_client;
 #[cfg(feature = "nts-smol")]
 pub mod smol_nts;
 
+/// Roughtime client for authenticated coarse time (draft-ietf-ntp-roughtime-15).
+///
+/// Provides sync and async (tokio) APIs for querying Roughtime servers with
+/// Ed25519 signature verification and SHA-512 Merkle tree proofs.
+#[cfg(feature = "roughtime")]
+pub mod roughtime;
+
 // Core request types and blocking networking functions.
 mod request;
 

@@ -284,39 +284,37 @@ Authenticated coarse (~1 second) time synchronization with cryptographic proof o
 
 ---
 
-### 2. Post-Quantum NTS 🔒
+### 2. Post-Quantum NTS 🔒 ✅
 
 **Priority**: Medium — very low effort, partially blocked on CA ecosystem
-**Status**: Planned
+**Status**: Complete
 
 Enable quantum-resistant key exchange for NTS-KE (RFC 8915) using ML-KEM hybrid X25519MLKEM768 per `draft-ietf-tls-ecdhe-mlkem-04`. NTS-KE runs over TLS 1.3 — no NTS protocol changes needed, only the TLS backend.
 
-- [ ] Swap `ring` backend for `aws-lc-rs` in rustls (ML-KEM support)
-- [ ] Enable `prefer-post-quantum` feature on rustls (X25519MLKEM768 preferred)
-- [ ] Feature gate: `pq-nts`
-- [ ] Document: PQ key exchange protects against "Harvest Now, Decrypt Later" attacks
+- [x] Swap `ring` backend for `aws-lc-rs` in rustls (ML-KEM support)
+- [x] Enable `prefer-post-quantum` feature on rustls (X25519MLKEM768 preferred)
+- [x] Feature gate: `pq-nts` (auto-enabled by `nts` and `nts-smol`)
+- [x] Centralized TLS config modules (`tls_config.rs`) with `builder_with_provider()`
+- [x] TLS 1.3 automatic fallback to classical X25519 when server doesn't support PQ
 
-**Blocker**: PQ certificates (server authentication) require CA ecosystem support (CA/Browser Forum approval). Only the key exchange portion is unblocked today.
-
-**Performance**: ~1,600 bytes additional per TLS handshake, ~80–150 µs extra compute — negligible for NTS-KE (one-time per session).
-
-**New deps**: `aws-lc-rs = "1"` (replaces `ring` for rustls backend)
-
-**Note**: FIPS 203 (ML-KEM) and FIPS 204 (ML-DSA) finalized by NIST August 2024. Cloudflare reports 50%+ of TLS connections now use hybrid PQ key exchange (Oct 2025).
+**Note**: PQ certificates (server authentication) still require CA ecosystem support. Only the key exchange portion is implemented. FIPS 203 (ML-KEM) and FIPS 204 (ML-DSA) finalized by NIST August 2024. Cloudflare reports 50%+ of TLS connections now use hybrid PQ key exchange (Oct 2025).
 
 ---
 
 ### 3. IPv6-only Mode Optimizations 🌐
 
 **Priority**: Medium — incremental improvements, no new deps
-**Status**: Planned
+**Status**: Partially complete
 
 Improve correctness and ergonomics for IPv6-only deployments.
 
+- [x] IPv6-first DNS resolution (`prefer_addresses()` helper, filters to AAAA with fallback)
+- [x] Server default listen addresses changed to `[::]` (dual-stack)
+- [x] Feature gate: `ipv4` to restore IPv4-only behavior
 - [ ] Type-safe `RefId` enum: `Ipv4(Ipv4Addr)`, `Ipv6Hash([u8;4])`, `KissCode([u8;4])`, `ClockSource([u8;4])` — with loop-detection collision warning for IPv6 peers
 - [ ] IPv6 multicast server discovery (`FF02::101:123`) — zero-configuration NTP on local segment
 - [ ] `IPV6_V6ONLY` socket option for IPv6-only binding (`socket2` crate)
-- [ ] Happy Eyeballs (RFC 8305) — prefer IPv6 when both A/AAAA records resolve for pool hostnames
+- [ ] Happy Eyeballs (RFC 8305) — parallel IPv6/IPv4 connection attempts with preference
 - [ ] DSCP/Traffic Class marking (`IPV6_TCLASS`) for QoS-aware networks
 
 **Background**: RFC 5905 hashes IPv6 addresses to 4-byte REFIDs via MD5 — creating documented collision risk with IPv4 addresses. `draft-ietf-ntp-refid-updates-05` proposes a fix but is stalled. NTPv5's 120-bit Bloom filter REFIDs eliminate the problem entirely.

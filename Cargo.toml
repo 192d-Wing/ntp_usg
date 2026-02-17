@@ -51,6 +51,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
 ] }
 chrono = "0.4"
+ring = "0.17"
 proptest = "1"
 
 [profile.release]
