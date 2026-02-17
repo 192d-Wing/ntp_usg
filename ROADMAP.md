@@ -262,14 +262,110 @@ Full support for high-precision reference clocks and Stratum 1 NTP server operat
 
 **Target**: 2027
 
-### Potential Features (Under Consideration)
+### 1. Roughtime Protocol Client 🔐
 
-- [ ] **NTPv5 support** (if RFC is published)
-- [ ] **Rough time protocol** (BCP 223 alternative to broadcast)
-- [ ] **IPv6-only mode optimizations**
-- [ ] **Quantum-resistant cryptography** (post-quantum NTS)
-- [ ] **WASM support** (browser-based NTP client)
-- [ ] **Network Time API integration** (browser native time sync)
+**Priority**: High — near-RFC, deps already in workspace
+**Status**: Planned
+
+Authenticated coarse (~1 second) time synchronization with cryptographic proof of server malfeasance per `draft-ietf-ntp-roughtime-15` (IESG "Waiting for AD Go-Ahead" — one step from RFC publication).
+
+- [ ] Tag-value map encoder/decoder (little-endian 32-bit tags)
+- [ ] Ed25519 signature verification (delegation certificate `DELE`/`MINT`/`MAXT`)
+- [ ] SHA-512 Merkle tree path verifier (client-side proof validation)
+- [ ] Single-server `RoughtimeClient::request()` returning timestamp + radius
+- [ ] Multi-server chaining for cryptographic malfeasance detection
+- [ ] Feature gate: `roughtime`
+
+**Use case**: Complementary sanity-check layer alongside NTP. Detects grossly wrong NTP servers (minutes/hours off) with a cryptographically verifiable receipt. Replaces deprecated NTP broadcast mode validation use case per RFC 8633.
+
+**New deps**: `ed25519-dalek` or `ring` (already transitive via rustls), `sha2` (RustCrypto). `rand` and `byteorder` already in workspace.
+
+**Reference**: `roughenough` 2.0.0-draft14 (existing Rust impl targeting draft-14)
+
+---
+
+### 2. Post-Quantum NTS 🔒
+
+**Priority**: Medium — very low effort, partially blocked on CA ecosystem
+**Status**: Planned
+
+Enable quantum-resistant key exchange for NTS-KE (RFC 8915) using ML-KEM hybrid X25519MLKEM768 per `draft-ietf-tls-ecdhe-mlkem-04`. NTS-KE runs over TLS 1.3 — no NTS protocol changes needed, only the TLS backend.
+
+- [ ] Swap `ring` backend for `aws-lc-rs` in rustls (ML-KEM support)
+- [ ] Enable `prefer-post-quantum` feature on rustls (X25519MLKEM768 preferred)
+- [ ] Feature gate: `pq-nts`
+- [ ] Document: PQ key exchange protects against "Harvest Now, Decrypt Later" attacks
+
+**Blocker**: PQ certificates (server authentication) require CA ecosystem support (CA/Browser Forum approval). Only the key exchange portion is unblocked today.
+
+**Performance**: ~1,600 bytes additional per TLS handshake, ~80–150 µs extra compute — negligible for NTS-KE (one-time per session).
+
+**New deps**: `aws-lc-rs = "1"` (replaces `ring` for rustls backend)
+
+**Note**: FIPS 203 (ML-KEM) and FIPS 204 (ML-DSA) finalized by NIST August 2024. Cloudflare reports 50%+ of TLS connections now use hybrid PQ key exchange (Oct 2025).
+
+---
+
+### 3. IPv6-only Mode Optimizations 🌐
+
+**Priority**: Medium — incremental improvements, no new deps
+**Status**: Planned
+
+Improve correctness and ergonomics for IPv6-only deployments.
+
+- [ ] Type-safe `RefId` enum: `Ipv4(Ipv4Addr)`, `Ipv6Hash([u8;4])`, `KissCode([u8;4])`, `ClockSource([u8;4])` — with loop-detection collision warning for IPv6 peers
+- [ ] IPv6 multicast server discovery (`FF02::101:123`) — zero-configuration NTP on local segment
+- [ ] `IPV6_V6ONLY` socket option for IPv6-only binding (`socket2` crate)
+- [ ] Happy Eyeballs (RFC 8305) — prefer IPv6 when both A/AAAA records resolve for pool hostnames
+- [ ] DSCP/Traffic Class marking (`IPV6_TCLASS`) for QoS-aware networks
+
+**Background**: RFC 5905 hashes IPv6 addresses to 4-byte REFIDs via MD5 — creating documented collision risk with IPv4 addresses. `draft-ietf-ntp-refid-updates-05` proposes a fix but is stalled. NTPv5's 120-bit Bloom filter REFIDs eliminate the problem entirely.
+
+**New deps**: `socket2 = "0.5"` for fine-grained socket options
+
+---
+
+### 4. NTPv5 Support ⏱️
+
+**Priority**: Low — blocked on draft stabilization (not yet RFC)
+**Status**: Waiting on `draft-ietf-ntp-ntpv5` RFC publication
+
+Full NTPv4-to-NTPv5 protocol upgrade per `draft-ietf-ntp-ntpv5-07` (active, expires Apr 2026).
+
+- [ ] New 48-byte header struct: era number, timescale, flags, client/server cookies
+- [ ] `time32` type: 4 integer + 28 fractional bits, ~3.7 ns resolution (vs NTPv4's ~15 µs)
+- [ ] 120-bit Bloom filter Reference IDs for loop detection (replaces 32-bit REFID)
+- [ ] Explicit interleaved mode via `ServerCookie`/`ClientCookie` fields
+- [ ] AES-CMAC MAC extension field (0xF502) — requires `cmac` + `aes` crates
+- [ ] 0xF503–0xF509 extension fields (Reference IDs, Server Info, Correction, timestamps)
+- [ ] NTPv5 server: remove symmetric/broadcast/control modes (client-server only)
+- [ ] Feature gate: `ntpv5`
+
+**Key differences from NTPv4**: Removes symmetric, broadcast, control modes. Adds era-aware timestamps, explicit timescale, 120-bit loop detection, and unambiguous extension field architecture.
+
+**Interop**: NTPv5 clients can negotiate with NTPv4 servers (version downgrade path defined in spec).
+
+**Existing Rust impl**: ntpd-rs v1.7.1 has experimental NTPv5 support targeting draft-06.
+
+**New deps**: `cmac = "0.7"` (RustCrypto AES-CMAC for MAC extension field)
+
+---
+
+### 5. WASM Support 🕸️
+
+**Priority**: Low — parsing-only in browser, full client needs WASI
+**Status**: Planned (documentation + CI target, limited scope)
+
+`ntp_usg-proto` already compiles to `wasm32-unknown-unknown` with `default-features = false`. Browser-based full NTP client is not feasible (UDP unavailable in browser sandbox).
+
+- [ ] Verify and document `ntp_usg-proto` WASM compatibility (`wasm32-unknown-unknown` CI target)
+- [ ] Publish `wasm-pack` build of `ntp_usg-proto` for browser packet inspection tools
+- [ ] WASI (`wasm32-wasip2`) support for full NTP client in server-side WASM (Cloudflare Workers, Fastly Compute)
+- [ ] Feature gate: no change needed — `default-features = false` already works
+
+**Scope**: Packet parsing, timestamp conversion, extension field handling work today. Full NTP client (tokio/smol) requires WASI with `wasi-sockets`. No browser-native NTP API exists (confirmed: no W3C Network Time API spec).
+
+**Note**: "Network Time API integration" removed from roadmap — no such browser spec exists.
 
 ---
 
@@ -292,7 +388,7 @@ Have ideas for the roadmap? Open an issue with the `enhancement` label or start 
 
 ---
 
-**Last Updated**: 2026-02-17
+**Last Updated**: 2026-02-17 (v4.0.0 features researched and detailed)
 **Current Version**: 3.4.0
 **Next Planned Release**: 4.0.0 (2027)
 
