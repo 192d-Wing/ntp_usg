@@ -2,7 +2,7 @@
 
 This document outlines the development roadmap for the ntp_usg project.
 
-## Version 3.1.0 - 100% RFC Compliance ✅ (Current)
+## Version 3.1.0 - 100% RFC Compliance ✅
 
 **Released**: 2026-02-16
 
@@ -34,9 +34,9 @@ This document outlines the development roadmap for the ntp_usg project.
 
 ---
 
-## Version 3.2.0 - Developer Experience & Testing (In Progress)
+## Version 3.2.0 - Developer Experience & Testing ✅
 
-**Target**: Q2 2026
+**Released**: 2026-02-16
 
 ### 1. More Extensive Examples 📚 ✅
 
@@ -293,7 +293,7 @@ Have ideas for the roadmap? Open an issue with the `enhancement` label or start 
 ---
 
 **Last Updated**: 2026-02-16
-**Current Version**: 3.3.0
+**Current Version**: 3.3.3
 **Next Planned Release**: 4.0.0 (2027)
 
 ## Version 3.2.0 Progress Summary
