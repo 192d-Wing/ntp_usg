@@ -288,6 +288,7 @@ pub async fn smol_request_with_timeout(addr: &str, timeout: Duration) -> io::Res
 mod tests {
     use super::*;
 
+    #[cfg(not(miri))]
     #[test]
     fn test_sntp_request_nist() {
         // Basic smoke test - may fail in CI if NTP port is blocked

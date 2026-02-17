@@ -412,6 +412,7 @@ pub fn request_with_timeout<A: ToSocketAddrs>(addr: A, timeout: Duration) -> io:
 }
 
 #[cfg(test)]
+#[cfg(not(miri))]
 #[test]
 fn test_request_nist() {
     match request_with_timeout("time.nist.gov:123", Duration::from_secs(10)) {
@@ -424,6 +425,7 @@ fn test_request_nist() {
 }
 
 #[cfg(test)]
+#[cfg(not(miri))]
 #[test]
 fn test_request_nist_alt() {
     match request_with_timeout("time-a-g.nist.gov:123", Duration::from_secs(10)) {

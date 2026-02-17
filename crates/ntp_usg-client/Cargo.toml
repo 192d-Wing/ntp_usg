@@ -32,8 +32,8 @@ symmetric = []
 broadcast = []
 refclock = ["tokio", "dep:async-trait"]
 gps = ["refclock", "dep:serialport"]
-pps = ["refclock"]
-hwts = ["refclock"]
+pps = ["refclock", "dep:libc"]
+hwts = ["refclock", "dep:libc"]
 smol-runtime = ["dep:smol", "dep:futures-lite"]
 nts-smol = [
     "smol-runtime",
