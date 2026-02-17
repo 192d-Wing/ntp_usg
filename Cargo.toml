@@ -7,6 +7,7 @@ members = [
 ]
 exclude = [
     "crates/ntp_usg",
+    "crates/ntp_usg-proto/fuzz",
 ]
 
 [workspace.package]

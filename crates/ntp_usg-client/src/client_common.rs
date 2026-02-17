@@ -7,7 +7,7 @@
 //! Provides peer state management, poll interval adaptation, reachability
 //! tracking, response classification (basic vs interleaved mode), the
 //! RFC 5905 Section 11.2 selection/clustering/combining pipeline, and
-//! the [`NtpSyncState`] published to consumers.
+//! the [`NtpSyncState`](self::NtpSyncState) published to consumers.
 
 use log::debug;
 use std::io;
