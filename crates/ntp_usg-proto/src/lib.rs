@@ -7,7 +7,6 @@
 //! Network Time Protocol (RFC 5905) and Network Time Security (RFC 8915).
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![deny(unsafe_code)]
 #![warn(missing_docs)]
 
 #[cfg(feature = "alloc")]

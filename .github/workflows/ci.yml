@@ -148,6 +148,17 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check documentation (warnings as errors)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --workspace --all-features --no-deps
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -167,3 +178,48 @@ jobs:
         run: rustup toolchain install 1.93 && rustup default 1.93
       - name: Check MSRV
         run: cargo check --workspace --verbose
+
+  miri:
+    name: Miri
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      - name: Run Miri on ntp_usg-proto
+        run: cargo +nightly miri test -p ntp_usg-proto
+      - name: Run Miri on ntp_usg-proto (no_std)
+        run: cargo +nightly miri test -p ntp_usg-proto --no-default-features
+      - name: Run Miri on ntp_usg-proto (alloc)
+        run: cargo +nightly miri test -p ntp_usg-proto --no-default-features --features alloc
+
+  fuzz:
+    name: Fuzz (smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+      - name: Fuzz packet parsing (30s)
+        working-directory: crates/ntp_usg-proto
+        run: cargo +nightly fuzz run fuzz_packet_from_bytes -- -max_total_time=30
+      - name: Fuzz extension fields (30s)
+        working-directory: crates/ntp_usg-proto
+        run: cargo +nightly fuzz run fuzz_extension_fields -- -max_total_time=30
+
+  minimal-versions:
+    name: Minimal Versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Generate minimal-versions lockfile
+        run: cargo +nightly update -Z minimal-versions
+      - name: Check with minimal versions
+        run: cargo +stable check --workspace --all-features

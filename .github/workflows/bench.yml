@@ -1,0 +1,50 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run benchmarks
+        run: cargo bench --bench selection_benchmark -F ntp_usg-client/tokio -- --output-format bencher | tee benchmark-output.txt
+
+      - name: Store benchmark result
+        if: github.ref == 'refs/heads/master'
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Selection Algorithm Benchmarks
+          tool: cargo
+          output-file-path: benchmark-output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: "120%"
+          comment-on-alert: true
+          fail-on-alert: false
+
+      - name: Compare against baseline (PR only)
+        if: github.event_name == 'pull_request'
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Selection Algorithm Benchmarks
+          tool: cargo
+          output-file-path: benchmark-output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: false
+          alert-threshold: "120%"
+          comment-on-alert: true
+          fail-on-alert: false

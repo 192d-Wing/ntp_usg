@@ -4,6 +4,8 @@ members = [
     "crates/ntp_usg-proto",
     "crates/ntp_usg-client",
     "crates/ntp_usg-server",
+]
+exclude = [
     "crates/ntp_usg",
 ]
 
@@ -48,3 +50,19 @@ windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
 ] }
 chrono = "0.4"
+proptest = "1"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+
+[profile.bench]
+inherits = "release"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unreachable_pub = "warn"

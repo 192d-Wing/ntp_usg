@@ -32,3 +32,9 @@ byteorder = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 aes-siv = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true

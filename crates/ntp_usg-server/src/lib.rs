@@ -6,9 +6,7 @@
 //! This crate provides NTPv4 server implementations using either the tokio
 //! or smol async runtimes, with optional NTS (Network Time Security) support.
 
-#![deny(unsafe_code)]
 #![warn(missing_docs)]
-#![warn(unreachable_pub)]
 
 // Re-export protocol types from ntp_proto for convenience.
 pub use ntp_proto::{error, extension, protocol, unix_time};

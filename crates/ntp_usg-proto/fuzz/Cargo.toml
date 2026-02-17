@@ -1,0 +1,32 @@
+[package]
+name = "ntp_usg-proto-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+ntp_proto = { path = "..", features = ["std", "nts"] }
+
+[[bin]]
+name = "fuzz_packet_from_bytes"
+path = "fuzz_targets/fuzz_packet_from_bytes.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_extension_fields"
+path = "fuzz_targets/fuzz_extension_fields.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_packet_roundtrip"
+path = "fuzz_targets/fuzz_packet_roundtrip.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_nts_authenticator"
+path = "fuzz_targets/fuzz_nts_authenticator.rs"
+doc = false

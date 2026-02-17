@@ -36,8 +36,30 @@ jobs:
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+      - name: Install cargo-semver-checks
+        run: cargo binstall --no-confirm cargo-semver-checks || cargo install cargo-semver-checks
+
+      - name: Semver check ntp_usg-proto
+        run: cargo semver-checks check-release -p ntp_usg-proto
+
+      - name: Semver check ntp_usg-client
+        run: cargo semver-checks check-release -p ntp_usg-client --default-features
+
+      - name: Semver check ntp_usg-server
+        run: cargo semver-checks check-release -p ntp_usg-server --default-features
+
       - name: Check documentation
-        run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --workspace --all-features --no-deps
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          cargo cyclonedx --all --format json --output-prefix ntp_usg
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          for f in ntp_usg*.cdx.json; do
+            mv "$f" "${f%.cdx.json}-${TAG_VERSION}.cdx.json"
+          done
 
       - name: Extract changelog for this version
         id: changelog
@@ -59,7 +81,8 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
-            --notes-file "${{ steps.changelog.outputs.notes_file }}"
+            --notes-file "${{ steps.changelog.outputs.notes_file }}" \
+            ./*-*.cdx.json
         env:
           GH_TOKEN: ${{ github.token }}
 

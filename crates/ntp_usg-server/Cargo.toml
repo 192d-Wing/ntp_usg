@@ -71,3 +71,6 @@ required-features = ["nts"]
 [[example]]
 name = "stratum1_server"
 required-features = ["refclock"]
+
+[lints]
+workspace = true

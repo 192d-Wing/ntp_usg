@@ -23,9 +23,7 @@ fn main() {
 ```
 */
 
-#![deny(unsafe_code)]
 #![warn(missing_docs)]
-#![warn(unreachable_pub)]
 
 // Re-export protocol types from ntp_proto for convenience.
 pub use ntp_proto::{error, extension, protocol, unix_time};
@@ -128,7 +126,7 @@ pub mod smol_client;
 
 /// Network Time Security (NTS) client using the smol runtime (RFC 8915).
 ///
-/// Provides the same NTS functionality as [`nts`] but using smol
+/// Provides the same NTS functionality as the `nts` module but using smol
 /// and futures-rustls instead of tokio and tokio-rustls.
 #[cfg(feature = "nts-smol")]
 pub mod smol_nts;

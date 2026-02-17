@@ -1,5 +1,8 @@
 # ⚠️ DEPRECATED: ntp_usg
 
+> **Note:** This crate is excluded from the workspace and retained as a
+> historical reference. It is not built, tested, or published.
+
 **This crate is deprecated as of version 3.0.0 and is no longer maintained.**
 
 The monolithic `ntp_usg` crate has been split into three focused, well-maintained crates:
