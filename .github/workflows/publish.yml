@@ -63,15 +63,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Yank old ntp_usg versions (deprecation)
-        run: |
-          # Yank all pre-3.0 versions of the monolithic ntp_usg crate
-          # This encourages users to migrate to the new split crates
-          for version in 2.0.3 2.0.2 2.0.1 2.0.0 1.0.0 0.1.0; do
-            cargo yank --vers $version ntp_usg --token ${{ secrets.CRATES_IO }} || true
-          done
-        continue-on-error: true
-
       - name: Publish ntp_usg-proto to crates.io
         run: cargo publish -p ntp_usg-proto --token ${{ secrets.CRATES_IO }}
 
@@ -89,6 +80,3 @@ jobs:
 
       - name: Wait for crates.io index update
         run: sleep 30
-
-      - name: Publish deprecated ntp_usg stub to crates.io
-        run: cargo publish -p ntp_usg --token ${{ secrets.CRATES_IO }}
