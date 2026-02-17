@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.2] - 2026-02-16
+
+### Fixed
+
+- NMEA test checksums corrected for GGA, RMC, and ZDA sentences
+- Clippy `io_other_error` lint: migrated to `io::Error::other()` in GPS and PPS modules
+- Clippy `let_and_return` and `if_same_then_else` lints in NTP server
+- Clippy `excessive_precision` lint in hardware timestamping test
+- `tokio::join!` compile error in GPS+PPS combined example (wrapped in `async` block for `timeout`)
+- Borrow-after-move in GPS+PPS example (`match gps_result` → `match &gps_result`)
+- macOS CI: handle `WouldBlock` (os error 35) in SNTP test when NTP port is blocked
+- Windows CI: handle TLS `close_notify` errors in NTS integration tests
+- macOS CI: gracefully skip continuous client test when no NTP updates received
+
 ## [3.3.1] - 2026-02-16
 
 ### Fixed
@@ -463,6 +477,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[3.3.2]: https://github.com/192d-Wing/ntp_usg/compare/v3.3.1...v3.3.2
 [3.3.1]: https://github.com/192d-Wing/ntp_usg/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/192d-Wing/ntp_usg/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/192d-Wing/ntp_usg/compare/v3.1.0...v3.2.0
