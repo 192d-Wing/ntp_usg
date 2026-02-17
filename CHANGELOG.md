@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-02-17
+
+### Added
+
+- Embedded/no_std example (`ntp_usg-proto/examples/embedded_nostd.rs`) demonstrating `FromBytes`/`ToBytes` API with zero heap allocation
+- High-precision time synchronization example (`ntp_usg-client/examples/high_precision.rs`) combining PPS + hardware timestamping
+- Rate limiter/access control example (`ntp_usg-server/examples/rate_limiter.rs`) with per-client rate limiting and IP-based ACLs
+
+### Changed
+
+- Extracted `request.rs` from client `lib.rs` — `lib.rs` reduced from ~898 to ~141 lines
+- Split `protocol.rs` (~1,293 lines) into `protocol/` module (types, traits, io, bytes, mod)
+- Split `server_common.rs` (~1,350 lines) into `server_common/` module (9 files)
+- Deduplicated ~840 lines between `client.rs` and `smol_client.rs` into `client_common.rs`
+- Added `#[cfg(target_os = "linux")]` guards to Linux-only examples for cross-platform CI
+
 ## [3.3.3] - 2026-02-16
 
 ### Fixed
@@ -482,6 +498,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[3.4.0]: https://github.com/192d-Wing/ntp_usg/compare/v3.3.3...v3.4.0
 [3.3.3]: https://github.com/192d-Wing/ntp_usg/compare/v3.3.2...v3.3.3
 [3.3.2]: https://github.com/192d-Wing/ntp_usg/compare/v3.3.1...v3.3.2
 [3.3.1]: https://github.com/192d-Wing/ntp_usg/compare/v3.3.0...v3.3.1

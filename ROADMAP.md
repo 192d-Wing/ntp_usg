@@ -292,8 +292,8 @@ Have ideas for the roadmap? Open an issue with the `enhancement` label or start 
 
 ---
 
-**Last Updated**: 2026-02-16
-**Current Version**: 3.3.3
+**Last Updated**: 2026-02-17
+**Current Version**: 3.4.0
 **Next Planned Release**: 4.0.0 (2027)
 
 ## Version 3.2.0 Progress Summary
