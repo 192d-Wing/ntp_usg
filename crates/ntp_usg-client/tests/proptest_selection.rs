@@ -1,6 +1,6 @@
 #![cfg(feature = "tokio")]
 
-use ntp_client::selection::{combine, cluster_survivors, select_truechimers, PeerCandidate, NMIN};
+use ntp_client::selection::{NMIN, PeerCandidate, cluster_survivors, combine, select_truechimers};
 use proptest::prelude::*;
 
 fn make_candidates(n: usize) -> Vec<PeerCandidate> {

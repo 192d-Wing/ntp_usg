@@ -19,12 +19,23 @@
 //   3. Add to /boot/config.txt: dtoverlay=pps-gpio,gpiopin=18
 //   4. Load module: sudo modprobe pps-gpio
 
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    eprintln!("This example requires Linux (PPS kernel support).");
+}
+
+#[cfg(target_os = "linux")]
 use ntp_client::refclock::RefClock;
+#[cfg(target_os = "linux")]
 use ntp_client::refclock::gps::{GpsConfig, GpsReceiver};
+#[cfg(target_os = "linux")]
 use ntp_client::refclock::pps::{PpsCaptureMode, PpsConfig, PpsReceiver};
+#[cfg(target_os = "linux")]
 use std::path::PathBuf;
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
+#[cfg(target_os = "linux")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging

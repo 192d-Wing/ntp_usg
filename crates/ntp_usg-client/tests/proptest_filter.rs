@@ -1,6 +1,6 @@
 #![cfg(feature = "tokio")]
 
-use ntp_client::filter::{SampleFilter, FILTER_SIZE};
+use ntp_client::filter::{FILTER_SIZE, SampleFilter};
 use proptest::prelude::*;
 
 proptest! {

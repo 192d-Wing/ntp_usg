@@ -20,13 +20,22 @@
 //   - Broadcom NetXtreme (bnxt_en driver)
 //   - Mellanox ConnectX series (mlx5 driver)
 
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    eprintln!("This example requires Linux (SO_TIMESTAMPING support).");
+}
+
+#[cfg(target_os = "linux")]
 use ntp_client::refclock::hwts::{
     HwTimestampConfig, TimestampMode, enable_timestamping, get_timestamping_capabilities,
     is_hardware_timestamping_available,
 };
+#[cfg(target_os = "linux")]
 use std::net::UdpSocket;
+#[cfg(target_os = "linux")]
 use std::os::unix::io::AsRawFd;
 
+#[cfg(target_os = "linux")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Hardware Timestamping Demonstration");
     println!("====================================");

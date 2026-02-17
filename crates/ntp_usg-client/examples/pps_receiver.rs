@@ -21,11 +21,21 @@
 //   - Verify device: ls -l /dev/pps*
 //   - Test with ppstest: sudo ppstest /dev/pps0
 
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    eprintln!("This example requires Linux (PPS kernel support).");
+}
+
+#[cfg(target_os = "linux")]
 use ntp_client::refclock::RefClock;
+#[cfg(target_os = "linux")]
 use ntp_client::refclock::pps::{PpsCaptureMode, PpsConfig, PpsReceiver};
+#[cfg(target_os = "linux")]
 use std::path::PathBuf;
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
+#[cfg(target_os = "linux")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
@@ -196,4 +206,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // PPS typically fires once per second, so brief sleep
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+
+    #[allow(unreachable_code)]
+    Ok(())
 }

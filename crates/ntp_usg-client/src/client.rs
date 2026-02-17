@@ -41,174 +41,16 @@ use std::time::Duration;
 use tokio::net::UdpSocket;
 
 pub use crate::client_common::NtpSyncState;
-use crate::client_common::{classify_and_compute, short_format_to_secs};
-use crate::filter::{ClockSample, SampleFilter};
-use crate::selection::{self, PeerCandidate};
-use crate::{KissOfDeathError, build_request_packet, parse_and_validate_response, protocol};
+use crate::client_common::{PeerState, PollResult, check_kod, select_and_build_state};
+use crate::{build_request_packet, parse_and_validate_response, protocol};
 
+#[cfg(feature = "nts")]
+use crate::client_common::NtsPeerState;
 #[cfg(feature = "nts")]
 use crate::nts;
 #[cfg(feature = "nts")]
 use crate::nts_common;
 
-/// Result of polling a single peer.
-enum PollResult {
-    /// Successful basic-mode exchange.
-    Sample(ClockSample, bool /* interleaved */),
-    /// Server sent RATE kiss code.
-    RateKissCode,
-    /// Server sent DENY or RSTR kiss code.
-    DenyKissCode,
-}
-
-/// NTS-specific state for a peer, separated to avoid borrow checker issues.
-#[cfg(feature = "nts")]
-struct NtsPeerState {
-    /// Client-to-server AEAD key.
-    c2s_key: Vec<u8>,
-    /// Server-to-client AEAD key.
-    s2c_key: Vec<u8>,
-    /// Cookies for NTP requests (each used exactly once).
-    cookies: Vec<Vec<u8>>,
-    /// Negotiated AEAD algorithm ID.
-    aead_algorithm: u16,
-    /// NTS-KE server hostname for re-keying when cookies run low.
-    nts_ke_server: String,
-    /// Cookie length from initial NTS-KE (for placeholder sizing).
-    cookie_len: usize,
-}
-
-/// State maintained for a single NTP server peer.
-struct PeerState {
-    /// Resolved socket address of this peer.
-    addr: SocketAddr,
-    /// Current poll exponent (log2 seconds). Bounded by [min_poll, max_poll].
-    poll_exponent: u8,
-    /// 8-bit shift register for reachability (RFC 5905 Section 9.1).
-    reachability: u8,
-    /// Clock filter for this peer.
-    filter: SampleFilter,
-    /// Last stratum received from this peer.
-    stratum: Option<protocol::Stratum>,
-    /// Root delay from the peer's last response (seconds).
-    root_delay_secs: f64,
-    /// Root dispersion from the peer's last response (seconds).
-    root_dispersion_secs: f64,
-    /// Our transmit timestamp (T1) from the previous exchange (for interleaved mode).
-    prev_t1: Option<protocol::TimestampFormat>,
-    /// Our receive timestamp (T4) from the previous exchange (for interleaved mode).
-    prev_t4: Option<protocol::TimestampFormat>,
-    /// Our transmit timestamp (T1) from the current (most recent sent) exchange.
-    current_t1: Option<protocol::TimestampFormat>,
-    /// Whether interleaved mode has been detected for this peer.
-    interleaved: bool,
-    /// If true, we have received DENY or RSTR and must stop polling.
-    demobilized: bool,
-    /// NTS state, present only for NTS-authenticated peers.
-    #[cfg(feature = "nts")]
-    nts_state: Option<NtsPeerState>,
-}
-
-impl PeerState {
-    fn new(addr: SocketAddr, initial_poll: u8) -> Self {
-        PeerState {
-            addr,
-            poll_exponent: initial_poll,
-            reachability: 0,
-            filter: SampleFilter::new(),
-            stratum: None,
-            root_delay_secs: 0.0,
-            root_dispersion_secs: 0.0,
-            prev_t1: None,
-            prev_t4: None,
-            current_t1: None,
-            interleaved: false,
-            demobilized: false,
-            #[cfg(feature = "nts")]
-            nts_state: None,
-        }
-    }
-
-    /// Create a peer with NTS state from a completed NTS-KE exchange.
-    #[cfg(feature = "nts")]
-    fn new_nts(
-        addr: SocketAddr,
-        initial_poll: u8,
-        ke: nts::NtsKeResult,
-        nts_ke_server: String,
-    ) -> Self {
-        let cookie_len = ke.cookies.first().map_or(0, |c| c.len());
-        PeerState {
-            addr,
-            poll_exponent: initial_poll,
-            reachability: 0,
-            filter: SampleFilter::new(),
-            stratum: None,
-            root_delay_secs: 0.0,
-            root_dispersion_secs: 0.0,
-            prev_t1: None,
-            prev_t4: None,
-            current_t1: None,
-            interleaved: false,
-            demobilized: false,
-            nts_state: Some(NtsPeerState {
-                c2s_key: ke.c2s_key,
-                s2c_key: ke.s2c_key,
-                cookies: ke.cookies,
-                aead_algorithm: ke.aead_algorithm,
-                nts_ke_server,
-                cookie_len,
-            }),
-        }
-    }
-
-    /// Get the current poll interval as a Duration.
-    fn poll_interval(&self) -> Duration {
-        Duration::from_secs(1u64 << self.poll_exponent)
-    }
-
-    /// Shift a 1 into the reachability register (successful response).
-    fn reach_success(&mut self) {
-        self.reachability = (self.reachability << 1) | 1;
-    }
-
-    /// Shift a 0 into the reachability register (timeout/failure).
-    fn reach_failure(&mut self) {
-        self.reachability <<= 1;
-    }
-
-    /// Increase poll interval. Clamps at max_poll.
-    fn increase_poll(&mut self, max_poll: u8) {
-        if self.poll_exponent < max_poll {
-            self.poll_exponent += 1;
-        }
-    }
-
-    /// Decrease poll interval. Clamps at min_poll.
-    fn decrease_poll(&mut self, min_poll: u8) {
-        if self.poll_exponent > min_poll {
-            self.poll_exponent -= 1;
-        }
-    }
-
-    /// Adjust poll interval based on current jitter and offset.
-    fn adjust_poll(&mut self, min_poll: u8, max_poll: u8) {
-        let jitter = self.filter.jitter();
-        if let Some(best) = self.filter.best_sample() {
-            // If offset is large or jitter is high, decrease poll interval.
-            if best.offset.abs() > 0.128 || (best.delay > 0.0 && jitter > best.delay * 4.0) {
-                self.decrease_poll(min_poll);
-            } else if self.filter.len() >= 4 {
-                // Conditions are stable and we have enough samples.
-                self.increase_poll(max_poll);
-            }
-        }
-    }
-}
-
-/// Classify a response as basic or interleaved mode and compute the clock sample.
-///
-/// This is a pure function (no I/O) for testability.
 /// Builder for configuring and creating an [`NtpClient`].
 pub struct NtpClientBuilder {
     servers: Vec<String>,
@@ -587,37 +429,11 @@ impl NtpClient {
         let parse_result = parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
 
         match parse_result {
-            Err(e) => {
-                // Check if this is a KoD error.
-                if let Some(kod) = e
-                    .get_ref()
-                    .and_then(|inner| inner.downcast_ref::<KissOfDeathError>())
-                {
-                    return match kod.code {
-                        protocol::KissOfDeath::Rate => Ok(PollResult::RateKissCode),
-                        protocol::KissOfDeath::Deny | protocol::KissOfDeath::Rstr => {
-                            Ok(PollResult::DenyKissCode)
-                        }
-                    };
-                }
-                Err(e)
-            }
-            Ok((response, t4)) => {
-                // Update peer state from response.
-                peer.stratum = Some(response.stratum);
-                peer.root_delay_secs = short_format_to_secs(&response.root_delay);
-                peer.root_dispersion_secs = short_format_to_secs(&response.root_dispersion);
-
-                // Classify as basic or interleaved and compute sample.
-                let (sample, interleaved) =
-                    classify_and_compute(&response, t4, t1, peer.prev_t1, peer.prev_t4)?;
-
-                // Rotate timestamps for next exchange.
-                peer.prev_t1 = peer.current_t1;
-                peer.prev_t4 = Some(t4);
-
-                Ok(PollResult::Sample(sample, interleaved))
-            }
+            Err(e) => match check_kod(&e) {
+                Some(poll_result) => Ok(poll_result),
+                None => Err(e),
+            },
+            Ok((response, t4)) => peer.process_response(&response, t4, t1),
         }
     }
 
@@ -684,20 +500,10 @@ impl NtpClient {
         let parse_result = parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
 
         match parse_result {
-            Err(e) => {
-                if let Some(kod) = e
-                    .get_ref()
-                    .and_then(|inner| inner.downcast_ref::<KissOfDeathError>())
-                {
-                    return match kod.code {
-                        protocol::KissOfDeath::Rate => Ok(PollResult::RateKissCode),
-                        protocol::KissOfDeath::Deny | protocol::KissOfDeath::Rstr => {
-                            Ok(PollResult::DenyKissCode)
-                        }
-                    };
-                }
-                Err(e)
-            }
+            Err(e) => match check_kod(&e) {
+                Some(poll_result) => Ok(poll_result),
+                None => Err(e),
+            },
             Ok((response, t4)) => {
                 // Validate NTS extension fields and extract new cookies.
                 let new_cookies = nts_common::validate_nts_response(
@@ -709,20 +515,7 @@ impl NtpClient {
                 )?;
                 nts_state.cookies.extend(new_cookies);
 
-                // Update peer state from response.
-                peer.stratum = Some(response.stratum);
-                peer.root_delay_secs = short_format_to_secs(&response.root_delay);
-                peer.root_dispersion_secs = short_format_to_secs(&response.root_dispersion);
-
-                // Classify as basic or interleaved and compute sample.
-                let (sample, interleaved) =
-                    classify_and_compute(&response, t4, t1, peer.prev_t1, peer.prev_t4)?;
-
-                // Rotate timestamps for next exchange.
-                peer.prev_t1 = peer.current_t1;
-                peer.prev_t4 = Some(t4);
-
-                Ok(PollResult::Sample(sample, interleaved))
+                peer.process_response(&response, t4, t1)
             }
         }
     }
@@ -730,127 +523,9 @@ impl NtpClient {
     /// Select the best peer(s) using the RFC 5905 Section 11.2 selection,
     /// clustering, and combining pipeline, then publish the system state.
     ///
-    /// For single-peer configurations, falls back to simple min-sync-distance
-    /// selection for efficiency.
-    ///
     /// Returns `Some((offset, jitter))` if a valid system estimate was
     /// produced, for feeding to the clock discipline loop.
     fn publish_best_state(&mut self) -> Option<(f64, f64)> {
-        // Update ages and dispersion for all peer filters.
-        for peer in &mut self.peers {
-            peer.filter.update_ages();
-        }
-
-        // Build candidate list from non-demobilized peers with samples.
-        let candidates: Vec<(usize, PeerCandidate)> = self
-            .peers
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| !p.demobilized && p.filter.best_sample().is_some())
-            .map(|(i, p)| {
-                let best = p.filter.best_sample().unwrap();
-                (
-                    i,
-                    PeerCandidate {
-                        peer_index: i,
-                        offset: best.offset,
-                        root_delay: p.root_delay_secs,
-                        root_dispersion: p.root_dispersion_secs,
-                        jitter: p.filter.jitter(),
-                        stratum: p.stratum.map_or(protocol::MAXSTRAT, |s| s.0),
-                    },
-                )
-            })
-            .collect();
-
-        if candidates.is_empty() {
-            return None;
-        }
-
-        // For 1-2 peers, use simple min-sync-distance (selection algorithm
-        // needs a majority, which requires at least 3 peers).
-        let (offset, delay, jitter, peer_idx, system_peer_count, root_delay, root_dispersion) =
-            if candidates.len() < 3 {
-                let (best_idx, _) = candidates
-                    .iter()
-                    .min_by(|(_, a), (_, b)| {
-                        a.root_distance()
-                            .partial_cmp(&b.root_distance())
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .unwrap();
-                let peer = &self.peers[*best_idx];
-                let sample = peer.filter.best_sample().unwrap();
-                (
-                    sample.offset,
-                    sample.delay,
-                    peer.filter.jitter(),
-                    *best_idx,
-                    candidates.len(),
-                    peer.root_delay_secs,
-                    peer.root_dispersion_secs,
-                )
-            } else {
-                // Full RFC 5905 pipeline: select → cluster → combine.
-                let peer_candidates: Vec<PeerCandidate> =
-                    candidates.iter().map(|(_, c)| c.clone()).collect();
-
-                let tc_indices = selection::select_truechimers(&peer_candidates);
-                if tc_indices.is_empty() {
-                    // No majority agreement — fall back to best single peer.
-                    debug!("selection: no truechimer majority, falling back to best peer");
-                    let (best_idx, _) = candidates
-                        .iter()
-                        .min_by(|(_, a), (_, b)| {
-                            a.root_distance()
-                                .partial_cmp(&b.root_distance())
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        })
-                        .unwrap();
-                    let peer = &self.peers[*best_idx];
-                    let sample = peer.filter.best_sample().unwrap();
-                    (
-                        sample.offset,
-                        sample.delay,
-                        peer.filter.jitter(),
-                        *best_idx,
-                        1,
-                        peer.root_delay_secs,
-                        peer.root_dispersion_secs,
-                    )
-                } else {
-                    let mut survivors: Vec<PeerCandidate> = tc_indices
-                        .iter()
-                        .map(|&i| peer_candidates[i].clone())
-                        .collect();
-                    selection::cluster_survivors(&mut survivors);
-
-                    match selection::combine(&survivors) {
-                        Some(est) => {
-                            let sys_peer = &self.peers[est.system_peer_index];
-                            let sample = sys_peer.filter.best_sample().unwrap();
-                            (
-                                est.offset,
-                                sample.delay,
-                                est.jitter,
-                                est.system_peer_index,
-                                survivors.len(),
-                                sys_peer.root_delay_secs,
-                                sys_peer.root_dispersion_secs,
-                            )
-                        }
-                        None => return None,
-                    }
-                }
-            };
-
-        let peer = &self.peers[peer_idx];
-
-        #[cfg(feature = "nts")]
-        let nts_authenticated = peer.nts_state.is_some();
-        #[cfg(not(feature = "nts"))]
-        let nts_authenticated = false;
-
         #[cfg(feature = "discipline")]
         let (frequency, discipline_state) = match &self.discipline {
             Some(d) => (d.frequency(), format!("{:?}", d.state())),
@@ -859,24 +534,16 @@ impl NtpClient {
         #[cfg(not(feature = "discipline"))]
         let (frequency, discipline_state) = (0.0, String::new());
 
-        let state = NtpSyncState {
-            offset,
-            delay,
-            jitter,
-            stratum: peer.stratum.map_or(protocol::MAXSTRAT, |s| s.0),
-            interleaved: peer.interleaved,
-            last_update: std::time::Instant::now(),
-            total_responses: self.total_responses,
-            nts_authenticated,
-            root_delay,
-            root_dispersion,
-            system_peer_count,
+        let result = select_and_build_state(
+            &mut self.peers,
+            self.total_responses,
             frequency,
             discipline_state,
-        };
+        )?;
+
         // Ignore send errors (no receivers).
-        let _ = self.state_tx.send(state);
-        Some((offset, jitter))
+        let _ = self.state_tx.send(result.state);
+        Some((result.offset, result.jitter))
     }
 }
 
@@ -884,123 +551,9 @@ impl NtpClient {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_peer_state_poll_interval() {
-        let peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
-        assert_eq!(peer.poll_interval(), Duration::from_secs(16));
-    }
-
-    #[test]
-    fn test_peer_state_increase_poll() {
-        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MAXPOLL);
-        peer.increase_poll(protocol::MAXPOLL);
-        assert_eq!(peer.poll_exponent, protocol::MAXPOLL);
-    }
-
-    #[test]
-    fn test_peer_state_decrease_poll() {
-        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
-        peer.decrease_poll(protocol::MINPOLL);
-        assert_eq!(peer.poll_exponent, protocol::MINPOLL);
-    }
-
-    #[test]
-    fn test_reachability_register() {
-        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
-        assert_eq!(peer.reachability, 0);
-
-        peer.reach_success();
-        assert_eq!(peer.reachability, 0b0000_0001);
-
-        peer.reach_success();
-        assert_eq!(peer.reachability, 0b0000_0011);
-
-        peer.reach_failure();
-        assert_eq!(peer.reachability, 0b0000_0110);
-
-        // After 8 failures, register should be zero.
-        for _ in 0..8 {
-            peer.reach_failure();
-        }
-        assert_eq!(peer.reachability, 0);
-    }
-
     #[tokio::test]
     async fn test_builder_rejects_empty_servers() {
         let result = NtpClient::builder().build().await;
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_reachability_max_then_overflow() {
-        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
-        for _ in 0..8 {
-            peer.reach_success();
-        }
-        assert_eq!(peer.reachability, 0xFF);
-        peer.reach_success();
-        assert_eq!(peer.reachability, 0xFF); // Still all 1s
-    }
-
-    #[test]
-    fn test_reachability_alternating() {
-        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
-        peer.reach_success(); // 0b0000_0001
-        peer.reach_failure(); // 0b0000_0010
-        peer.reach_success(); // 0b0000_0101
-        peer.reach_failure(); // 0b0000_1010
-        assert_eq!(peer.reachability, 0b0000_1010);
-    }
-
-    #[test]
-    fn test_increase_poll_normal() {
-        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), 8);
-        peer.increase_poll(protocol::MAXPOLL);
-        assert_eq!(peer.poll_exponent, 9);
-    }
-
-    #[test]
-    fn test_decrease_poll_normal() {
-        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), 8);
-        peer.decrease_poll(protocol::MINPOLL);
-        assert_eq!(peer.poll_exponent, 7);
-    }
-
-    #[test]
-    fn test_poll_interval_various_exponents() {
-        for exp in protocol::MINPOLL..=protocol::MAXPOLL {
-            let peer = PeerState::new("127.0.0.1:123".parse().unwrap(), exp);
-            let expected = Duration::from_secs(1u64 << exp);
-            assert_eq!(peer.poll_interval(), expected);
-        }
-    }
-
-    #[test]
-    fn test_adjust_poll_no_samples() {
-        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), 6);
-        let original = peer.poll_exponent;
-        peer.adjust_poll(protocol::MINPOLL, protocol::MAXPOLL);
-        assert_eq!(peer.poll_exponent, original);
-    }
-
-    #[test]
-    fn test_adjust_poll_large_offset() {
-        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), 10);
-        peer.filter.add(0.5, 0.050);
-        peer.filter.add(0.5, 0.060);
-        peer.filter.add(0.5, 0.070);
-        peer.filter.add(0.5, 0.080);
-        peer.adjust_poll(protocol::MINPOLL, protocol::MAXPOLL);
-        assert!(peer.poll_exponent < 10);
-    }
-
-    #[test]
-    fn test_adjust_poll_stable() {
-        let mut peer = PeerState::new("127.0.0.1:123".parse().unwrap(), 6);
-        for i in 0..4 {
-            peer.filter.add(0.001 + i as f64 * 0.0001, 0.050);
-        }
-        peer.adjust_poll(protocol::MINPOLL, protocol::MAXPOLL);
-        assert!(peer.poll_exponent > 6);
     }
 }
