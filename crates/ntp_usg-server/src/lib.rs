@@ -15,6 +15,26 @@ pub use ntp_proto::{error, extension, protocol, unix_time};
 #[cfg(any(feature = "nts", feature = "nts-smol"))]
 pub(crate) use ntp_proto::nts_common;
 
+/// TLS configuration for NTS-KE server (crypto provider selection).
+#[cfg(any(feature = "nts", feature = "nts-smol"))]
+pub(crate) mod tls_config;
+
+/// Default listen address based on the `ipv4` feature flag.
+///
+/// Without `ipv4`: binds to `[::]` (IPv6 dual-stack, accepts both IPv4 and IPv6).
+/// With `ipv4`: binds to `0.0.0.0` (IPv4 only).
+#[cfg(any(feature = "tokio", feature = "smol-runtime"))]
+pub(crate) fn default_listen_addr(port: u16) -> String {
+    #[cfg(not(feature = "ipv4"))]
+    {
+        format!("[::]:{port}")
+    }
+    #[cfg(feature = "ipv4")]
+    {
+        format!("0.0.0.0:{port}")
+    }
+}
+
 /// Shared types and logic for the NTP server.
 ///
 /// Provides request validation, response building, rate limiting, access control,

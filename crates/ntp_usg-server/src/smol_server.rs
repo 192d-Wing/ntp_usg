@@ -15,7 +15,7 @@
 //!     use ntp_server::smol_server::NtpServer;
 //!
 //!     let server = NtpServer::builder()
-//!         .listen("0.0.0.0:123")
+//!         .listen("[::]:123")
 //!         .stratum(ntp_server::protocol::Stratum(2))
 //!         .build()
 //!         .await?;
@@ -29,6 +29,7 @@ use log::debug;
 use std::io;
 use std::sync::{Arc, RwLock};
 
+use crate::default_listen_addr;
 use crate::protocol;
 use crate::server_common::{
     AccessControl, ClientTable, HandleResult, IpNet, RateLimitConfig, ServerSystemState,
@@ -49,7 +50,7 @@ pub struct NtpServerBuilder {
 impl NtpServerBuilder {
     fn new() -> Self {
         NtpServerBuilder {
-            listen_addr: "0.0.0.0:123".to_string(),
+            listen_addr: default_listen_addr(123),
             system_state: ServerSystemState::default(),
             allow_list: None,
             deny_list: None,
@@ -59,7 +60,7 @@ impl NtpServerBuilder {
         }
     }
 
-    /// Set the listen address (default: `"0.0.0.0:123"`).
+    /// Set the listen address (default: `"[::]:123"`, or `"0.0.0.0:123"` with `ipv4` feature).
     pub fn listen(mut self, addr: impl Into<String>) -> Self {
         self.listen_addr = addr.into();
         self

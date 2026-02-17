@@ -1,6 +1,8 @@
 // Benchmarks for RFC 5905 selection, clustering, and combine algorithms
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use std::hint::black_box;
+
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use ntp_client::selection::{PeerCandidate, cluster_survivors, combine, select_truechimers};
 
 fn create_peer_candidates(n: usize) -> Vec<PeerCandidate> {

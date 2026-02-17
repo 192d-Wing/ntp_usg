@@ -11,7 +11,7 @@ use ntp_server::server::NtpServer;
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let server = NtpServer::builder()
-        .listen("0.0.0.0:1123")
+        .listen("[::]:1123")
         .stratum(Stratum(2))
         .build()
         .await?;

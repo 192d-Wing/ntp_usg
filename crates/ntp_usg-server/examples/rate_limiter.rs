@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Build and start the server ─────────────────────────────────────
 
     let server = NtpServer::builder()
-        .listen("0.0.0.0:2123")
+        .listen("[::]:2123")
         .stratum(Stratum(2))
         // Access control (deny checked before allow)
         .deny(abusive_subnet)

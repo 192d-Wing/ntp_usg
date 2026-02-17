@@ -151,7 +151,8 @@ impl NtpClientBuilder {
 
         let mut peers = Vec::new();
         for server in &self.servers {
-            let addrs: Vec<SocketAddr> = smol::net::resolve(server.as_str()).await?;
+            let addrs: Vec<SocketAddr> =
+                crate::request::prefer_addresses(smol::net::resolve(server.as_str()).await?);
             if let Some(&addr) = addrs.first() {
                 peers.push(PeerState::new(addr, initial_poll));
             } else {
@@ -166,7 +167,8 @@ impl NtpClientBuilder {
         for nts_server in &self.nts_servers {
             let ke = smol_nts::nts_ke(nts_server).await?;
             let addr_str = format!("{}:{}", ke.ntp_server, ke.ntp_port);
-            let addrs: Vec<SocketAddr> = smol::net::resolve(addr_str.as_str()).await?;
+            let addrs: Vec<SocketAddr> =
+                crate::request::prefer_addresses(smol::net::resolve(addr_str.as_str()).await?);
             if let Some(&addr) = addrs.first() {
                 peers.push(PeerState::new_nts(
                     addr,

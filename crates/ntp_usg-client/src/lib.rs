@@ -32,6 +32,10 @@ pub use ntp_proto::{error, extension, protocol, unix_time};
 #[cfg(any(feature = "nts", feature = "nts-smol"))]
 pub(crate) use ntp_proto::nts_common;
 
+/// TLS configuration for NTS (crypto provider selection).
+#[cfg(any(feature = "nts", feature = "nts-smol"))]
+pub(crate) mod tls_config;
+
 /// Clock sample filtering for the continuous NTP client.
 ///
 /// Implements a simplified version of the RFC 5905 Section 10 clock filter

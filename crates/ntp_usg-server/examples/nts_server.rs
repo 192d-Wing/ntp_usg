@@ -38,13 +38,13 @@ async fn main() -> std::io::Result<()> {
 
     // NTP server (UDP on port 1123).
     let ntp_server = NtpServer::builder()
-        .listen("0.0.0.0:1123")
+        .listen("[::]:1123")
         .stratum(Stratum(2))
         .build()
         .await?;
 
     println!("NTP server listening on {}", ntp_server.local_addr()?);
-    println!("NTS-KE server listening on 0.0.0.0:4460");
+    println!("NTS-KE server listening on [::]:4460");
 
     // Run both servers concurrently.
     tokio::select! {

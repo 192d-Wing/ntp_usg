@@ -63,7 +63,7 @@ async fn main() -> io::Result<()> {
         println!();
 
         let server = NtpServer::builder()
-            .listen("0.0.0.0:123")
+            .listen("[::]:123")
             .reference_clock(local_clock) // Automatically sets stratum and reference ID
             .enable_interleaved(true)
             .build()

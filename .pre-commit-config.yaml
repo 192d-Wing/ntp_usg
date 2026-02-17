@@ -14,3 +14,17 @@ repos:
         language: system
         types: [rust]
         pass_filenames: false
+
+      - id: cargo-test
+        name: cargo test
+        entry: cargo nextest run --workspace --all-features
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-doc
+        name: cargo doc
+        entry: bash -c 'RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps'
+        language: system
+        types: [rust]
+        pass_filenames: false

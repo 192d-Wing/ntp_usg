@@ -94,11 +94,8 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
     let addr = format!("{}:{}", hostname, port);
     debug!("NTS-KE connecting to {}", addr);
 
-    let root_store =
-        rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let tls_config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
+    // Configure TLS 1.3 client with PQ-NTS or classical crypto provider.
+    let tls_config = crate::tls_config::nts_client_config();
     let connector = TlsConnector::from(Arc::new(tls_config));
 
     let tcp_stream = TcpStream::connect(&addr).await?;

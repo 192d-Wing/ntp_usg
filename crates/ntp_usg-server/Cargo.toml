@@ -19,6 +19,8 @@ name = "ntp_server"
 [features]
 default = []
 tokio = ["dep:tokio"]
+pq-nts = ["rustls?/aws-lc-rs", "rustls?/prefer-post-quantum"]
+ipv4 = []
 nts = [
     "tokio",
     "ntp_usg-proto/nts",
@@ -26,6 +28,7 @@ nts = [
     "dep:tokio-rustls",
     "dep:rustls-pki-types",
     "dep:rand",
+    "pq-nts",
 ]
 symmetric = []
 broadcast = []
@@ -40,6 +43,7 @@ nts-smol = [
     "dep:futures-rustls",
     "dep:rustls-pki-types",
     "dep:rand",
+    "pq-nts",
 ]
 
 [dependencies]

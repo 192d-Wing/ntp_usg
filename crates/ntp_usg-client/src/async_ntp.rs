@@ -86,8 +86,9 @@ pub async fn request_with_timeout<A: ToSocketAddrs>(
 
 /// Inner async implementation without timeout wrapping.
 async fn request_inner<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
-    // Async DNS resolution via tokio.
-    let resolved_addrs: Vec<SocketAddr> = tokio::net::lookup_host(addr).await?.collect();
+    // Async DNS resolution via tokio (IPv6 preferred by default).
+    let resolved_addrs: Vec<SocketAddr> =
+        crate::request::prefer_addresses(tokio::net::lookup_host(addr).await?.collect());
     if resolved_addrs.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

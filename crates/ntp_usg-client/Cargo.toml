@@ -19,12 +19,15 @@ name = "ntp_client"
 [features]
 default = []
 tokio = ["dep:tokio"]
+pq-nts = ["rustls?/aws-lc-rs", "rustls?/prefer-post-quantum"]
+ipv4 = []
 nts = [
     "tokio",
     "ntp_usg-proto/nts",
     "dep:rustls",
     "dep:tokio-rustls",
     "dep:webpki-roots",
+    "pq-nts",
 ]
 clock = ["dep:libc", "dep:windows-sys"]
 discipline = ["clock"]
@@ -41,6 +44,7 @@ nts-smol = [
     "dep:rustls",
     "dep:futures-rustls",
     "dep:webpki-roots",
+    "pq-nts",
 ]
 
 [dependencies]

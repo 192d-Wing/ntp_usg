@@ -24,6 +24,24 @@ pub(crate) fn bind_addr_for(target: &SocketAddr) -> &'static str {
     }
 }
 
+/// Filter resolved addresses based on IP version preference.
+///
+/// Without the `ipv4` feature (default): prefers IPv6 addresses. Falls back
+/// to all addresses if no IPv6 addresses are available.
+///
+/// With the `ipv4` feature: returns all addresses unchanged.
+pub(crate) fn prefer_addresses(addrs: Vec<SocketAddr>) -> Vec<SocketAddr> {
+    #[cfg(feature = "ipv4")]
+    {
+        addrs
+    }
+    #[cfg(not(feature = "ipv4"))]
+    {
+        let v6: Vec<SocketAddr> = addrs.iter().filter(|a| a.is_ipv6()).copied().collect();
+        if v6.is_empty() { addrs } else { v6 }
+    }
+}
+
 /// Error returned when the server responds with a Kiss-o'-Death (KoD) packet.
 ///
 /// Per RFC 5905 Section 7.4, recipients of kiss codes MUST inspect them and take
@@ -380,7 +398,7 @@ pub fn request<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
 /// - Server sent a Kiss-o'-Death packet (see [`KissOfDeathError`])
 pub fn request_with_timeout<A: ToSocketAddrs>(addr: A, timeout: Duration) -> io::Result<NtpResult> {
     // Resolve the target address eagerly so we can verify the response source.
-    let resolved_addrs: Vec<SocketAddr> = addr.to_socket_addrs()?.collect();
+    let resolved_addrs: Vec<SocketAddr> = prefer_addresses(addr.to_socket_addrs()?.collect());
     if resolved_addrs.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

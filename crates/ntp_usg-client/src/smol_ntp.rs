@@ -94,8 +94,9 @@ pub async fn request_with_timeout(addr: &str, timeout: Duration) -> io::Result<N
 
 /// Inner async implementation without timeout wrapping.
 async fn request_inner(addr: &str) -> io::Result<NtpResult> {
-    // Async DNS resolution via smol.
-    let resolved_addrs: Vec<SocketAddr> = smol::net::resolve(addr).await?;
+    // Async DNS resolution via smol (IPv6 preferred by default).
+    let resolved_addrs: Vec<SocketAddr> =
+        crate::request::prefer_addresses(smol::net::resolve(addr).await?);
     if resolved_addrs.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

@@ -14,6 +14,7 @@ use log::debug;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls_pki_types::pem::PemObject;
 
+use crate::default_listen_addr;
 use crate::nts_common::*;
 use crate::nts_server_common::{CookieContents, MasterKeyStore};
 
@@ -23,7 +24,7 @@ pub struct NtsKeServerConfig {
     pub cert_chain: Vec<CertificateDer<'static>>,
     /// Private key corresponding to the certificate (DER encoded).
     pub private_key: PrivateKeyDer<'static>,
-    /// Listen address (default: `"0.0.0.0:4460"`).
+    /// Listen address (default: `"[::]:4460"`, or `"0.0.0.0:4460"` with `ipv4` feature).
     pub listen_addr: String,
     /// NTP server hostname to advertise to clients.
     pub ntp_server: Option<String>,
@@ -46,7 +47,7 @@ impl NtsKeServerConfig {
         Ok(NtsKeServerConfig {
             cert_chain: certs,
             private_key: key,
-            listen_addr: "0.0.0.0:4460".to_string(),
+            listen_addr: default_listen_addr(4460),
             ntp_server: None,
             ntp_port: None,
             cookie_count: 8,
@@ -70,16 +71,9 @@ impl NtsKeServer {
         config: NtsKeServerConfig,
         key_store: Arc<RwLock<MasterKeyStore>>,
     ) -> io::Result<Self> {
+        // Build TLS server config with PQ-NTS or classical crypto provider.
         let tls_config =
-            rustls::ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
-                .with_no_client_auth()
-                .with_single_cert(config.cert_chain, config.private_key)
-                .map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("TLS config error: {}", e),
-                    )
-                })?;
+            crate::tls_config::nts_server_config(config.cert_chain, config.private_key)?;
 
         Ok(NtsKeServer {
             tls_acceptor: futures_rustls::TlsAcceptor::from(Arc::new(tls_config)),
