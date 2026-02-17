@@ -24,6 +24,9 @@ jobs:
       - name: Run benchmarks
         run: cargo bench --bench selection_benchmark -F ntp_usg-client/tokio -- --output-format bencher | tee benchmark-output.txt
 
+      - name: Mark workspace safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Store benchmark result
         if: github.ref == 'refs/heads/master'
         uses: benchmark-action/github-action-benchmark@v1
