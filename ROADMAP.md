@@ -63,20 +63,20 @@ Comprehensive, production-ready examples covering real-world use cases:
   - 60-second periodic status reporting
   - Systemd integration documentation
 
-- [ ] **Embedded system example**
-  - `no_std` usage
-  - Minimal memory footprint
-  - Resource-constrained environments
+- [x] **Embedded system example** (`ntp_usg-proto/examples/embedded_nostd.rs`)
+  - `no_std`-compatible API demonstration (FromBytes/ToBytes)
+  - Zero heap allocation, stack-only buffers
+  - Compile-time size constants, round-trip parsing, error handling
 
-- [ ] **High-precision time synchronization**
-  - PPS (Pulse Per Second) integration
-  - Hardware timestamping
-  - Sub-millisecond accuracy
+- [x] **High-precision time synchronization** (`examples/high_precision.rs`)
+  - PPS (Pulse Per Second) integration with nanosecond precision
+  - Hardware timestamping (SO_TIMESTAMPING) capability detection
+  - Continuous monitoring with 10-sample statistical windows
 
-- [ ] **Load balancer / rate limiter**
-  - Server-side rate limiting
-  - Access control lists
-  - Request throttling
+- [x] **Load balancer / rate limiter** (`ntp_usg-server/examples/rate_limiter.rs`)
+  - Per-client rate limiting (RFC 8633 BCP 223)
+  - IP-based access control lists (allow/deny with CIDR)
+  - KoD responses (RATE, DENY, RSTR)
 
 ### 2. Integration Tests with Real NTP Servers 🧪 ✅
 

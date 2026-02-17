@@ -143,6 +143,10 @@ required-features = ["gps", "pps"]
 name = "hwts_demo"
 required-features = ["hwts"]
 
+[[example]]
+name = "high_precision"
+required-features = ["pps", "hwts"]
+
 [[bench]]
 name = "selection_benchmark"
 harness = false

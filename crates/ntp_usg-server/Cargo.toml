@@ -72,5 +72,9 @@ required-features = ["nts"]
 name = "stratum1_server"
 required-features = ["refclock"]
 
+[[example]]
+name = "rate_limiter"
+required-features = ["tokio"]
+
 [lints]
 workspace = true

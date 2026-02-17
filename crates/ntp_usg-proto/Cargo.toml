@@ -36,5 +36,8 @@ rand = { workspace = true, optional = true }
 [dev-dependencies]
 proptest = { workspace = true }
 
+[[example]]
+name = "embedded_nostd"
+
 [lints]
 workspace = true
