@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1771355329899,
+  "lastUpdate": 1771359051677,
   "repoUrl": "https://github.com/192d-Wing/ntp_usg",
   "entries": {
     "Selection Algorithm Benchmarks": [
@@ -215,6 +215,114 @@ window.BENCHMARK_DATA = {
             "name": "full_selection_pipeline/20",
             "value": 2757,
             "range": "± 2216",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "1456055067",
+            "username": "1456055067"
+          },
+          "committer": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "1456055067",
+            "username": "1456055067"
+          },
+          "distinct": true,
+          "id": "30d9b54013c678586af329e8a9abb0c906244248",
+          "message": "feat: add post-quantum NTS and IPv6-first defaults\n\nEnable post-quantum key exchange (X25519MLKEM768) for NTS via the\n`pq-nts` feature flag, which is auto-enabled by `nts`/`nts-smol`.\nTLS 1.3 negotiation falls back to classical X25519 automatically.\n\nMake IPv6 the default address family for both client DNS resolution\nand server listen addresses. The `ipv4` feature restores the previous\nIPv4-only behavior. Add pre-commit hooks for tests and doc checks.",
+          "timestamp": "2026-02-17T13:53:55-06:00",
+          "tree_id": "7830657a3002d2f78a3bfd2d8d99a9f568e22c51",
+          "url": "https://github.com/192d-Wing/ntp_usg/commit/30d9b54013c678586af329e8a9abb0c906244248"
+        },
+        "date": 1771359051266,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "select_truechimers/3",
+            "value": 62,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/5",
+            "value": 139,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/10",
+            "value": 351,
+            "range": "± 18",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/20",
+            "value": 777,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/3",
+            "value": 22,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/5",
+            "value": 107,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/10",
+            "value": 504,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/15",
+            "value": 1361,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/3",
+            "value": 29,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/5",
+            "value": 38,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/10",
+            "value": 51,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/5",
+            "value": 343,
+            "range": "± 326",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/10",
+            "value": 1013,
+            "range": "± 845",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/20",
+            "value": 2812,
+            "range": "± 1082",
             "unit": "ns/iter"
           }
         ]
