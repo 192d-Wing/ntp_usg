@@ -224,11 +224,12 @@ jobs:
       - name: Generate minimal-versions lockfile
         run: cargo +nightly update -Z minimal-versions
       - name: Check with minimal versions
-        # Exclude 'gps' feature: its transitive build-dep chain
-        # (serialport → libudev → pkg-config) has no stable minimal version.
+        # Exclude features whose transitive deps have broken minimal versions:
+        #   gps: serialport → libudev → pkg-config 0.3.2 (#![feature])
+        #   smol-runtime/nts-smol: smol → async-fs 2.0.0 (won't compile)
         run: >-
           cargo +stable check -p ntp_usg-proto --all-features &&
           cargo +stable check -p ntp_usg-server
-          --features tokio,nts,symmetric,broadcast,refclock,pps,smol-runtime,nts-smol &&
+          --features tokio,nts,symmetric,broadcast,refclock,pps &&
           cargo +stable check -p ntp_usg-client
-          --features tokio,nts,clock,discipline,symmetric,broadcast,refclock,pps,hwts,smol-runtime,nts-smol
+          --features tokio,nts,clock,discipline,symmetric,broadcast,refclock,pps,hwts
