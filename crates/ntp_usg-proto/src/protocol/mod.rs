@@ -50,9 +50,15 @@ pub(crate) fn be_u32_to_bytes(u: u32) -> [u8; 4] {
     ]
 }
 
+#[cfg(feature = "ntpv5")]
+pub mod bloom;
 mod bytes;
 #[cfg(feature = "std")]
 mod io;
+#[cfg(feature = "std")]
+pub(crate) mod md5;
+#[cfg(feature = "ntpv5")]
+pub mod ntpv5;
 mod traits;
 mod types;
 

@@ -19,6 +19,11 @@ use crate::request::compute_offset_delay;
 use crate::selection::{self, PeerCandidate};
 use crate::{KissOfDeathError, protocol, unix_time};
 
+#[cfg(feature = "ntpv5")]
+use ntp_proto::protocol::bloom::BloomFilter;
+#[cfg(feature = "ntpv5")]
+use ntp_proto::protocol::ntpv5::Timescale;
+
 /// Convert an NTP [`ShortFormat`](protocol::ShortFormat) value to seconds as `f64`.
 pub(crate) fn short_format_to_secs(sf: &protocol::ShortFormat) -> f64 {
     sf.seconds as f64 + sf.fraction as f64 / 65536.0
@@ -107,6 +112,43 @@ pub(crate) struct NtsPeerState {
     pub(crate) cookie_len: usize,
 }
 
+/// NTPv5 version negotiation and session state for a peer.
+///
+/// Follows the version negotiation mechanism in `draft-ietf-ntp-ntpv5-07`
+/// Section 5: the client places a magic value in the NTPv4 Reference Timestamp
+/// field to signal V5 support. If the server echoes it, the peer transitions
+/// to V5 mode; otherwise it stays on V4.
+#[cfg(feature = "ntpv5")]
+pub(crate) enum NtpV5PeerState {
+    /// Probing: send V4 requests with the negotiation magic.
+    Negotiating {
+        /// Number of V4 requests sent with the magic so far.
+        attempts: u8,
+    },
+    /// Server supports V5 — use V5 packets from now on.
+    V5Active {
+        /// Assembled Bloom filter for loop detection (boxed to reduce enum size).
+        bloom_filter: Box<BloomFilter>,
+        /// Whether we have received all chunks of the Bloom filter.
+        bloom_complete: bool,
+        /// Next byte offset to request from the Bloom filter.
+        bloom_offset: u16,
+        /// Server cookie from the last response (for interleaved mode).
+        server_cookie: u64,
+        /// Client cookie we sent in the current/most-recent request.
+        current_client_cookie: u64,
+        /// Client cookie we sent in the previous request (for interleaved matching).
+        prev_client_cookie: u64,
+        /// Preferred timescale.
+        timescale: Timescale,
+    },
+    /// Server does not support V5 — stay on V4.
+    V4Only {
+        /// Number of V4 exchanges since the last V5 probe.
+        exchanges_since_probe: u32,
+    },
+}
+
 /// State maintained for a single NTP server peer.
 pub(crate) struct PeerState {
     /// Resolved socket address of this peer.
@@ -136,6 +178,10 @@ pub(crate) struct PeerState {
     /// NTS state, present only for NTS-authenticated peers.
     #[cfg(any(feature = "nts", feature = "nts-smol"))]
     pub(crate) nts_state: Option<NtsPeerState>,
+    /// NTPv5 negotiation/session state, present only when the `ntpv5` feature
+    /// is enabled and the peer was created with V5 negotiation.
+    #[cfg(feature = "ntpv5")]
+    pub(crate) v5_state: Option<NtpV5PeerState>,
 }
 
 impl PeerState {
@@ -155,6 +201,34 @@ impl PeerState {
             demobilized: false,
             #[cfg(any(feature = "nts", feature = "nts-smol"))]
             nts_state: None,
+            #[cfg(feature = "ntpv5")]
+            v5_state: None,
+        }
+    }
+
+    /// Create a peer that will attempt NTPv5 version negotiation.
+    ///
+    /// The peer starts in the `Negotiating` state and will probe the server
+    /// with V4 packets containing the version negotiation magic. If the server
+    /// responds with the magic echoed, the peer transitions to `V5Active`.
+    #[cfg(feature = "ntpv5")]
+    pub(crate) fn new_v5(addr: SocketAddr, initial_poll: u8) -> Self {
+        PeerState {
+            addr,
+            poll_exponent: initial_poll,
+            reachability: 0,
+            filter: SampleFilter::new(),
+            stratum: None,
+            root_delay_secs: 0.0,
+            root_dispersion_secs: 0.0,
+            prev_t1: None,
+            prev_t4: None,
+            current_t1: None,
+            interleaved: false,
+            demobilized: false,
+            #[cfg(any(feature = "nts", feature = "nts-smol"))]
+            nts_state: None,
+            v5_state: Some(NtpV5PeerState::Negotiating { attempts: 0 }),
         }
     }
 
@@ -188,6 +262,8 @@ impl PeerState {
                 nts_ke_server,
                 cookie_len,
             }),
+            #[cfg(feature = "ntpv5")]
+            v5_state: None,
         }
     }
 
@@ -256,6 +332,105 @@ impl PeerState {
         self.prev_t4 = Some(t4);
 
         Ok(PollResult::Sample(sample, interleaved))
+    }
+
+    /// Update peer state from a valid NTPv5 response.
+    ///
+    /// NTPv5 uses cookie matching instead of origin timestamp matching for
+    /// interleaved mode detection (via the `INTERLEAVED` flag in `NtpV5Flags`).
+    #[cfg(feature = "ntpv5")]
+    pub(crate) fn process_response_v5(
+        &mut self,
+        response: &ntp_proto::protocol::ntpv5::PacketV5,
+        t4: protocol::TimestampFormat,
+        expected_client_cookie: u64,
+    ) -> io::Result<PollResult> {
+        use ntp_proto::protocol::ntpv5::NtpV5Flags;
+
+        self.stratum = Some(response.stratum);
+        self.root_delay_secs = response.root_delay.to_seconds_f64();
+        self.root_dispersion_secs = response.root_dispersion.to_seconds_f64();
+
+        // V5 anti-replay: client_cookie in the response must match what we sent.
+        if response.client_cookie != expected_client_cookie {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "NTPv5 client cookie mismatch",
+            ));
+        }
+
+        let interleaved = response.flags.is_interleaved();
+        let (t2, t3) = if interleaved {
+            // Interleaved mode: T2/T3 are from the *previous* exchange,
+            // paired with our prev_t1/prev_t4.
+            if let (Some(pt1), Some(pt4)) = (self.prev_t1, self.prev_t4) {
+                let _ = pt1; // T1 from previous exchange (used below via prev_t4)
+                let t4_instant = unix_time::Instant::from(pt4);
+                let t2 = unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
+                let t3 = unix_time::timestamp_to_instant(response.transmit_timestamp, &t4_instant);
+                let t1 = unix_time::timestamp_to_instant(pt1, &t4_instant);
+                let (offset, delay) = compute_offset_delay(&t1, &t2, &t3, &t4_instant);
+
+                self.prev_t1 = self.current_t1;
+                self.prev_t4 = Some(t4);
+
+                return Ok(PollResult::Sample(
+                    ClockSample {
+                        offset,
+                        delay,
+                        age: 0.0,
+                        dispersion: 0.0,
+                        epoch: std::time::Instant::now(),
+                    },
+                    true,
+                ));
+            } else {
+                // First exchange with interleaved flag — fall through to basic.
+                (response.receive_timestamp, response.transmit_timestamp)
+            }
+        } else {
+            (response.receive_timestamp, response.transmit_timestamp)
+        };
+
+        // Basic mode computation.
+        // V5 doesn't put T1 on the wire; we use the T1 we recorded locally.
+        let t1_ts = self.current_t1.ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "no T1 recorded for V5 exchange")
+        })?;
+
+        let t4_instant = unix_time::Instant::from(t4);
+        let t1_instant = unix_time::timestamp_to_instant(t1_ts, &t4_instant);
+        let t2_instant = unix_time::timestamp_to_instant(t2, &t4_instant);
+        let t3_instant = unix_time::timestamp_to_instant(t3, &t4_instant);
+        let (offset, delay) =
+            compute_offset_delay(&t1_instant, &t2_instant, &t3_instant, &t4_instant);
+
+        // Rotate timestamps for next exchange.
+        self.prev_t1 = self.current_t1;
+        self.prev_t4 = Some(t4);
+
+        // Update V5 state with the new server cookie.
+        if let Some(NtpV5PeerState::V5Active {
+            ref mut server_cookie,
+            ref mut prev_client_cookie,
+            current_client_cookie,
+            ..
+        }) = self.v5_state
+        {
+            *server_cookie = response.server_cookie;
+            *prev_client_cookie = current_client_cookie;
+        }
+
+        Ok(PollResult::Sample(
+            ClockSample {
+                offset,
+                delay,
+                age: 0.0,
+                dispersion: 0.0,
+                epoch: std::time::Instant::now(),
+            },
+            interleaved && response.flags.0 & NtpV5Flags::INTERLEAVED != 0,
+        ))
     }
 }
 
@@ -790,6 +965,24 @@ mod tests {
     }
 
     // ── NtpSyncState ─────────────────────────────────────────────
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn test_peer_state_new_v5_starts_negotiating() {
+        let peer = PeerState::new_v5("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
+        assert!(peer.v5_state.is_some());
+        match peer.v5_state.as_ref().unwrap() {
+            NtpV5PeerState::Negotiating { attempts } => assert_eq!(*attempts, 0),
+            _ => panic!("expected Negotiating state"),
+        }
+    }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn test_peer_state_new_has_no_v5_state() {
+        let peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
+        assert!(peer.v5_state.is_none());
+    }
 
     #[test]
     fn test_sync_state_default() {

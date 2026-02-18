@@ -501,6 +501,41 @@ impl ReferenceIdentifier {
     pub fn is_kiss_of_death(&self) -> bool {
         matches!(self, ReferenceIdentifier::KissOfDeath(_))
     }
+
+    /// Construct a reference identifier from an IPv4 address.
+    ///
+    /// For stratum 2+ servers, the reference identifier is the upstream
+    /// server's IPv4 address (RFC 5905 Section 7.3).
+    #[cfg(feature = "std")]
+    pub fn from_ipv4(addr: std::net::Ipv4Addr) -> Self {
+        ReferenceIdentifier::SecondaryOrClient(addr.octets())
+    }
+
+    /// Construct a reference identifier from an IPv6 address.
+    ///
+    /// Per RFC 5905, the reference identifier for IPv6 peers is the first
+    /// 4 bytes of `MD5(IPv6_address)`.
+    ///
+    /// # Collision Risk
+    ///
+    /// This 4-byte hash may coincidentally match an IPv4 address, causing
+    /// false positive loop detection. `draft-ietf-ntp-refid-updates-05`
+    /// proposes a fix but is stalled. NTPv5's 120-bit Bloom filter
+    /// Reference IDs eliminate this problem entirely.
+    #[cfg(feature = "std")]
+    pub fn from_ipv6(addr: std::net::Ipv6Addr) -> Self {
+        let hash = super::md5::md5_first4(&addr.octets());
+        ReferenceIdentifier::SecondaryOrClient(hash)
+    }
+
+    /// Check if this reference identifier matches an IPv4 address.
+    ///
+    /// Used for loop detection: if the upstream server's reference ID
+    /// matches our own IPv4 address, a timing loop exists.
+    #[cfg(feature = "std")]
+    pub fn matches_ipv4(&self, addr: std::net::Ipv4Addr) -> bool {
+        matches!(self, ReferenceIdentifier::SecondaryOrClient(bytes) if *bytes == addr.octets())
+    }
 }
 
 impl PrimarySource {
@@ -519,10 +554,12 @@ impl Version {
     pub const V3: Self = Version(3);
     /// NTP version 4 (current standard).
     pub const V4: Self = Version(4);
+    /// NTP version 5 (`draft-ietf-ntp-ntpv5`).
+    pub const V5: Self = Version(5);
 
     /// Whether or not the version is a known, valid version.
     pub fn is_known(&self) -> bool {
-        self.0 >= 1 && self.0 <= 4
+        self.0 >= 1 && self.0 <= 5
     }
 }
 

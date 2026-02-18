@@ -35,6 +35,8 @@ broadcast = []
 refclock = ["tokio", "dep:ntp_usg-client", "dep:async-trait"]
 gps = ["refclock", "ntp_usg-client/gps"]
 pps = ["refclock", "ntp_usg-client/pps"]
+socket-opts = ["dep:socket2"]
+ntpv5 = ["ntp_usg-proto/ntpv5"]
 smol-runtime = ["dep:smol", "dep:futures-lite"]
 nts-smol = [
     "smol-runtime",
@@ -58,6 +60,7 @@ smol = { workspace = true, optional = true }
 futures-rustls = { workspace = true, optional = true }
 futures-lite = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
+socket2 = { workspace = true, optional = true }
 async-trait = { version = "0.1.50", optional = true }
 
 [dev-dependencies]

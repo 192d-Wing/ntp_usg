@@ -52,6 +52,7 @@ windows-sys = { version = "0.61", features = [
 ] }
 chrono = "0.4"
 ring = "0.17"
+socket2 = { version = "0.5", features = ["all"] }
 proptest = "1"
 
 [profile.release]

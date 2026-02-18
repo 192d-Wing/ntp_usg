@@ -53,6 +53,8 @@ jobs:
         run: cargo nextest run --workspace --verbose -F ntp_usg-client/roughtime
       - name: Run tests (ipv4)
         run: cargo nextest run --workspace --verbose -F ntp_usg-client/ipv4 -F ntp_usg-server/ipv4
+      - name: Run tests (socket-opts)
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/socket-opts -F ntp_usg-server/socket-opts
 
   test-windows:
     name: Test (${{ matrix.runner }}, ${{ matrix.rust }})
@@ -84,6 +86,8 @@ jobs:
         run: cargo nextest run --workspace --verbose -F ntp_usg-client/roughtime
       - name: Run tests (ipv4)
         run: cargo nextest run --workspace --verbose -F ntp_usg-client/ipv4 -F ntp_usg-server/ipv4
+      - name: Run tests (socket-opts)
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/socket-opts -F ntp_usg-server/socket-opts
 
   test-macos:
     name: Test (macOS, ${{ matrix.rust }})
@@ -114,6 +118,8 @@ jobs:
         run: cargo nextest run --workspace --verbose -F ntp_usg-client/roughtime
       - name: Run tests (ipv4)
         run: cargo nextest run --workspace --verbose -F ntp_usg-client/ipv4 -F ntp_usg-server/ipv4
+      - name: Run tests (socket-opts)
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/socket-opts -F ntp_usg-server/socket-opts
 
   coverage:
     name: Coverage
@@ -242,6 +248,6 @@ jobs:
         run: >-
           cargo +stable check -p ntp_usg-proto --all-features &&
           cargo +stable check -p ntp_usg-server
-          --features tokio,nts,symmetric,broadcast,refclock,pps,ipv4 &&
+          --features tokio,nts,symmetric,broadcast,refclock,pps,ipv4,socket-opts &&
           cargo +stable check -p ntp_usg-client
-          --features tokio,nts,clock,discipline,symmetric,broadcast,refclock,pps,hwts,ipv4,roughtime
+          --features tokio,nts,clock,discipline,symmetric,broadcast,refclock,pps,hwts,ipv4,roughtime,socket-opts

@@ -262,25 +262,23 @@ Full support for high-precision reference clocks and Stratum 1 NTP server operat
 
 **Target**: 2027
 
-### 1. Roughtime Protocol Client 🔐
+### 1. Roughtime Protocol Client 🔐 ✅
 
 **Priority**: High — near-RFC, deps already in workspace
-**Status**: Planned
+**Status**: Complete
 
 Authenticated coarse (~1 second) time synchronization with cryptographic proof of server malfeasance per `draft-ietf-ntp-roughtime-15` (IESG "Waiting for AD Go-Ahead" — one step from RFC publication).
 
-- [ ] Tag-value map encoder/decoder (little-endian 32-bit tags)
-- [ ] Ed25519 signature verification (delegation certificate `DELE`/`MINT`/`MAXT`)
-- [ ] SHA-512 Merkle tree path verifier (client-side proof validation)
-- [ ] Single-server `RoughtimeClient::request()` returning timestamp + radius
-- [ ] Multi-server chaining for cryptographic malfeasance detection
-- [ ] Feature gate: `roughtime`
+- [x] Tag-value map encoder/decoder (little-endian 32-bit tags, zero-copy `TagValueMap<'a>`)
+- [x] Ed25519 signature verification (delegation certificate `DELE`/`MINT`/`MAXT` + response `SREP`)
+- [x] SHA-512 Merkle tree path verifier (client-side proof validation)
+- [x] Single-server sync + async API: `roughtime::request()` / `roughtime::async_request()`
+- [x] Multi-server chaining via `build_chained_request()` (SHA-512 nonce derivation)
+- [x] Feature gate: `roughtime` (proto + client)
+- [x] Integration tests against Cloudflare Roughtime (`roughtime.cloudflare.com:2003`)
+- [x] Example comparing Roughtime vs NTP time
 
-**Use case**: Complementary sanity-check layer alongside NTP. Detects grossly wrong NTP servers (minutes/hours off) with a cryptographically verifiable receipt. Replaces deprecated NTP broadcast mode validation use case per RFC 8633.
-
-**New deps**: `ed25519-dalek` or `ring` (already transitive via rustls), `sha2` (RustCrypto). `rand` and `byteorder` already in workspace.
-
-**Reference**: `roughenough` 2.0.0-draft14 (existing Rust impl targeting draft-14)
+**Implementation**: Uses `ring` 0.17 for Ed25519 and SHA-512 (zero new dependencies — already transitive via rustls). Context strings prepended to signed messages matching `roughenough` 2.0's approach.
 
 ---
 
@@ -301,25 +299,25 @@ Enable quantum-resistant key exchange for NTS-KE (RFC 8915) using ML-KEM hybrid 
 
 ---
 
-### 3. IPv6-only Mode Optimizations 🌐
+### 3. IPv6-only Mode Optimizations 🌐 ✅
 
-**Priority**: Medium — incremental improvements, no new deps
-**Status**: Partially complete
+**Priority**: Medium — incremental improvements
+**Status**: Complete
 
-Improve correctness and ergonomics for IPv6-only deployments.
+Improved correctness and ergonomics for IPv6-only deployments.
 
 - [x] IPv6-first DNS resolution (`prefer_addresses()` helper, filters to AAAA with fallback)
 - [x] Server default listen addresses changed to `[::]` (dual-stack)
 - [x] Feature gate: `ipv4` to restore IPv4-only behavior
-- [ ] Type-safe `RefId` enum: `Ipv4(Ipv4Addr)`, `Ipv6Hash([u8;4])`, `KissCode([u8;4])`, `ClockSource([u8;4])` — with loop-detection collision warning for IPv6 peers
-- [ ] IPv6 multicast server discovery (`FF02::101:123`) — zero-configuration NTP on local segment
-- [ ] `IPV6_V6ONLY` socket option for IPv6-only binding (`socket2` crate)
-- [ ] Happy Eyeballs (RFC 8305) — parallel IPv6/IPv4 connection attempts with preference
-- [ ] DSCP/Traffic Class marking (`IPV6_TCLASS`) for QoS-aware networks
+- [x] Type-safe RefId helpers: `from_ipv4()`, `from_ipv6()` (MD5 hash, first 4 bytes), `matches_ipv4()` loop-detection — with collision warning docs for IPv6 peers
+- [x] IPv6 multicast server discovery (`[ff02::101]:123`) — `MulticastConfig`, `join_multicast_v6()`, `set_multicast_interface_v6()` via `socket2`
+- [x] `IPV6_V6ONLY` socket option — `v6only()` builder method on client and server, via `socket2` behind `socket-opts` feature
+- [x] Happy Eyeballs (RFC 8305) — N/A for UDP. RFC 8305 is a TCP connection-racing algorithm; NTP uses connectionless UDP. The existing `prefer_addresses()` + IPv6-first fallback is the correct UDP analog.
+- [x] DSCP/Traffic Class marking — `dscp()` builder method on client and server, sets `IP_TOS`/`IPV6_TCLASS` via `socket2` behind `socket-opts` feature
 
 **Background**: RFC 5905 hashes IPv6 addresses to 4-byte REFIDs via MD5 — creating documented collision risk with IPv4 addresses. `draft-ietf-ntp-refid-updates-05` proposes a fix but is stalled. NTPv5's 120-bit Bloom filter REFIDs eliminate the problem entirely.
 
-**New deps**: `socket2 = "0.5"` for fine-grained socket options
+**Implementation**: Minimal embedded MD5 (`md5.rs`) for IPv6 RefId hashing (no external dep). `socket2 = "0.5"` for `IPV6_V6ONLY`, DSCP, and multicast group management. `SocketOptions` helper is a ZST when `socket-opts` feature is disabled.
 
 ---
 

@@ -38,6 +38,8 @@ gps = ["refclock", "dep:serialport"]
 pps = ["refclock", "dep:libc"]
 hwts = ["refclock", "dep:libc"]
 roughtime = ["tokio", "ntp_usg-proto/roughtime"]
+socket-opts = ["dep:socket2"]
+ntpv5 = ["ntp_usg-proto/ntpv5"]
 smol-runtime = ["dep:smol", "dep:futures-lite"]
 nts-smol = [
     "smol-runtime",
@@ -58,6 +60,7 @@ webpki-roots = { workspace = true, optional = true }
 smol = { workspace = true, optional = true }
 futures-rustls = { workspace = true, optional = true }
 futures-lite = { workspace = true, optional = true }
+socket2 = { workspace = true, optional = true }
 serialport = { version = "4.6", optional = true }
 async-trait = { version = "0.1.50", optional = true }
 

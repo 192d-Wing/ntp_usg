@@ -142,6 +142,13 @@ pub mod smol_nts;
 #[cfg(feature = "roughtime")]
 pub mod roughtime;
 
+/// Socket options for `IPV6_V6ONLY` and DSCP/Traffic Class control.
+///
+/// When the `socket-opts` feature is enabled, uses `socket2` for cross-platform
+/// socket option control. Always compiled (zero-sized type when disabled).
+#[cfg(any(feature = "tokio", feature = "smol-runtime"))]
+mod socket_opts;
+
 // Core request types and blocking networking functions.
 mod request;
 

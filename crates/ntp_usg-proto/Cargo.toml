@@ -27,6 +27,7 @@ std = ["dep:byteorder", "dep:log"]
 alloc = []
 nts = ["std", "dep:aes-siv", "dep:rand"]
 roughtime = ["std", "dep:ring", "dep:rand"]
+ntpv5 = ["std"]
 
 [dependencies]
 byteorder = { workspace = true, optional = true }

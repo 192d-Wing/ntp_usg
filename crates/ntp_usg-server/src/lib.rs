@@ -35,6 +35,10 @@ pub(crate) fn default_listen_addr(port: u16) -> String {
     }
 }
 
+/// Socket options for `IPV6_V6ONLY` and DSCP/Traffic Class control.
+#[cfg(any(feature = "tokio", feature = "smol-runtime"))]
+mod socket_opts;
+
 /// Shared types and logic for the NTP server.
 ///
 /// Provides request validation, response building, rate limiting, access control,
@@ -81,3 +85,10 @@ pub mod smol_nts_ke_server;
     any(feature = "tokio", feature = "smol-runtime")
 ))]
 pub mod broadcast;
+
+/// IPv6 multicast NTP discovery support.
+///
+/// Extends broadcast mode with IPv6-specific multicast group management
+/// using `socket2` for `IPV6_JOIN_GROUP` socket options.
+#[cfg(feature = "socket-opts")]
+pub mod multicast;

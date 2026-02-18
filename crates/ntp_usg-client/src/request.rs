@@ -309,6 +309,258 @@ pub(crate) fn validate_response(
     })
 }
 
+/// Build an NTPv4 client request with the version negotiation magic.
+///
+/// Places `NEGOTIATION_MAGIC_DRAFT` in the Reference Timestamp field to signal
+/// NTPv5 support during version negotiation (`draft-ietf-ntp-ntpv5-07` §5).
+///
+/// Returns the serialized buffer and the origin timestamp (T1).
+#[cfg(feature = "ntpv5")]
+pub(crate) fn build_v4_negotiation_packet() -> io::Result<(
+    [u8; protocol::Packet::PACKED_SIZE_BYTES],
+    protocol::TimestampFormat,
+)> {
+    use ntp_proto::ntpv5_ext::NEGOTIATION_MAGIC_DRAFT;
+
+    let magic_ts = protocol::TimestampFormat {
+        seconds: (NEGOTIATION_MAGIC_DRAFT >> 32) as u32,
+        fraction: NEGOTIATION_MAGIC_DRAFT as u32,
+    };
+    let packet = protocol::Packet {
+        leap_indicator: protocol::LeapIndicator::default(),
+        version: protocol::Version::V4,
+        mode: protocol::Mode::Client,
+        stratum: protocol::Stratum::UNSPECIFIED,
+        poll: 0,
+        precision: 0,
+        root_delay: protocol::ShortFormat::default(),
+        root_dispersion: protocol::ShortFormat::default(),
+        reference_id: protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Null),
+        reference_timestamp: magic_ts,
+        origin_timestamp: protocol::TimestampFormat::default(),
+        receive_timestamp: protocol::TimestampFormat::default(),
+        transmit_timestamp: unix_time::Instant::now().into(),
+    };
+    let t1 = packet.transmit_timestamp;
+    let mut send_buf = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
+    (&mut send_buf[..]).write_bytes(packet)?;
+    Ok((send_buf, t1))
+}
+
+/// Check if a V4 server response echoes the NTPv5 negotiation magic.
+///
+/// Returns `true` if the server's Reference Timestamp field matches
+/// `NEGOTIATION_MAGIC_DRAFT`, indicating V5 support.
+#[cfg(feature = "ntpv5")]
+pub(crate) fn response_has_negotiation_magic(response: &protocol::Packet) -> bool {
+    use ntp_proto::ntpv5_ext::NEGOTIATION_MAGIC_DRAFT;
+    let ref_ts = response.reference_timestamp;
+    let combined = ((ref_ts.seconds as u64) << 32) | ref_ts.fraction as u64;
+    combined == NEGOTIATION_MAGIC_DRAFT
+}
+
+/// Build an NTPv5 client request packet.
+///
+/// Returns the serialized buffer (header + extension fields) and the client cookie.
+/// The buffer includes the mandatory Draft Identification extension field and
+/// optional Bloom filter request and padding.
+#[cfg(feature = "ntpv5")]
+pub(crate) fn build_v5_request_packet(
+    timescale: ntp_proto::protocol::ntpv5::Timescale,
+    prev_server_cookie: u64,
+    bloom_offset: Option<u16>,
+) -> io::Result<(Vec<u8>, u64)> {
+    use ntp_proto::extension::write_extension_fields;
+    use ntp_proto::ntpv5_ext::{DraftIdentification, Padding, RefIdsRequest};
+    use ntp_proto::protocol::ntpv5::{NtpV5Flags, PacketV5, Time32};
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+
+    // Generate a random client cookie using the standard library's RandomState.
+    // RandomState is seeded with OS entropy, so each build_hasher() call
+    // produces a different hasher. We feed in the current time for uniqueness.
+    let client_cookie = {
+        let s = RandomState::new();
+        let mut h = s.build_hasher();
+        let now = unix_time::Instant::now();
+        h.write_i64(now.secs());
+        h.write_i32(now.subsec_nanos());
+        h.finish()
+    };
+
+    let packet = PacketV5 {
+        leap_indicator: protocol::LeapIndicator::default(),
+        version: protocol::Version::V5,
+        mode: protocol::Mode::Client,
+        stratum: protocol::Stratum::UNSPECIFIED,
+        poll: 0,
+        precision: 0,
+        root_delay: Time32::default(),
+        root_dispersion: Time32::default(),
+        timescale,
+        era: 0,
+        flags: NtpV5Flags(0),
+        server_cookie: prev_server_cookie,
+        client_cookie,
+        receive_timestamp: protocol::TimestampFormat::default(),
+        transmit_timestamp: unix_time::Instant::now().into(),
+    };
+
+    // Serialize the 48-byte header.
+    let mut buf = Vec::with_capacity(256);
+    let mut header = [0u8; 48];
+    (&mut header[..]).write_bytes(packet)?;
+    buf.extend_from_slice(&header);
+
+    // Build extension fields.
+    let mut ext_fields = Vec::new();
+
+    // MUST include Draft Identification (0xF5FF).
+    ext_fields.push(DraftIdentification::current().to_extension_field());
+
+    // Optionally request a Bloom filter chunk.
+    if let Some(offset) = bloom_offset {
+        ext_fields.push(RefIdsRequest { offset }.to_extension_field());
+    }
+
+    // Add padding so the total request is at least 228 bytes (48 header + 180 ext),
+    // giving the server room for response extension fields.
+    let ext_bytes = write_extension_fields(&ext_fields)?;
+    let current_size = 48 + ext_bytes.len();
+    let target_size = 228;
+    if current_size < target_size {
+        let pad_needed = target_size - current_size - 4; // 4 bytes for the padding EF header
+        ext_fields.push(Padding { size: pad_needed }.to_extension_field());
+    }
+
+    // Serialize all extension fields.
+    let ext_bytes = write_extension_fields(&ext_fields)?;
+    buf.extend_from_slice(&ext_bytes);
+
+    Ok((buf, client_cookie))
+}
+
+/// Parse and validate an NTPv5 server response.
+///
+/// Validates source IP, minimum size, VN=5, Mode=Server, Synchronized flag,
+/// non-zero transmit timestamp, and Draft Identification extension field.
+///
+/// Returns the parsed V5 packet, destination timestamp (T4), and parsed
+/// extension fields.
+#[cfg(feature = "ntpv5")]
+pub(crate) fn parse_and_validate_v5_response(
+    recv_buf: &[u8],
+    recv_len: usize,
+    src_addr: SocketAddr,
+    resolved_addrs: &[SocketAddr],
+    expected_client_cookie: u64,
+) -> io::Result<(
+    ntp_proto::protocol::ntpv5::PacketV5,
+    protocol::TimestampFormat,
+    Vec<ntp_proto::extension::ExtensionField>,
+)> {
+    use ntp_proto::extension::parse_extension_fields;
+    use ntp_proto::ntpv5_ext::DraftIdentification;
+    use ntp_proto::protocol::ConstPackedSizeBytes;
+    use ntp_proto::protocol::ntpv5::PacketV5;
+
+    // Record T4 immediately.
+    let t4_instant = unix_time::Instant::now();
+    let t4: protocol::TimestampFormat = t4_instant.into();
+
+    // Verify source address.
+    if !resolved_addrs.iter().any(|a| a.ip() == src_addr.ip()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "response from unexpected source address",
+        ));
+    }
+
+    // Verify minimum size (48 bytes).
+    if recv_len < PacketV5::PACKED_SIZE_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NTPv5 response too short",
+        ));
+    }
+
+    // Parse the 48-byte V5 header.
+    let response: PacketV5 = (&recv_buf[..PacketV5::PACKED_SIZE_BYTES]).read_bytes()?;
+
+    // Validate VN=5.
+    if response.version != protocol::Version::V5 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "expected NTPv5 response",
+        ));
+    }
+
+    // Validate Mode=Server.
+    if response.mode != protocol::Mode::Server {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "unexpected NTPv5 response mode (expected Server)",
+        ));
+    }
+
+    // Validate Synchronized flag.
+    if !response.flags.is_synchronized() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NTPv5 server reports unsynchronized",
+        ));
+    }
+
+    // Check Authentication NAK.
+    if response.flags.is_auth_nak() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NTPv5 server sent Authentication NAK",
+        ));
+    }
+
+    // Validate transmit timestamp non-zero.
+    if response.transmit_timestamp.seconds == 0 && response.transmit_timestamp.fraction == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NTPv5 server transmit timestamp is zero",
+        ));
+    }
+
+    // Validate client cookie matches.
+    if response.client_cookie != expected_client_cookie {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NTPv5 client cookie mismatch",
+        ));
+    }
+
+    // Parse extension fields after the 48-byte header.
+    let ext_data = &recv_buf[PacketV5::PACKED_SIZE_BYTES..recv_len];
+    let ext_fields = if !ext_data.is_empty() {
+        parse_extension_fields(ext_data)?
+    } else {
+        Vec::new()
+    };
+
+    // Verify Draft Identification is present and matches.
+    let has_draft_id = ext_fields.iter().any(|ef| {
+        if let Some(di) = DraftIdentification::from_extension_field(ef) {
+            di.is_current()
+        } else {
+            false
+        }
+    });
+    if !has_draft_id {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NTPv5 response missing or mismatched Draft Identification",
+        ));
+    }
+
+    Ok((response, t4, ext_fields))
+}
+
 /// Send a blocking request to an NTP server with a hardcoded 5 second timeout.
 ///
 /// This is a convenience wrapper around [`request_with_timeout`] with a 5 second timeout.
@@ -785,5 +1037,99 @@ mod tests {
             code: protocol::KissOfDeath::Rate,
         };
         assert!(kod.to_string().contains("RATE"));
+    }
+
+    // ── NTPv5 request building ──────────────────────────────────────
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn test_build_v4_negotiation_packet_has_magic() {
+        let (buf, t1) = build_v4_negotiation_packet().unwrap();
+        let pkt: protocol::Packet = (&buf[..48]).read_bytes().unwrap();
+
+        assert_eq!(pkt.version, protocol::Version::V4);
+        assert_eq!(pkt.mode, protocol::Mode::Client);
+        assert_eq!(pkt.transmit_timestamp, t1);
+
+        // Verify the negotiation magic is in the Reference Timestamp field.
+        assert!(response_has_negotiation_magic(&pkt));
+    }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn test_response_has_negotiation_magic_false_for_normal() {
+        let pkt = protocol::Packet {
+            leap_indicator: protocol::LeapIndicator::NoWarning,
+            version: protocol::Version::V4,
+            mode: protocol::Mode::Server,
+            stratum: protocol::Stratum(2),
+            poll: 6,
+            precision: -20,
+            root_delay: protocol::ShortFormat::default(),
+            root_dispersion: protocol::ShortFormat::default(),
+            reference_id: protocol::ReferenceIdentifier::SecondaryOrClient([127, 0, 0, 1]),
+            reference_timestamp: protocol::TimestampFormat::default(),
+            origin_timestamp: protocol::TimestampFormat::default(),
+            receive_timestamp: protocol::TimestampFormat::default(),
+            transmit_timestamp: protocol::TimestampFormat {
+                seconds: 1,
+                fraction: 0,
+            },
+        };
+        assert!(!response_has_negotiation_magic(&pkt));
+    }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn test_build_v5_request_packet_structure() {
+        use ntp_proto::protocol::ntpv5::{PacketV5, Timescale};
+
+        let (buf, client_cookie) = build_v5_request_packet(Timescale::Utc, 0, None).unwrap();
+
+        // Minimum size: 48-byte header + extension fields.
+        assert!(buf.len() >= 48);
+        // Should be padded to at least 228 bytes.
+        assert!(buf.len() >= 228);
+
+        // Parse V5 header.
+        let pkt: PacketV5 = (&buf[..48]).read_bytes().unwrap();
+        assert_eq!(pkt.version, protocol::Version::V5);
+        assert_eq!(pkt.mode, protocol::Mode::Client);
+        assert_eq!(pkt.client_cookie, client_cookie);
+        assert_eq!(pkt.server_cookie, 0);
+
+        // Client cookie should be non-zero.
+        assert_ne!(client_cookie, 0);
+    }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn test_build_v5_request_unique_cookies() {
+        use ntp_proto::protocol::ntpv5::Timescale;
+
+        let (_, c1) = build_v5_request_packet(Timescale::Utc, 0, None).unwrap();
+        let (_, c2) = build_v5_request_packet(Timescale::Utc, 0, None).unwrap();
+        // RandomState should produce different cookies each time.
+        assert_ne!(c1, c2);
+    }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn test_build_v5_request_with_bloom_offset() {
+        use ntp_proto::protocol::ntpv5::Timescale;
+
+        let (buf, _) = build_v5_request_packet(Timescale::Utc, 0, Some(128)).unwrap();
+        assert!(buf.len() >= 228);
+    }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn test_build_v5_request_with_server_cookie() {
+        use ntp_proto::protocol::ntpv5::{PacketV5, Timescale};
+
+        let server_cookie = 0xDEAD_BEEF_CAFE_BABE;
+        let (buf, _) = build_v5_request_packet(Timescale::Utc, server_cookie, None).unwrap();
+        let pkt: PacketV5 = (&buf[..48]).read_bytes().unwrap();
+        assert_eq!(pkt.server_cookie, server_cookie);
     }
 }

@@ -1,6 +1,8 @@
 use byteorder::{BE, ReadBytesExt, WriteBytesExt};
 use std::io;
 
+#[cfg(feature = "ntpv5")]
+use super::ntpv5::{NtpV5Flags, PacketV5, Time32, Timescale};
 use super::{
     DateFormat, KissOfDeath, LeapIndicator, Mode, Packet, PrimarySource, ReadBytes, ReadFromBytes,
     ReferenceIdentifier, ShortFormat, Stratum, TimestampFormat, Version, WriteBytes, WriteToBytes,
@@ -231,6 +233,116 @@ impl ReadFromBytes for Packet {
             reference_id,
             reference_timestamp,
             origin_timestamp,
+            receive_timestamp,
+            transmit_timestamp,
+        })
+    }
+}
+
+// ============================================================================
+// NTPv5 ReadFromBytes / WriteToBytes implementations
+// ============================================================================
+
+#[cfg(feature = "ntpv5")]
+impl WriteToBytes for Time32 {
+    fn write_to_bytes<W: WriteBytesExt>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_u32::<BE>(self.0)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "ntpv5")]
+impl ReadFromBytes for Time32 {
+    fn read_from_bytes<R: ReadBytesExt>(mut reader: R) -> io::Result<Self> {
+        let raw = reader.read_u32::<BE>()?;
+        Ok(Time32(raw))
+    }
+}
+
+#[cfg(feature = "ntpv5")]
+impl WriteToBytes for Timescale {
+    fn write_to_bytes<W: WriteBytesExt>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_u8(*self as u8)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "ntpv5")]
+impl ReadFromBytes for Timescale {
+    fn read_from_bytes<R: ReadBytesExt>(mut reader: R) -> io::Result<Self> {
+        let raw = reader.read_u8()?;
+        Timescale::try_from(raw)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "unknown timescale value"))
+    }
+}
+
+#[cfg(feature = "ntpv5")]
+impl WriteToBytes for NtpV5Flags {
+    fn write_to_bytes<W: WriteBytesExt>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_u16::<BE>(self.0)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "ntpv5")]
+impl ReadFromBytes for NtpV5Flags {
+    fn read_from_bytes<R: ReadBytesExt>(mut reader: R) -> io::Result<Self> {
+        let raw = reader.read_u16::<BE>()?;
+        Ok(NtpV5Flags(raw))
+    }
+}
+
+#[cfg(feature = "ntpv5")]
+impl WriteToBytes for PacketV5 {
+    fn write_to_bytes<W: WriteBytesExt>(&self, mut writer: W) -> io::Result<()> {
+        let li_vn_mode = (self.leap_indicator, self.version, self.mode);
+        writer.write_bytes(li_vn_mode)?;
+        writer.write_bytes(self.stratum)?;
+        writer.write_i8(self.poll)?;
+        writer.write_i8(self.precision)?;
+        writer.write_bytes(self.root_delay)?;
+        writer.write_bytes(self.root_dispersion)?;
+        writer.write_bytes(self.timescale)?;
+        writer.write_u8(self.era)?;
+        writer.write_bytes(self.flags)?;
+        writer.write_u64::<BE>(self.server_cookie)?;
+        writer.write_u64::<BE>(self.client_cookie)?;
+        writer.write_bytes(self.receive_timestamp)?;
+        writer.write_bytes(self.transmit_timestamp)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "ntpv5")]
+impl ReadFromBytes for PacketV5 {
+    fn read_from_bytes<R: ReadBytesExt>(mut reader: R) -> io::Result<Self> {
+        let (leap_indicator, version, mode) = reader.read_bytes()?;
+        let stratum = reader.read_bytes::<Stratum>()?;
+        let poll = reader.read_i8()?;
+        let precision = reader.read_i8()?;
+        let root_delay = reader.read_bytes::<Time32>()?;
+        let root_dispersion = reader.read_bytes::<Time32>()?;
+        let timescale = reader.read_bytes::<Timescale>()?;
+        let era = reader.read_u8()?;
+        let flags = reader.read_bytes::<NtpV5Flags>()?;
+        let server_cookie = reader.read_u64::<BE>()?;
+        let client_cookie = reader.read_u64::<BE>()?;
+        let receive_timestamp = reader.read_bytes()?;
+        let transmit_timestamp = reader.read_bytes()?;
+        Ok(PacketV5 {
+            leap_indicator,
+            version,
+            mode,
+            stratum,
+            poll,
+            precision,
+            root_delay,
+            root_dispersion,
+            timescale,
+            era,
+            flags,
+            server_cookie,
+            client_cookie,
             receive_timestamp,
             transmit_timestamp,
         })

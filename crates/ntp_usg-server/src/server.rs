@@ -54,6 +54,7 @@ pub struct NtpServerBuilder {
     rate_limit: Option<RateLimitConfig>,
     enable_interleaved: bool,
     max_clients: usize,
+    socket_opts: crate::socket_opts::SocketOptions,
     #[cfg(feature = "refclock")]
     reference_clock: Option<Box<dyn RefClock>>,
 }
@@ -68,6 +69,7 @@ impl NtpServerBuilder {
             rate_limit: None,
             enable_interleaved: false,
             max_clients: 100_000,
+            socket_opts: crate::socket_opts::SocketOptions::default(),
             #[cfg(feature = "refclock")]
             reference_clock: None,
         }
@@ -152,6 +154,35 @@ impl NtpServerBuilder {
         self
     }
 
+    /// Restrict IPv6 sockets to IPv6-only traffic (no IPv4-mapped addresses).
+    ///
+    /// When `true`, the socket will only accept IPv6 connections. When `false`,
+    /// the socket accepts both IPv4 and IPv6 (dual-stack). Default: OS default
+    /// (typically dual-stack on most platforms).
+    ///
+    /// Only applies to IPv6 listen addresses; ignored for IPv4.
+    ///
+    /// Requires the `socket-opts` feature.
+    #[cfg(feature = "socket-opts")]
+    pub fn v6only(mut self, enabled: bool) -> Self {
+        self.socket_opts.v6only = Some(enabled);
+        self
+    }
+
+    /// Set the DSCP (Differentiated Services Code Point) for outgoing packets.
+    ///
+    /// The DSCP value (0-63) is placed in the upper 6 bits of the IP TOS /
+    /// IPv6 Traffic Class byte. Common values:
+    /// - 46 (EF) — Expedited Forwarding, recommended for NTP
+    /// - 0 — Best effort (default)
+    ///
+    /// Requires the `socket-opts` feature.
+    #[cfg(feature = "socket-opts")]
+    pub fn dscp(mut self, value: u8) -> Self {
+        self.socket_opts.dscp = Some(value);
+        self
+    }
+
     /// Set a reference clock for Stratum 1 operation.
     ///
     /// When a reference clock is provided, the server will:
@@ -222,7 +253,22 @@ impl NtpServerBuilder {
 
     /// Build the server. Binds to the configured listen address.
     pub async fn build(self) -> io::Result<NtpServer> {
-        let sock = UdpSocket::bind(&self.listen_addr).await?;
+        #[cfg(feature = "socket-opts")]
+        let sock = {
+            let addr: std::net::SocketAddr = self.listen_addr.parse().map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("socket-opts requires IP:port listen address: {e}"),
+                )
+            })?;
+            let std_sock = self.socket_opts.bind_udp(addr)?;
+            UdpSocket::from_std(std_sock)?
+        };
+        #[cfg(not(feature = "socket-opts"))]
+        let sock = {
+            let _ = self.socket_opts;
+            UdpSocket::bind(&self.listen_addr).await?
+        };
         debug!("NTP server listening on {}", self.listen_addr);
 
         #[cfg(feature = "refclock")]

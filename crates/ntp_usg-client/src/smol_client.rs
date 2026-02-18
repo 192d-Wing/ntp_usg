@@ -55,6 +55,9 @@ use crate::nts_common;
 #[cfg(feature = "nts-smol")]
 use crate::smol_nts;
 
+#[cfg(feature = "ntpv5")]
+use crate::client_common::NtpV5PeerState;
+
 /// Builder for configuring and creating an [`NtpClient`].
 pub struct NtpClientBuilder {
     servers: Vec<String>,
@@ -63,8 +66,11 @@ pub struct NtpClientBuilder {
     min_poll: u8,
     max_poll: u8,
     initial_poll: Option<u8>,
+    socket_opts: crate::socket_opts::SocketOptions,
     #[cfg(feature = "discipline")]
     enable_discipline: bool,
+    #[cfg(feature = "ntpv5")]
+    enable_ntpv5: bool,
 }
 
 impl NtpClientBuilder {
@@ -76,8 +82,11 @@ impl NtpClientBuilder {
             min_poll: protocol::MINPOLL,
             max_poll: protocol::MAXPOLL,
             initial_poll: None,
+            socket_opts: crate::socket_opts::SocketOptions::default(),
             #[cfg(feature = "discipline")]
             enable_discipline: false,
+            #[cfg(feature = "ntpv5")]
+            enable_ntpv5: false,
         }
     }
 
@@ -112,6 +121,26 @@ impl NtpClientBuilder {
         self
     }
 
+    /// Restrict IPv6 sockets to IPv6-only traffic (no IPv4-mapped addresses).
+    ///
+    /// Only applies to IPv6 peer sockets; ignored for IPv4 peers.
+    /// Requires the `socket-opts` feature.
+    #[cfg(feature = "socket-opts")]
+    pub fn v6only(mut self, enabled: bool) -> Self {
+        self.socket_opts.v6only = Some(enabled);
+        self
+    }
+
+    /// Set the DSCP (Differentiated Services Code Point) for outgoing NTP packets.
+    ///
+    /// The DSCP value (0-63) is placed in the upper 6 bits of the IP TOS /
+    /// IPv6 Traffic Class byte. Requires the `socket-opts` feature.
+    #[cfg(feature = "socket-opts")]
+    pub fn dscp(mut self, value: u8) -> Self {
+        self.socket_opts.dscp = Some(value);
+        self
+    }
+
     /// Enable the clock discipline loop (PLL/FLL) and periodic clock adjustment.
     ///
     /// Requires the `discipline` feature (which implies `clock`).
@@ -119,6 +148,15 @@ impl NtpClientBuilder {
     #[cfg(feature = "discipline")]
     pub fn enable_discipline(mut self, enable: bool) -> Self {
         self.enable_discipline = enable;
+        self
+    }
+
+    /// Enable NTPv5 version negotiation for all peers.
+    ///
+    /// Requires the `ntpv5` feature.
+    #[cfg(feature = "ntpv5")]
+    pub fn ntpv5(mut self, enable: bool) -> Self {
+        self.enable_ntpv5 = enable;
         self
     }
 
@@ -154,7 +192,15 @@ impl NtpClientBuilder {
             let addrs: Vec<SocketAddr> =
                 crate::request::prefer_addresses(smol::net::resolve(server.as_str()).await?);
             if let Some(&addr) = addrs.first() {
-                peers.push(PeerState::new(addr, initial_poll));
+                #[cfg(feature = "ntpv5")]
+                let peer = if self.enable_ntpv5 {
+                    PeerState::new_v5(addr, initial_poll)
+                } else {
+                    PeerState::new(addr, initial_poll)
+                };
+                #[cfg(not(feature = "ntpv5"))]
+                let peer = PeerState::new(addr, initial_poll);
+                peers.push(peer);
             } else {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -196,6 +242,7 @@ impl NtpClientBuilder {
                 min_poll,
                 max_poll,
                 total_responses: 0,
+                socket_opts: self.socket_opts,
                 #[cfg(feature = "discipline")]
                 discipline: if self.enable_discipline {
                     Some(crate::discipline::ClockDiscipline::new())
@@ -224,6 +271,7 @@ pub struct NtpClient {
     min_poll: u8,
     max_poll: u8,
     total_responses: u64,
+    socket_opts: crate::socket_opts::SocketOptions,
     #[cfg(feature = "discipline")]
     discipline: Option<crate::discipline::ClockDiscipline>,
     #[cfg(feature = "discipline")]
@@ -309,7 +357,7 @@ impl NtpClient {
                 1u64 << self.peers[idx].poll_exponent
             );
 
-            let result = Self::poll_peer(&mut self.peers[idx]).await;
+            let result = Self::poll_peer(&mut self.peers[idx], &self.socket_opts).await;
 
             match result {
                 Ok(PollResult::Sample(sample, interleaved)) => {
@@ -379,17 +427,37 @@ impl NtpClient {
     }
 
     /// Poll a single peer and return the result.
-    async fn poll_peer(peer: &mut PeerState) -> io::Result<PollResult> {
+    async fn poll_peer(
+        peer: &mut PeerState,
+        socket_opts: &crate::socket_opts::SocketOptions,
+    ) -> io::Result<PollResult> {
         #[cfg(feature = "nts-smol")]
         if peer.nts_state.is_some() {
             let mut nts = peer.nts_state.take().unwrap();
-            let result = Self::poll_peer_nts(peer, &mut nts).await;
+            let result = Self::poll_peer_nts(peer, &mut nts, socket_opts).await;
             peer.nts_state = Some(nts);
             return result;
         }
 
-        let bind_addr = bind_addr_for(&peer.addr);
-        let sock = UdpSocket::bind(bind_addr).await?;
+        #[cfg(feature = "ntpv5")]
+        if peer.v5_state.is_some() {
+            let mut v5 = peer.v5_state.take().unwrap();
+            let result = Self::poll_peer_v5(peer, &mut v5, socket_opts).await;
+            peer.v5_state = Some(v5);
+            return result;
+        }
+
+        #[cfg(feature = "socket-opts")]
+        let sock = {
+            let bind_addr: SocketAddr = bind_addr_for(&peer.addr).parse().unwrap();
+            let std_sock = socket_opts.bind_udp(bind_addr)?;
+            UdpSocket::from(smol::Async::new(std_sock)?)
+        };
+        #[cfg(not(feature = "socket-opts"))]
+        let sock = {
+            let _ = socket_opts;
+            UdpSocket::bind(bind_addr_for(&peer.addr)).await?
+        };
 
         let (send_buf, t1) = build_request_packet()?;
         peer.current_t1 = Some(t1);
@@ -432,6 +500,7 @@ impl NtpClient {
     async fn poll_peer_nts(
         peer: &mut PeerState,
         nts_state: &mut NtsPeerState,
+        socket_opts: &crate::socket_opts::SocketOptions,
     ) -> io::Result<PollResult> {
         // Replenish cookies if running low.
         if nts_state.cookies.len() <= nts_common::COOKIE_REKEY_THRESHOLD {
@@ -468,8 +537,17 @@ impl NtpClient {
             nts_common::build_nts_request(&nts_state.c2s_key, nts_state.aead_algorithm, cookie)?;
         peer.current_t1 = Some(t1);
 
-        let bind_addr = bind_addr_for(&peer.addr);
-        let sock = UdpSocket::bind(bind_addr).await?;
+        #[cfg(feature = "socket-opts")]
+        let sock = {
+            let bind_addr: SocketAddr = bind_addr_for(&peer.addr).parse().unwrap();
+            let std_sock = socket_opts.bind_udp(bind_addr)?;
+            UdpSocket::from(smol::Async::new(std_sock)?)
+        };
+        #[cfg(not(feature = "socket-opts"))]
+        let sock = {
+            let _ = socket_opts;
+            UdpSocket::bind(bind_addr_for(&peer.addr)).await?
+        };
         let timeout = Duration::from_secs(5);
 
         futures_lite::future::or(sock.send_to(&send_buf, peer.addr), async {
@@ -509,6 +587,249 @@ impl NtpClient {
                 nts_state.cookies.extend(new_cookies);
 
                 peer.process_response(&response, t4, t1)
+            }
+        }
+    }
+
+    /// Poll a single NTPv5 peer through the version negotiation state machine.
+    #[cfg(feature = "ntpv5")]
+    async fn poll_peer_v5(
+        peer: &mut PeerState,
+        v5_state: &mut NtpV5PeerState,
+        socket_opts: &crate::socket_opts::SocketOptions,
+    ) -> io::Result<PollResult> {
+        use crate::request::{
+            build_v4_negotiation_packet, build_v5_request_packet, parse_and_validate_v5_response,
+            response_has_negotiation_magic,
+        };
+        use ntp_proto::ntpv5_ext::RefIdsResponse;
+        use ntp_proto::protocol::bloom::BloomFilter;
+        use ntp_proto::protocol::ntpv5::Timescale;
+
+        match v5_state {
+            NtpV5PeerState::Negotiating { attempts } => {
+                let (send_buf, t1) = build_v4_negotiation_packet()?;
+                peer.current_t1 = Some(t1);
+                *attempts += 1;
+
+                #[cfg(feature = "socket-opts")]
+                let sock = {
+                    let bind_addr: SocketAddr = bind_addr_for(&peer.addr).parse().unwrap();
+                    let std_sock = socket_opts.bind_udp(bind_addr)?;
+                    UdpSocket::from(smol::Async::new(std_sock)?)
+                };
+                #[cfg(not(feature = "socket-opts"))]
+                let sock = {
+                    let _ = socket_opts;
+                    UdpSocket::bind(bind_addr_for(&peer.addr)).await?
+                };
+
+                let timeout = Duration::from_secs(5);
+                futures_lite::future::or(sock.send_to(&send_buf, peer.addr), async {
+                    smol::Timer::after(timeout).await;
+                    Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "NTP send timed out",
+                    ))
+                })
+                .await?;
+
+                let mut recv_buf = [0u8; 1024];
+                let (recv_len, src_addr) =
+                    futures_lite::future::or(sock.recv_from(&mut recv_buf), async {
+                        smol::Timer::after(timeout).await;
+                        Err(io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            "NTP recv timed out",
+                        ))
+                    })
+                    .await?;
+
+                let parse_result =
+                    parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
+
+                match parse_result {
+                    Err(e) => match check_kod(&e) {
+                        Some(poll_result) => Ok(poll_result),
+                        None => {
+                            if *attempts >= 3 {
+                                debug!(
+                                    "peer {}: V5 negotiation failed after {} attempts, falling back to V4",
+                                    peer.addr, attempts
+                                );
+                                *v5_state = NtpV5PeerState::V4Only {
+                                    exchanges_since_probe: 0,
+                                };
+                            }
+                            Err(e)
+                        }
+                    },
+                    Ok((response, t4)) => {
+                        if response_has_negotiation_magic(&response) {
+                            debug!(
+                                "peer {}: server echoed V5 negotiation magic, transitioning to V5",
+                                peer.addr
+                            );
+                            *v5_state = NtpV5PeerState::V5Active {
+                                bloom_filter: Box::new(BloomFilter::new()),
+                                bloom_complete: false,
+                                bloom_offset: 0,
+                                server_cookie: 0,
+                                current_client_cookie: 0,
+                                prev_client_cookie: 0,
+                                timescale: Timescale::Utc,
+                            };
+                        } else if *attempts >= 3 {
+                            debug!(
+                                "peer {}: no V5 magic after {} attempts, staying on V4",
+                                peer.addr, attempts
+                            );
+                            *v5_state = NtpV5PeerState::V4Only {
+                                exchanges_since_probe: 0,
+                            };
+                        }
+                        peer.process_response(&response, t4, t1)
+                    }
+                }
+            }
+
+            NtpV5PeerState::V5Active {
+                bloom_filter,
+                bloom_complete,
+                bloom_offset,
+                server_cookie,
+                current_client_cookie,
+                prev_client_cookie,
+                timescale,
+            } => {
+                let bloom_req = if !*bloom_complete {
+                    Some(*bloom_offset)
+                } else {
+                    None
+                };
+                let (send_buf, client_cookie) =
+                    build_v5_request_packet(*timescale, *server_cookie, bloom_req)?;
+
+                peer.current_t1 = Some(crate::unix_time::Instant::now().into());
+                *prev_client_cookie = *current_client_cookie;
+                *current_client_cookie = client_cookie;
+
+                #[cfg(feature = "socket-opts")]
+                let sock = {
+                    let bind_addr: SocketAddr = bind_addr_for(&peer.addr).parse().unwrap();
+                    let std_sock = socket_opts.bind_udp(bind_addr)?;
+                    UdpSocket::from(smol::Async::new(std_sock)?)
+                };
+                #[cfg(not(feature = "socket-opts"))]
+                let sock = {
+                    let _ = socket_opts;
+                    UdpSocket::bind(bind_addr_for(&peer.addr)).await?
+                };
+
+                let timeout = Duration::from_secs(5);
+                futures_lite::future::or(sock.send_to(&send_buf, peer.addr), async {
+                    smol::Timer::after(timeout).await;
+                    Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "NTP send timed out",
+                    ))
+                })
+                .await?;
+
+                let mut recv_buf = [0u8; 2048];
+                let (recv_len, src_addr) =
+                    futures_lite::future::or(sock.recv_from(&mut recv_buf), async {
+                        smol::Timer::after(timeout).await;
+                        Err(io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            "NTP recv timed out",
+                        ))
+                    })
+                    .await?;
+
+                let (response, t4, ext_fields) = parse_and_validate_v5_response(
+                    &recv_buf,
+                    recv_len,
+                    src_addr,
+                    &[peer.addr],
+                    client_cookie,
+                )?;
+
+                // Process Bloom filter chunks from extension fields.
+                for ef in &ext_fields {
+                    if let Some(resp) = RefIdsResponse::from_extension_field(ef) {
+                        bloom_filter.set_chunk(*bloom_offset, &resp.data);
+                        *bloom_offset += resp.data.len() as u16;
+                        if *bloom_offset >= 512 {
+                            *bloom_complete = true;
+                        }
+                    }
+                }
+
+                *server_cookie = response.server_cookie;
+
+                peer.process_response_v5(&response, t4, client_cookie)
+            }
+
+            NtpV5PeerState::V4Only {
+                exchanges_since_probe,
+            } => {
+                #[cfg(feature = "socket-opts")]
+                let sock = {
+                    let bind_addr: SocketAddr = bind_addr_for(&peer.addr).parse().unwrap();
+                    let std_sock = socket_opts.bind_udp(bind_addr)?;
+                    UdpSocket::from(smol::Async::new(std_sock)?)
+                };
+                #[cfg(not(feature = "socket-opts"))]
+                let sock = {
+                    let _ = socket_opts;
+                    UdpSocket::bind(bind_addr_for(&peer.addr)).await?
+                };
+
+                let (send_buf, t1) = build_request_packet()?;
+                peer.current_t1 = Some(t1);
+
+                let timeout = Duration::from_secs(5);
+                futures_lite::future::or(sock.send_to(&send_buf, peer.addr), async {
+                    smol::Timer::after(timeout).await;
+                    Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "NTP send timed out",
+                    ))
+                })
+                .await?;
+
+                let mut recv_buf = [0u8; 1024];
+                let (recv_len, src_addr) =
+                    futures_lite::future::or(sock.recv_from(&mut recv_buf), async {
+                        smol::Timer::after(timeout).await;
+                        Err(io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            "NTP recv timed out",
+                        ))
+                    })
+                    .await?;
+
+                let parse_result =
+                    parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
+
+                *exchanges_since_probe += 1;
+
+                if *exchanges_since_probe >= 256 {
+                    debug!(
+                        "peer {}: re-probing for V5 after {} V4 exchanges",
+                        peer.addr, exchanges_since_probe
+                    );
+                    *v5_state = NtpV5PeerState::Negotiating { attempts: 0 };
+                }
+
+                match parse_result {
+                    Err(e) => match check_kod(&e) {
+                        Some(poll_result) => Ok(poll_result),
+                        None => Err(e),
+                    },
+                    Ok((response, t4)) => peer.process_response(&response, t4, t1),
+                }
             }
         }
     }

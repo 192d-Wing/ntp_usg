@@ -589,8 +589,13 @@ fn version_is_known() {
     let packet = (&buf[..]).read_bytes::<Packet>().unwrap();
     assert!(!packet.version.is_known());
 
-    // Parse a packet with VN=5 to get another unknown version.
+    // Parse a packet with VN=5 (NTPv5 draft) — should be known.
     buf[0] = (buf[0] & 0xC7) | (5 << 3); // VN=5
+    let packet = (&buf[..]).read_bytes::<Packet>().unwrap();
+    assert!(packet.version.is_known());
+
+    // Parse a packet with VN=6 to get another unknown version.
+    buf[0] = (buf[0] & 0xC7) | (6 << 3); // VN=6
     let packet = (&buf[..]).read_bytes::<Packet>().unwrap();
     assert!(!packet.version.is_known());
 }
