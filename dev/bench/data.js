@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1771448864434,
+  "lastUpdate": 1771456085519,
   "repoUrl": "https://github.com/192d-Wing/ntp_usg",
   "entries": {
     "Selection Algorithm Benchmarks": [
@@ -1835,6 +1835,114 @@ window.BENCHMARK_DATA = {
             "name": "full_selection_pipeline/20",
             "value": 2713,
             "range": "± 2235",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "1456055067",
+            "username": "1456055067"
+          },
+          "committer": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "1456055067",
+            "username": "1456055067"
+          },
+          "distinct": true,
+          "id": "494ac5dd0f94cd7b19fb6a5a6ce15c322aabb8cc",
+          "message": "chore: bump version to 4.4.0\n\nAdd 62 unit tests across protocol/io.rs, protocol/bytes.rs, and\nnts_common.rs. Upgrade socket2 0.5→0.6 (set_tos→set_tos_v4/set_tclass_v6).\nRemove dead_code allows on NTS server public API. Replace .parse().unwrap()\nwith const constructors for broadcast/multicast addresses.",
+          "timestamp": "2026-02-18T16:57:39-06:00",
+          "tree_id": "6aa4fc1cea58d37763996f33d84939a9829b6f6f",
+          "url": "https://github.com/192d-Wing/ntp_usg/commit/494ac5dd0f94cd7b19fb6a5a6ce15c322aabb8cc"
+        },
+        "date": 1771456085086,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "select_truechimers/3",
+            "value": 62,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/5",
+            "value": 137,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/10",
+            "value": 360,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/20",
+            "value": 779,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/3",
+            "value": 21,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/5",
+            "value": 108,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/10",
+            "value": 488,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/15",
+            "value": 1228,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/3",
+            "value": 30,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/5",
+            "value": 38,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/10",
+            "value": 51,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/5",
+            "value": 335,
+            "range": "± 318",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/10",
+            "value": 983,
+            "range": "± 817",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/20",
+            "value": 2629,
+            "range": "± 2164",
             "unit": "ns/iter"
           }
         ]
