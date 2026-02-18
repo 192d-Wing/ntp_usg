@@ -53,13 +53,18 @@ jobs:
           RUSTDOCFLAGS: "-D warnings"
         run: cargo doc --workspace --all-features --no-deps
 
+      - name: Install cargo-cyclonedx
+        run: cargo binstall --no-confirm cargo-cyclonedx || cargo install cargo-cyclonedx
+
       - name: Generate SBOM (CycloneDX)
         run: |
           cargo cyclonedx --all --format json
           TAG_VERSION=${GITHUB_REF#refs/tags/v}
-          for f in ntp_usg*.cdx.json; do
-            mv "$f" "${f%.cdx.json}-${TAG_VERSION}.cdx.json"
-          done
+          # cargo-cyclonedx writes files into each crate directory; collect them
+          mkdir -p sbom
+          find crates -name '*.cdx.json' -exec sh -c \
+            'base=$(basename "$1" .cdx.json); cp "$1" "sbom/${base}-'"${TAG_VERSION}"'.cdx.json"' _ {} \;
+          ls -la sbom/
 
       - name: Extract changelog for this version
         id: changelog
@@ -82,7 +87,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
             --notes-file "${{ steps.changelog.outputs.notes_file }}" \
-            ./*-*.cdx.json
+            sbom/*.cdx.json
         env:
           GH_TOKEN: ${{ github.token }}
 
