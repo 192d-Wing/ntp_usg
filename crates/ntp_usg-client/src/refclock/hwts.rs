@@ -107,6 +107,10 @@ pub fn enable_timestamping(fd: i32, mode: TimestampMode) -> io::Result<()> {
         TimestampMode::HardwareRaw => SOF_TIMESTAMPING_RAW_HARDWARE,
     };
 
+    // SAFETY: setsockopt(2) with SOL_SOCKET/SO_TIMESTAMPING enables kernel packet
+    // timestamping on a valid socket fd. The flags pointer references a stack-allocated
+    // u32 with the correct size passed via size_of::<u32>(). Return != 0 indicates
+    // error (checked inside).
     unsafe {
         let ret = libc::setsockopt(
             fd,
@@ -158,6 +162,10 @@ pub fn get_timestamping_capabilities(
     let test_flags =
         SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
 
+    // SAFETY: setsockopt(2) with SO_TIMESTAMPING to probe hardware timestamping
+    // support. The test_flags pointer references a stack-allocated u32. The socket fd
+    // is caller-provided and assumed valid. Success (ret == 0) indicates the NIC
+    // supports the requested mode; failure is not fatal (we just report unsupported).
     let hw_supported = unsafe {
         let ret = libc::setsockopt(
             fd,
@@ -198,8 +206,12 @@ pub unsafe fn extract_timestamp(cmsg_data: &[u8]) -> Option<HwTimestamp> {
         return None;
     }
 
-    // Hardware timestamp is at index 2
+    // Hardware timestamp is at index 2 in the [software, deprecated, hardware] array
     let hw_ts_offset = mem::size_of::<HwTimestamp>() * 2;
+    // SAFETY: The length check above guarantees cmsg_data contains at least
+    // 3 * size_of::<HwTimestamp>() bytes. hw_ts_offset points to the third
+    // element. HwTimestamp is #[repr(C)] with no padding, so the pointer cast
+    // is valid. The data comes from kernel recvmsg() and is properly aligned.
     let hw_ts = unsafe {
         let ts_ptr = cmsg_data.as_ptr().add(hw_ts_offset) as *const HwTimestamp;
         *ts_ptr

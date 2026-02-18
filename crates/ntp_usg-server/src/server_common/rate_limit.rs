@@ -36,7 +36,7 @@ pub(crate) enum RateLimitResult {
 }
 
 /// Per-client state for rate limiting and interleaved mode tracking.
-pub(crate) struct ClientState {
+pub struct ClientState {
     // Rate limiting.
     /// Timestamp of last valid request from this client.
     last_request_time: Instant,
@@ -55,7 +55,8 @@ pub(crate) struct ClientState {
 }
 
 impl ClientState {
-    pub(crate) fn new(now: Instant) -> Self {
+    /// Create a new client state entry initialized to the given time.
+    pub fn new(now: Instant) -> Self {
         ClientState {
             last_request_time: now,
             request_count: 0,
@@ -68,7 +69,7 @@ impl ClientState {
 }
 
 /// Bounded client state table keyed by IP address (not port, per RFC 9109).
-pub(crate) struct ClientTable {
+pub struct ClientTable {
     entries: HashMap<IpAddr, ClientState>,
     max_entries: usize,
     /// How long until a stale entry can be evicted.
@@ -76,7 +77,8 @@ pub(crate) struct ClientTable {
 }
 
 impl ClientTable {
-    pub(crate) fn new(max_entries: usize) -> Self {
+    /// Create a new client table with the given maximum number of entries.
+    pub fn new(max_entries: usize) -> Self {
         ClientTable {
             entries: HashMap::new(),
             max_entries,

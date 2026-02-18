@@ -149,10 +149,14 @@ mod platform {
         // Convert offset to microseconds for ADJ_OFFSET.
         let offset_usec = (offset_seconds * 1_000_000.0) as i64;
 
+        // SAFETY: libc::timex is a C struct of scalar fields; zeroing produces a valid
+        // (all-zeros) value. No invalid bit patterns exist for this type.
         let mut tx: libc::timex = unsafe { std::mem::zeroed() };
         tx.modes = libc::ADJ_OFFSET;
         tx.offset = offset_usec;
 
+        // SAFETY: clock_adjtime(2) with CLOCK_REALTIME (always valid) and a mutable
+        // pointer to a stack-allocated timex. Return < 0 indicates error (checked below).
         let ret = unsafe { libc::clock_adjtime(libc::CLOCK_REALTIME, &mut tx) };
         if ret < 0 {
             return Err(os_error_from_errno());
@@ -162,7 +166,10 @@ mod platform {
 
     pub(super) fn step(offset_seconds: f64) -> Result<(), ClockError> {
         // Get current time.
+        // SAFETY: libc::timespec is a C struct of scalar fields; zeroing is valid.
         let mut tp: libc::timespec = unsafe { std::mem::zeroed() };
+        // SAFETY: clock_gettime(2) with CLOCK_REALTIME (always valid) and a mutable
+        // pointer to a stack-allocated timespec. Return < 0 indicates error (checked below).
         let ret = unsafe { libc::clock_gettime(libc::CLOCK_REALTIME, &mut tp) };
         if ret < 0 {
             return Err(os_error_from_errno());
@@ -175,6 +182,9 @@ mod platform {
         tp.tv_sec = (total_nanos / 1_000_000_000) as _;
         tp.tv_nsec = (total_nanos % 1_000_000_000) as _;
 
+        // SAFETY: clock_settime(2) with CLOCK_REALTIME and an immutable pointer to a
+        // stack-allocated timespec containing the corrected time. Return < 0 indicates
+        // error (checked below). Requires CAP_SYS_TIME.
         let ret = unsafe { libc::clock_settime(libc::CLOCK_REALTIME, &tp) };
         if ret < 0 {
             return Err(os_error_from_errno());
@@ -195,6 +205,9 @@ mod platform {
             tv_usec: usecs,
         };
 
+        // SAFETY: adjtime(2) with an immutable pointer to a stack-allocated timeval
+        // containing the slew delta, and NULL for olddelta (not needed). Return < 0
+        // indicates error (checked below). Requires root.
         let ret = unsafe { libc::adjtime(&delta, std::ptr::null_mut()) };
         if ret < 0 {
             return Err(os_error_from_errno());
@@ -204,7 +217,10 @@ mod platform {
 
     pub(super) fn step(offset_seconds: f64) -> Result<(), ClockError> {
         // Get current time.
+        // SAFETY: libc::timeval is a C struct of scalar fields; zeroing is valid.
         let mut tv: libc::timeval = unsafe { std::mem::zeroed() };
+        // SAFETY: gettimeofday(2) with a mutable pointer to a stack-allocated timeval
+        // and NULL for timezone (not needed). Return < 0 indicates error (checked below).
         let ret = unsafe { libc::gettimeofday(&mut tv, std::ptr::null_mut()) };
         if ret < 0 {
             return Err(os_error_from_errno());
@@ -216,6 +232,9 @@ mod platform {
         tv.tv_sec = (total_usecs / 1_000_000) as _;
         tv.tv_usec = (total_usecs % 1_000_000) as _;
 
+        // SAFETY: settimeofday(2) with an immutable pointer to a stack-allocated timeval
+        // containing the corrected time, and NULL for timezone. Return < 0 indicates
+        // error (checked below). Requires root.
         let ret = unsafe { libc::settimeofday(&tv, std::ptr::null_mut()) };
         if ret < 0 {
             return Err(os_error_from_errno());
@@ -251,6 +270,9 @@ mod platform {
     pub(super) fn slew(offset_seconds: f64) -> Result<(), ClockError> {
         if offset_seconds.abs() < 1e-9 {
             // Reset to default system tick rate.
+            // SAFETY: SetSystemTimeAdjustment with adjustment=0 and disabled=1 resets
+            // to the default system tick rate. Returns 0 on failure (checked below).
+            // Requires SE_SYSTEMTIME_NAME privilege.
             let ret = unsafe { SetSystemTimeAdjustment(0, 1) };
             if ret == 0 {
                 return Err(os_error());
@@ -261,6 +283,9 @@ mod platform {
         let mut adjustment: u32 = 0;
         let mut increment: u32 = 0;
         let mut disabled: i32 = 0;
+        // SAFETY: GetSystemTimeAdjustment reads the current tick adjustment into
+        // stack-allocated u32/i32 variables via mutable pointers. Returns 0 on failure
+        // (checked below). All pointers are valid and properly aligned.
         let ret =
             unsafe { GetSystemTimeAdjustment(&mut adjustment, &mut increment, &mut disabled) };
         if ret == 0 {
@@ -275,6 +300,9 @@ mod platform {
         let extra_per_tick = offset_100ns / total_ticks;
         let new_adjustment = ((increment as f64) + extra_per_tick).round().max(1.0) as u32;
 
+        // SAFETY: SetSystemTimeAdjustment with the computed tick rate and disabled=0
+        // to enable the custom adjustment. Returns 0 on failure (checked below).
+        // Requires SE_SYSTEMTIME_NAME privilege.
         let ret = unsafe { SetSystemTimeAdjustment(new_adjustment, 0) };
         if ret == 0 {
             return Err(os_error());
@@ -288,6 +316,8 @@ mod platform {
             dwLowDateTime: 0,
             dwHighDateTime: 0,
         };
+        // SAFETY: GetSystemTimeAsFileTime writes the current system time to a
+        // stack-allocated FILETIME via a mutable pointer. Always succeeds (no return value).
         unsafe { GetSystemTimeAsFileTime(&mut ft) };
 
         // Combine into u64 and apply offset.
@@ -299,13 +329,19 @@ mod platform {
         ft.dwHighDateTime = (new_time >> 32) as u32;
 
         // Convert FILETIME to SYSTEMTIME.
+        // SAFETY: SYSTEMTIME is a C struct of scalar fields; zeroing is valid.
         let mut st: SYSTEMTIME = unsafe { std::mem::zeroed() };
+        // SAFETY: FileTimeToSystemTime converts a FILETIME to SYSTEMTIME. Both
+        // pointers are stack-allocated and valid. Returns 0 on failure (checked below).
         let ret = unsafe { FileTimeToSystemTime(&ft, &mut st) };
         if ret == 0 {
             return Err(os_error());
         }
 
         // Set the system time.
+        // SAFETY: SetSystemTime sets the system clock from a valid SYSTEMTIME
+        // (populated by FileTimeToSystemTime above). Returns 0 on failure (checked below).
+        // Requires SE_SYSTEMTIME_NAME privilege.
         let ret = unsafe { SetSystemTime(&st) };
         if ret == 0 {
             return Err(os_error());

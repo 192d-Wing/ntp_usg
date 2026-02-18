@@ -27,13 +27,14 @@ pub use self::network::IpNet;
 pub use self::rate_limit::RateLimitConfig;
 pub use self::state::ServerSystemState;
 
+pub use self::pipeline::{HandleResult, handle_request};
+pub use self::rate_limit::{ClientState, ClientTable};
+pub use self::response::serialize_response_with_t3;
+
 pub(crate) use self::access_control::AccessResult;
 pub(crate) use self::interleaved::{build_interleaved_response, update_client_state};
-pub(crate) use self::pipeline::{HandleResult, handle_request};
-pub(crate) use self::rate_limit::{ClientState, ClientTable, RateLimitResult, check_rate_limit};
+pub(crate) use self::rate_limit::{RateLimitResult, check_rate_limit};
 #[cfg(feature = "symmetric")]
 pub(crate) use self::response::build_symmetric_passive_response;
-pub(crate) use self::response::{
-    build_kod_response, build_server_response, serialize_response_with_t3,
-};
+pub(crate) use self::response::{build_kod_response, build_server_response};
 pub(crate) use self::validation::validate_client_request;

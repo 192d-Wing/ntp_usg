@@ -151,6 +151,9 @@ impl PpsReceiver {
             .map_err(|e| io::Error::other(format!("Failed to open PPS device: {}", e)))?;
 
         // Get PPS capabilities
+        // SAFETY: PPS_GETCAP ioctl reads the PPS device capabilities into a
+        // stack-allocated u32 via a mutable pointer. `fd` is a valid file descriptor
+        // from File::open above. Return != 0 indicates error (checked inside).
         let capabilities = unsafe {
             let mut caps: u32 = 0;
             let ret = libc::ioctl(device.as_raw_fd(), PPS_GETCAP, &mut caps as *mut u32);
@@ -213,6 +216,11 @@ impl RefClock for PpsReceiver {
                     },
                 };
 
+                // SAFETY: PPS_FETCH ioctl blocks until a PPS event occurs (up to
+                // the timeout in fetch_data.timeout). `fd` is a valid PPS device
+                // descriptor cloned from self.device. The mutable pointer to the
+                // stack-allocated PpsFetchData is valid and properly aligned.
+                // Return != 0 indicates error (checked inside).
                 unsafe {
                     let ret = libc::ioctl(fd, PPS_FETCH, &mut fetch_data as *mut PpsFetchData);
                     if ret != 0 {
@@ -252,7 +260,8 @@ impl RefClock for PpsReceiver {
             self.last_sequence = sequence;
 
             // Convert PPS timestamp to Instant
-            let pps_instant = unix_time::Instant::new(pps_time.sec, pps_time.nsec as i32);
+            let pps_instant = unix_time::Instant::new(pps_time.sec, pps_time.nsec as i32)
+                .expect("PPS kernel timestamp has same-sign components");
 
             // Get current system time
             let now = unix_time::Instant::now();

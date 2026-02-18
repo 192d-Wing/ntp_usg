@@ -5,6 +5,31 @@ use std::time;
 /// The number of seconds from 1st January 1900 UTC to the start of the Unix epoch.
 pub const EPOCH_DELTA: i64 = 2_208_988_800;
 
+/// Error returned when creating an [`Instant`] with mixed-sign components.
+///
+/// Both `secs` and `subsec_nanos` must have the same sign (or be zero).
+/// A positive `secs` with negative `subsec_nanos` (or vice versa) is invalid.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InvalidInstantError {
+    /// The seconds component that was passed.
+    pub secs: i64,
+    /// The sub-second nanoseconds component that was passed.
+    pub subsec_nanos: i32,
+}
+
+impl core::fmt::Display for InvalidInstantError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "invalid instant: secs ({}) and subsec_nanos ({}) have mixed signs",
+            self.secs, self.subsec_nanos
+        )
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for InvalidInstantError {}
+
 /// The number of seconds in one NTP era (2^32 seconds, approximately 136 years).
 ///
 /// Era 0 spans from 1900-01-01 00:00:00 UTC to 2036-02-07 06:28:15 UTC.
@@ -51,15 +76,12 @@ impl Instant {
     ///
     /// To indicate a time following `UNIX_EPOCH`, both `secs` and `subsec_nanos` must be positive.
     /// To indicate a time prior to `UNIX_EPOCH`, both `secs` and `subsec_nanos` must be negative.
-    /// Violating these invariants will result in a **panic!**.
-    pub fn new(secs: i64, subsec_nanos: i32) -> Instant {
-        if secs > 0 && subsec_nanos < 0 {
-            panic!("invalid instant: secs was positive but subsec_nanos was negative");
+    /// Returns [`InvalidInstantError`] if the signs are mixed.
+    pub fn new(secs: i64, subsec_nanos: i32) -> Result<Instant, InvalidInstantError> {
+        if (secs > 0 && subsec_nanos < 0) || (secs < 0 && subsec_nanos > 0) {
+            return Err(InvalidInstantError { secs, subsec_nanos });
         }
-        if secs < 0 && subsec_nanos > 0 {
-            panic!("invalid instant: secs was negative but subsec_nanos was positive");
-        }
-        Instant { secs, subsec_nanos }
+        Ok(Instant { secs, subsec_nanos })
     }
 
     /// Uses `std::time::SystemTime::now` and `std::time::UNIX_EPOCH` to determine the current
@@ -77,12 +99,14 @@ impl Instant {
                 let secs = duration.as_secs() as i64;
                 let subsec_nanos = duration.subsec_nanos() as i32;
                 Instant::new(secs, subsec_nanos)
+                    .expect("system clock produces same-sign components")
             }
             Err(sys_time_err) => {
                 let duration_pre_unix_epoch = sys_time_err.duration();
                 let secs = -(duration_pre_unix_epoch.as_secs() as i64);
                 let subsec_nanos = -(duration_pre_unix_epoch.subsec_nanos() as i32);
                 Instant::new(secs, subsec_nanos)
+                    .expect("system clock produces same-sign components")
             }
         }
     }
@@ -137,7 +161,7 @@ pub fn timestamp_to_instant(ts: protocol::TimestampFormat, pivot: &Instant) -> I
     let ntp_secs = era_aware_ntp_seconds(ts.seconds, pivot);
     let secs = ntp_secs - EPOCH_DELTA;
     let subsec_nanos = (ts.fraction as f64 / NTP_SCALE * 1e9) as i32;
-    Instant::new(secs, subsec_nanos)
+    Instant::new(secs, subsec_nanos).expect("era-aware conversion produces same-sign components")
 }
 
 // Conversion implementations.
@@ -146,7 +170,7 @@ impl From<protocol::ShortFormat> for Instant {
     fn from(t: protocol::ShortFormat) -> Self {
         let secs = t.seconds as i64 - EPOCH_DELTA;
         let subsec_nanos = (t.fraction as f64 / NTP_SCALE * 1e9) as i32;
-        Instant::new(secs, subsec_nanos)
+        Instant::new(secs, subsec_nanos).expect("ShortFormat produces same-sign components")
     }
 }
 
@@ -197,7 +221,7 @@ impl From<protocol::DateFormat> for Instant {
         let ntp_secs = d.era_number as i64 * ERA_SECONDS + d.era_offset as i64;
         let secs = ntp_secs - EPOCH_DELTA;
         let subsec_nanos = (d.fraction as f64 / NTP_SCALE_64 * 1e9) as i32;
-        Instant::new(secs, subsec_nanos)
+        Instant::new(secs, subsec_nanos).expect("DateFormat produces same-sign components")
     }
 }
 
@@ -229,7 +253,7 @@ mod tests {
             seconds: 3_913_056_000,
             fraction: 0,
         };
-        let pivot = Instant::new(1_704_067_200, 0);
+        let pivot = Instant::new(1_704_067_200, 0).unwrap();
         let result = timestamp_to_instant(ts, &pivot);
         assert_eq!(result.secs(), 1_704_067_200);
     }
@@ -242,7 +266,7 @@ mod tests {
             seconds: 100_000_000,
             fraction: 0,
         };
-        let pivot = Instant::new(2_185_978_496, 0);
+        let pivot = Instant::new(2_185_978_496, 0).unwrap();
         let result = timestamp_to_instant(ts, &pivot);
         assert_eq!(result.secs(), 2_185_978_496);
     }
@@ -250,7 +274,7 @@ mod tests {
     #[test]
     fn era_boundary_pivot_before_ts_after() {
         // Pivot in Jan 2036 (Era 0). Timestamp NTP=1000 should resolve to Era 1.
-        let pivot = Instant::new(2_082_758_400, 0); // ~2036-01-01
+        let pivot = Instant::new(2_082_758_400, 0).unwrap(); // ~2036-01-01
         let ts = protocol::TimestampFormat {
             seconds: 1000,
             fraction: 0,
@@ -263,7 +287,7 @@ mod tests {
     #[test]
     fn era_boundary_pivot_after_ts_before() {
         // Pivot in Mar 2036 (Era 1). Timestamp near u32::MAX should resolve to Era 0.
-        let pivot = Instant::new(2_087_942_400, 0); // ~2036-03-01
+        let pivot = Instant::new(2_087_942_400, 0).unwrap(); // ~2036-03-01
         let ts = protocol::TimestampFormat {
             seconds: u32::MAX,
             fraction: 0,
@@ -275,7 +299,7 @@ mod tests {
 
     #[test]
     fn date_format_roundtrip_era0() {
-        let instant = Instant::new(1_704_067_200, 500_000_000);
+        let instant = Instant::new(1_704_067_200, 500_000_000).unwrap();
         let date: protocol::DateFormat = instant.into();
         assert_eq!(date.era_number, 0);
         let back: Instant = date.into();
@@ -285,7 +309,7 @@ mod tests {
 
     #[test]
     fn date_format_roundtrip_era1() {
-        let instant = Instant::new(2_185_978_496, 0); // ~2039
+        let instant = Instant::new(2_185_978_496, 0).unwrap(); // ~2039
         let date: protocol::DateFormat = instant.into();
         assert_eq!(date.era_number, 1);
         let back: Instant = date.into();
@@ -294,7 +318,7 @@ mod tests {
 
     #[test]
     fn timestamp_format_roundtrip_with_pivot() {
-        let original = Instant::new(1_704_067_200, 0);
+        let original = Instant::new(1_704_067_200, 0).unwrap();
         let ts: protocol::TimestampFormat = original.into();
         let restored = timestamp_to_instant(ts, &original);
         assert_eq!(restored.secs(), original.secs());
@@ -303,7 +327,7 @@ mod tests {
     #[test]
     fn date_format_negative_era() {
         // A time before 1900 => era -1
-        let instant = Instant::new(-2_300_000_000, 0);
+        let instant = Instant::new(-2_300_000_000, 0).unwrap();
         let date: protocol::DateFormat = instant.into();
         assert_eq!(date.era_number, -1);
         let back: Instant = date.into();

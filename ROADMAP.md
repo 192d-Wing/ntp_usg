@@ -412,6 +412,35 @@ Full NTPv4-to-NTPv5 protocol upgrade per `draft-ietf-ntp-ntpv5-07` (active, expi
 
 ---
 
+## Version 4.3.0 - Hardening Release ✅
+
+**Released**: 2026-02-18
+
+A hardening release with no new features — focused on test coverage, safety documentation, benchmarks, and CI improvements.
+
+### Test Coverage
+
+- ✅ **75 new unit tests** across 4 previously untested modules: `protocol/types.rs` (48), `validation.rs` (11), `response.rs` (10), `interleaved.rs` (6)
+- ✅ **14 existing NTS tests** verified passing
+
+### Safety & Correctness
+
+- ✅ **`Instant::new()` returns `Result`**: Eliminated 2 panics in production code — now returns `Result<Instant, InvalidInstantError>`
+- ✅ **SAFETY comments**: All 16 unsafe blocks across `clock.rs`, `pps.rs`, `hwts.rs` documented with invariants
+
+### Benchmarks
+
+- ✅ **9 criterion benchmarks**: 6 protocol parsing + 3 server throughput
+- ✅ **CI benchmark compilation**: `cargo bench --workspace --no-run` verified in CI
+
+### CI & Documentation
+
+- ✅ **7 new feature combination tests**: `gps`, `pps`, `hwts`, `broadcast+symmetric`, `pq-nts` (tokio/smol)
+- ✅ **`docs/FEATURE_FLAGS.md`**: Complete feature matrix for all 4 crates
+- ✅ **`docs/PLATFORM_SUPPORT.md`**: Platform support matrix (Linux/macOS/Windows/WASM)
+
+---
+
 ## Contributing
 
 We welcome contributions! If you'd like to work on any of these roadmap items:
@@ -432,8 +461,7 @@ Have ideas for the roadmap? Open an issue with the `enhancement` label or start 
 ---
 
 **Last Updated**: 2026-02-18
-**Current Version**: 4.2.0
-**Next Planned Release**: 4.3.0
+**Current Version**: 4.3.0
 
 ## Version 3.2.0 Progress Summary
 

@@ -91,7 +91,7 @@ pub(crate) fn build_kod_response(
 /// as late as possible for maximum accuracy.
 ///
 /// Returns the serialized buffer ready to send.
-pub(crate) fn serialize_response_with_t3(
+pub fn serialize_response_with_t3(
     response: &protocol::Packet,
 ) -> io::Result<[u8; protocol::Packet::PACKED_SIZE_BYTES]> {
     let mut buf = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
@@ -107,4 +107,136 @@ pub(crate) fn serialize_response_with_t3(
     buf[44..48].copy_from_slice(&t3_bytes_frac);
 
     Ok(buf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::{
+        ConstPackedSizeBytes, KissOfDeath, LeapIndicator, Mode, Packet, ReferenceIdentifier,
+        ShortFormat, Stratum, TimestampFormat, Version,
+    };
+
+    fn test_request() -> Packet {
+        Packet {
+            leap_indicator: LeapIndicator::NoWarning,
+            version: Version::V4,
+            mode: Mode::Client,
+            stratum: Stratum::UNSPECIFIED,
+            poll: 8,
+            precision: 0,
+            root_delay: ShortFormat::default(),
+            root_dispersion: ShortFormat::default(),
+            reference_id: ReferenceIdentifier::default(),
+            reference_timestamp: TimestampFormat::default(),
+            origin_timestamp: TimestampFormat::default(),
+            receive_timestamp: TimestampFormat::default(),
+            transmit_timestamp: TimestampFormat {
+                seconds: 12345,
+                fraction: 67890,
+            },
+        }
+    }
+
+    fn test_server_state() -> ServerSystemState {
+        ServerSystemState::default()
+    }
+
+    #[test]
+    fn server_response_mode() {
+        let req = test_request();
+        let state = test_server_state();
+        let t2 = TimestampFormat {
+            seconds: 100,
+            fraction: 200,
+        };
+        let resp = build_server_response(&req, &state, t2);
+        assert_eq!(resp.mode, Mode::Server);
+    }
+
+    #[test]
+    fn server_response_echoes_version() {
+        let req = test_request();
+        let state = test_server_state();
+        let t2 = TimestampFormat::default();
+        let resp = build_server_response(&req, &state, t2);
+        assert_eq!(resp.version, Version::V4);
+    }
+
+    #[test]
+    fn server_response_echoes_poll() {
+        let req = test_request();
+        let state = test_server_state();
+        let t2 = TimestampFormat::default();
+        let resp = build_server_response(&req, &state, t2);
+        assert_eq!(resp.poll, 8);
+    }
+
+    #[test]
+    fn server_response_origin_is_client_xmt() {
+        let req = test_request();
+        let state = test_server_state();
+        let t2 = TimestampFormat::default();
+        let resp = build_server_response(&req, &state, t2);
+        assert_eq!(resp.origin_timestamp, req.transmit_timestamp);
+    }
+
+    #[test]
+    fn server_response_receive_is_t2() {
+        let req = test_request();
+        let state = test_server_state();
+        let t2 = TimestampFormat {
+            seconds: 999,
+            fraction: 888,
+        };
+        let resp = build_server_response(&req, &state, t2);
+        assert_eq!(resp.receive_timestamp, t2);
+    }
+
+    #[test]
+    fn server_response_stratum() {
+        let req = test_request();
+        let state = test_server_state();
+        let t2 = TimestampFormat::default();
+        let resp = build_server_response(&req, &state, t2);
+        assert_eq!(resp.stratum, state.stratum);
+    }
+
+    #[test]
+    fn kod_response_stratum_zero() {
+        let req = test_request();
+        let resp = build_kod_response(&req, KissOfDeath::Deny);
+        assert_eq!(resp.stratum, Stratum::UNSPECIFIED);
+    }
+
+    #[test]
+    fn kod_response_deny() {
+        let req = test_request();
+        let resp = build_kod_response(&req, KissOfDeath::Deny);
+        assert_eq!(
+            resp.reference_id,
+            ReferenceIdentifier::KissOfDeath(KissOfDeath::Deny)
+        );
+    }
+
+    #[test]
+    fn kod_response_rate() {
+        let req = test_request();
+        let resp = build_kod_response(&req, KissOfDeath::Rate);
+        assert_eq!(
+            resp.reference_id,
+            ReferenceIdentifier::KissOfDeath(KissOfDeath::Rate)
+        );
+    }
+
+    #[test]
+    fn serialize_response_length() {
+        let req = test_request();
+        let state = test_server_state();
+        let t2 = TimestampFormat::default();
+        let resp = build_server_response(&req, &state, t2);
+        let buf = serialize_response_with_t3(&resp).unwrap();
+        assert_eq!(buf.len(), Packet::PACKED_SIZE_BYTES);
+        assert_eq!(buf.len(), 48);
+    }
 }

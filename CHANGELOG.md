@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-02-18
+
+### Added
+
+#### Testing
+
+- **48 unit tests for `protocol/types.rs`**: Full coverage for `TimestampFormat`, `ShortFormat`, `DateFormat`, `LeapIndicator`, `Version`, `Mode`, `Stratum`, `ReferenceIdentifier`, `PrimarySource`, `KissOfDeath`, and `Packet` — round-trip serialization, edge values, error cases.
+- **11 unit tests for `validation.rs`**: Buffer size validation, mode/version rejection, zero transmit timestamp.
+- **10 unit tests for `response.rs`**: Server response field echoing, KoD responses (DENY/RATE), serialization length.
+- **6 unit tests for `interleaved.rs`**: Interleaved mode detection, origin/receive timestamp correctness, client state updates.
+
+#### Benchmarks
+
+- **6 protocol parsing benchmarks** (`ntp_usg-proto`): `packet_from_bytes`, `packet_to_bytes`, `timestamp_from_bytes`, `timestamp_to_bytes`, `packet_roundtrip`, `extension_field_iter` using criterion 0.8.
+- **3 server throughput benchmarks** (`ntp_usg-server`): `handle_request_basic`, `handle_request_with_rate_limit`, `serialize_response_with_t3` using criterion 0.8.
+- **CI benchmark compilation check**: `cargo bench --workspace --no-run` in Linux CI.
+
+#### CI
+
+- **7 new feature combination tests**: `gps`, `pps`, `hwts`, `broadcast + symmetric`, `pq-nts` (tokio), `pq-nts` (smol), benchmark compilation.
+
+#### Documentation
+
+- **`docs/FEATURE_FLAGS.md`**: Complete feature matrix for all 4 crates with incompatibility notes and CI coverage status.
+- **`docs/PLATFORM_SUPPORT.md`**: Platform support matrix (Linux/macOS/Windows/WASM) with per-feature availability and platform-specific notes.
+
+### Changed
+
+#### Safety & Correctness
+
+- **`Instant::new()` returns `Result`**: Changed from panicking to returning `Result<Instant, InvalidInstantError>` for mixed-sign arguments. All callers updated with `.expect()` documenting invariants.
+- **SAFETY comments on all unsafe blocks**: Added `// SAFETY:` documentation to all 16 unsafe blocks in `clock.rs` (9 blocks: Linux/macOS/Windows FFI), `pps.rs` (2 blocks: PPS ioctls), and `hwts.rs` (3 blocks: setsockopt, pointer arithmetic).
+
+#### Public API
+
+- **`handle_request()`, `HandleResult`, `ClientTable`, `ClientState`, `serialize_response_with_t3()`**: Promoted from `pub(crate)` to `pub` in `server_common` — enables custom server loop implementations and benchmarking.
+
 ## [4.2.0] - 2026-02-18
 
 ### Added
@@ -642,6 +679,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[4.3.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.0.1...v4.1.0
 [4.0.1]: https://github.com/192d-Wing/ntp_usg/compare/v4.0.0...v4.0.1

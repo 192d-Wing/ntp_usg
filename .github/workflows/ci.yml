@@ -62,6 +62,20 @@ jobs:
         run: cargo nextest run --workspace --verbose -F ntp_usg-client/discipline
       - name: Run tests (refclock)
         run: cargo nextest run --workspace --verbose -F ntp_usg-client/refclock -F ntp_usg-server/refclock
+      - name: Run tests (gps)
+        run: cargo nextest run -p ntp_usg-client --features gps --verbose
+      - name: Run tests (pps)
+        run: cargo nextest run -p ntp_usg-client --features pps --verbose
+      - name: Run tests (hwts)
+        run: cargo nextest run -p ntp_usg-client --features hwts --verbose
+      - name: Run tests (broadcast + symmetric)
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/broadcast -F ntp_usg-client/symmetric -F ntp_usg-server/broadcast -F ntp_usg-server/symmetric
+      - name: Run tests (pq-nts with tokio)
+        run: cargo nextest run -p ntp_usg-client --features "nts,pq-nts" -p ntp_usg-server --features "nts,pq-nts" --verbose
+      - name: Run tests (pq-nts with smol)
+        run: cargo nextest run -p ntp_usg-client --features "nts-smol,pq-nts" -p ntp_usg-server --features "nts-smol,pq-nts" --verbose
+      - name: Verify benchmarks compile
+        run: cargo bench --workspace --no-run
 
   test-windows:
     name: Test (${{ matrix.runner }}, ${{ matrix.rust }})

@@ -270,7 +270,8 @@ pub fn ntp_timestamp_to_unix_seconds(
     ntp_fraction: u32,
     pivot_unix_seconds: f64,
 ) -> f64 {
-    let pivot = unix_time::Instant::new(pivot_unix_seconds as i64, 0);
+    let pivot = unix_time::Instant::new(pivot_unix_seconds as i64, 0)
+        .expect("pivot with zero nanos is always valid");
     let ts = protocol::TimestampFormat {
         seconds: ntp_seconds,
         fraction: ntp_fraction,
@@ -286,7 +287,8 @@ pub fn ntp_timestamp_to_unix_seconds(
 pub fn unix_seconds_to_ntp_timestamp(unix_seconds: f64) -> Vec<u32> {
     let secs = unix_seconds.trunc() as i64;
     let nanos = ((unix_seconds.fract()) * 1e9) as i32;
-    let instant = unix_time::Instant::new(secs, nanos);
+    let instant = unix_time::Instant::new(secs, nanos)
+        .expect("trunc/fract decomposition produces same-sign components");
     let ts: protocol::TimestampFormat = instant.into();
     vec![ts.seconds, ts.fraction]
 }
@@ -334,7 +336,8 @@ pub fn compute_offset_delay(
     t4_fraction: u32,
     pivot_unix_seconds: f64,
 ) -> Result<JsValue, JsError> {
-    let pivot = unix_time::Instant::new(pivot_unix_seconds as i64, 0);
+    let pivot = unix_time::Instant::new(pivot_unix_seconds as i64, 0)
+        .expect("pivot with zero nanos is always valid");
 
     let t1 = unix_time::timestamp_to_instant(
         protocol::TimestampFormat {

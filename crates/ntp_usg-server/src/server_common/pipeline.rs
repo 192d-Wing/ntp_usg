@@ -13,12 +13,18 @@ use super::{
 };
 
 /// The complete result of handling a client request.
-pub(crate) enum HandleResult {
-    /// Send this response buffer to the client (NTPv4, fixed 48 bytes).
-    Response([u8; protocol::Packet::PACKED_SIZE_BYTES]),
-    /// Send this response buffer to the client (NTPv5, variable length).
+pub enum HandleResult {
+    /// Send this NTPv4 response buffer (fixed 48 bytes) to the client.
+    Response(
+        /// The serialized NTPv4 response packet.
+        [u8; protocol::Packet::PACKED_SIZE_BYTES],
+    ),
+    /// Send this NTPv5 response buffer (variable length) to the client.
     #[cfg(feature = "ntpv5")]
-    V5Response(Vec<u8>),
+    V5Response(
+        /// The serialized NTPv5 response packet.
+        Vec<u8>,
+    ),
     /// Drop the packet (invalid request, silently ignored).
     Drop,
 }
@@ -28,7 +34,7 @@ pub(crate) enum HandleResult {
 /// This is the main request processing pipeline called by both the tokio
 /// and smol server loops.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn handle_request(
+pub fn handle_request(
     recv_buf: &[u8],
     recv_len: usize,
     src_ip: IpAddr,

@@ -722,10 +722,10 @@ mod tests {
         // T1=0, T2=0.5, T3=0.5, T4=1.0
         // offset = ((0.5-0)+(0.5-1))/2 = (0.5+(-0.5))/2 = 0
         // delay = (1-0)-(0.5-0.5) = 1.0
-        let t1 = unix_time::Instant::new(0, 0);
-        let t2 = unix_time::Instant::new(0, 500_000_000);
-        let t3 = unix_time::Instant::new(0, 500_000_000);
-        let t4 = unix_time::Instant::new(1, 0);
+        let t1 = unix_time::Instant::new(0, 0).unwrap();
+        let t2 = unix_time::Instant::new(0, 500_000_000).unwrap();
+        let t3 = unix_time::Instant::new(0, 500_000_000).unwrap();
+        let t4 = unix_time::Instant::new(1, 0).unwrap();
         let (offset, delay) = compute_offset_delay(&t1, &t2, &t3, &t4);
         assert!(offset.abs() < 1e-9, "expected ~0 offset, got {offset}");
         assert!(
@@ -739,10 +739,10 @@ mod tests {
         // Client behind by 1s: T1=0, T2=1.5, T3=1.5, T4=1.0
         // offset = ((1.5-0)+(1.5-1))/2 = (1.5+0.5)/2 = 1.0
         // delay = (1-0)-(1.5-1.5) = 1.0
-        let t1 = unix_time::Instant::new(0, 0);
-        let t2 = unix_time::Instant::new(1, 500_000_000);
-        let t3 = unix_time::Instant::new(1, 500_000_000);
-        let t4 = unix_time::Instant::new(1, 0);
+        let t1 = unix_time::Instant::new(0, 0).unwrap();
+        let t2 = unix_time::Instant::new(1, 500_000_000).unwrap();
+        let t3 = unix_time::Instant::new(1, 500_000_000).unwrap();
+        let t4 = unix_time::Instant::new(1, 0).unwrap();
         let (offset, delay) = compute_offset_delay(&t1, &t2, &t3, &t4);
         assert!(
             (offset - 1.0).abs() < 1e-9,
@@ -759,10 +759,10 @@ mod tests {
         // Client ahead by 1s: T1=10, T2=9.25, T3=9.75, T4=11
         // offset = ((9.25-10)+(9.75-11))/2 = (-0.75+(-1.25))/2 = -1.0
         // delay = (11-10)-(9.75-9.25) = 1.0 - 0.5 = 0.5
-        let t1 = unix_time::Instant::new(10, 0);
-        let t2 = unix_time::Instant::new(9, 250_000_000);
-        let t3 = unix_time::Instant::new(9, 750_000_000);
-        let t4 = unix_time::Instant::new(11, 0);
+        let t1 = unix_time::Instant::new(10, 0).unwrap();
+        let t2 = unix_time::Instant::new(9, 250_000_000).unwrap();
+        let t3 = unix_time::Instant::new(9, 750_000_000).unwrap();
+        let t4 = unix_time::Instant::new(11, 0).unwrap();
         let (offset, delay) = compute_offset_delay(&t1, &t2, &t3, &t4);
         assert!(
             (offset - (-1.0)).abs() < 1e-9,
@@ -779,10 +779,10 @@ mod tests {
         // Server processes instantly, RTT=0.1s: T1=0, T2=0.05, T3=0.05, T4=0.1
         // offset = ((0.05-0)+(0.05-0.1))/2 = (0.05+(-0.05))/2 = 0
         // delay = (0.1-0)-(0.05-0.05) = 0.1
-        let t1 = unix_time::Instant::new(0, 0);
-        let t2 = unix_time::Instant::new(0, 50_000_000);
-        let t3 = unix_time::Instant::new(0, 50_000_000);
-        let t4 = unix_time::Instant::new(0, 100_000_000);
+        let t1 = unix_time::Instant::new(0, 0).unwrap();
+        let t2 = unix_time::Instant::new(0, 50_000_000).unwrap();
+        let t3 = unix_time::Instant::new(0, 50_000_000).unwrap();
+        let t4 = unix_time::Instant::new(0, 100_000_000).unwrap();
         let (offset, delay) = compute_offset_delay(&t1, &t2, &t3, &t4);
         assert!(offset.abs() < 1e-9, "expected ~0 offset, got {offset}");
         assert!(

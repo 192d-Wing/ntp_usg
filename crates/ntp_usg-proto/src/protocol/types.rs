@@ -698,3 +698,478 @@ impl fmt::Display for PrimarySource {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::{ConstPackedSizeBytes, FromBytes, ToBytes};
+
+    // ── TimestampFormat ─────────────────────────────────────────────
+
+    #[test]
+    fn timestamp_format_roundtrip() {
+        let ts = TimestampFormat {
+            seconds: 3_913_056_000,
+            fraction: 0xABCD_1234,
+        };
+        let mut buf = [0u8; TimestampFormat::PACKED_SIZE_BYTES];
+        ts.to_bytes(&mut buf).unwrap();
+        let (parsed, consumed) = TimestampFormat::from_bytes(&buf).unwrap();
+        assert_eq!(consumed, 8);
+        assert_eq!(parsed, ts);
+    }
+
+    #[test]
+    fn timestamp_format_buffer_too_short() {
+        let buf = [0u8; 7];
+        assert!(TimestampFormat::from_bytes(&buf).is_err());
+    }
+
+    #[test]
+    fn timestamp_format_edge_values() {
+        for (secs, frac) in [(0u32, 0u32), (u32::MAX, u32::MAX)] {
+            let ts = TimestampFormat {
+                seconds: secs,
+                fraction: frac,
+            };
+            let mut buf = [0u8; 8];
+            ts.to_bytes(&mut buf).unwrap();
+            let (parsed, _) = TimestampFormat::from_bytes(&buf).unwrap();
+            assert_eq!(parsed, ts);
+        }
+    }
+
+    #[test]
+    fn timestamp_format_packed_size() {
+        assert_eq!(TimestampFormat::PACKED_SIZE_BYTES, 8);
+    }
+
+    // ── ShortFormat ─────────────────────────────────────────────────
+
+    #[test]
+    fn short_format_roundtrip() {
+        let sf = ShortFormat {
+            seconds: 1234,
+            fraction: 5678,
+        };
+        let mut buf = [0u8; ShortFormat::PACKED_SIZE_BYTES];
+        sf.to_bytes(&mut buf).unwrap();
+        let (parsed, consumed) = ShortFormat::from_bytes(&buf).unwrap();
+        assert_eq!(consumed, 4);
+        assert_eq!(parsed, sf);
+    }
+
+    #[test]
+    fn short_format_buffer_too_short() {
+        let buf = [0u8; 3];
+        assert!(ShortFormat::from_bytes(&buf).is_err());
+    }
+
+    #[test]
+    fn short_format_edge_values() {
+        for (secs, frac) in [(0u16, 0u16), (u16::MAX, u16::MAX)] {
+            let sf = ShortFormat {
+                seconds: secs,
+                fraction: frac,
+            };
+            let mut buf = [0u8; 4];
+            sf.to_bytes(&mut buf).unwrap();
+            let (parsed, _) = ShortFormat::from_bytes(&buf).unwrap();
+            assert_eq!(parsed, sf);
+        }
+    }
+
+    // ── DateFormat ──────────────────────────────────────────────────
+
+    #[test]
+    fn date_format_roundtrip() {
+        let df = DateFormat {
+            era_number: -1,
+            era_offset: 100_000,
+            fraction: 0xDEAD_BEEF_CAFE_BABE,
+        };
+        let mut buf = [0u8; DateFormat::PACKED_SIZE_BYTES];
+        df.to_bytes(&mut buf).unwrap();
+        let (parsed, consumed) = DateFormat::from_bytes(&buf).unwrap();
+        assert_eq!(consumed, 16);
+        assert_eq!(parsed, df);
+    }
+
+    #[test]
+    fn date_format_buffer_too_short() {
+        let buf = [0u8; 15];
+        assert!(DateFormat::from_bytes(&buf).is_err());
+    }
+
+    #[test]
+    fn date_format_era_number_preserved() {
+        let df = DateFormat {
+            era_number: 1,
+            era_offset: 0,
+            fraction: 0,
+        };
+        let mut buf = [0u8; 16];
+        df.to_bytes(&mut buf).unwrap();
+        let (parsed, _) = DateFormat::from_bytes(&buf).unwrap();
+        assert_eq!(parsed.era_number, 1);
+    }
+
+    // ── LeapIndicator ───────────────────────────────────────────────
+
+    #[test]
+    fn leap_indicator_try_from_valid() {
+        assert_eq!(LeapIndicator::try_from(0), Ok(LeapIndicator::NoWarning));
+        assert_eq!(LeapIndicator::try_from(1), Ok(LeapIndicator::AddOne));
+        assert_eq!(LeapIndicator::try_from(2), Ok(LeapIndicator::SubOne));
+        assert_eq!(LeapIndicator::try_from(3), Ok(LeapIndicator::Unknown));
+    }
+
+    #[test]
+    fn leap_indicator_try_from_invalid() {
+        assert!(LeapIndicator::try_from(4).is_err());
+        assert!(LeapIndicator::try_from(255).is_err());
+    }
+
+    #[test]
+    fn leap_indicator_default() {
+        assert_eq!(LeapIndicator::default(), LeapIndicator::NoWarning);
+    }
+
+    // ── Version ─────────────────────────────────────────────────────
+
+    #[test]
+    fn version_new_valid() {
+        for v in 1..=5 {
+            assert!(Version::new(v).is_some());
+            assert_eq!(Version::new(v).unwrap().value(), v);
+        }
+    }
+
+    #[test]
+    fn version_new_invalid() {
+        assert!(Version::new(0).is_none());
+        assert!(Version::new(6).is_none());
+        assert!(Version::new(255).is_none());
+    }
+
+    #[test]
+    fn version_is_known() {
+        assert!(Version::V1.is_known());
+        assert!(Version::V4.is_known());
+        assert!(Version::V5.is_known());
+        assert!(!Version(0).is_known());
+        assert!(!Version(6).is_known());
+    }
+
+    #[test]
+    fn version_value() {
+        assert_eq!(Version::V1.value(), 1);
+        assert_eq!(Version::V4.value(), 4);
+        assert_eq!(Version::V5.value(), 5);
+    }
+
+    #[test]
+    fn version_default() {
+        assert_eq!(Version::default(), Version::V4);
+    }
+
+    // ── Mode ────────────────────────────────────────────────────────
+
+    #[test]
+    fn mode_try_from_all_valid() {
+        let expected = [
+            Mode::Reserved,
+            Mode::SymmetricActive,
+            Mode::SymmetricPassive,
+            Mode::Client,
+            Mode::Server,
+            Mode::Broadcast,
+            Mode::NtpControlMessage,
+            Mode::ReservedForPrivateUse,
+        ];
+        for (i, &mode) in expected.iter().enumerate() {
+            assert_eq!(Mode::try_from(i as u8), Ok(mode));
+        }
+    }
+
+    #[test]
+    fn mode_try_from_invalid() {
+        assert!(Mode::try_from(8).is_err());
+        assert!(Mode::try_from(255).is_err());
+    }
+
+    #[test]
+    fn mode_default() {
+        assert_eq!(Mode::default(), Mode::Client);
+    }
+
+    // ── Stratum ─────────────────────────────────────────────────────
+
+    #[test]
+    fn stratum_is_secondary_boundaries() {
+        assert!(!Stratum(0).is_secondary());
+        assert!(!Stratum(1).is_secondary());
+        assert!(Stratum(2).is_secondary());
+        assert!(Stratum(15).is_secondary());
+        assert!(!Stratum(16).is_secondary());
+    }
+
+    #[test]
+    fn stratum_is_reserved() {
+        assert!(!Stratum(0).is_reserved());
+        assert!(!Stratum(16).is_reserved());
+        assert!(Stratum(17).is_reserved());
+        assert!(Stratum(255).is_reserved());
+    }
+
+    #[test]
+    fn stratum_constants() {
+        assert_eq!(Stratum::UNSPECIFIED.0, 0);
+        assert_eq!(Stratum::PRIMARY.0, 1);
+        assert_eq!(Stratum::SECONDARY_MIN.0, 2);
+        assert_eq!(Stratum::SECONDARY_MAX.0, 15);
+        assert_eq!(Stratum::UNSYNCHRONIZED.0, 16);
+        assert_eq!(Stratum::MAX.0, 16);
+    }
+
+    #[test]
+    fn stratum_packed_size() {
+        assert_eq!(Stratum::PACKED_SIZE_BYTES, 1);
+    }
+
+    // ── ReferenceIdentifier ─────────────────────────────────────────
+
+    #[test]
+    fn refid_from_bytes_stratum0_kod() {
+        let bytes = b"DENY";
+        let refid = ReferenceIdentifier::from_bytes_with_stratum(*bytes, Stratum::UNSPECIFIED);
+        assert_eq!(refid, ReferenceIdentifier::KissOfDeath(KissOfDeath::Deny));
+    }
+
+    #[test]
+    fn refid_from_bytes_stratum0_unknown() {
+        let bytes = *b"XXXX";
+        let refid = ReferenceIdentifier::from_bytes_with_stratum(bytes, Stratum::UNSPECIFIED);
+        assert_eq!(refid, ReferenceIdentifier::Unknown(bytes));
+    }
+
+    #[test]
+    fn refid_from_bytes_stratum1_gps() {
+        let bytes = *b"GPS\0";
+        let refid = ReferenceIdentifier::from_bytes_with_stratum(bytes, Stratum::PRIMARY);
+        assert_eq!(
+            refid,
+            ReferenceIdentifier::PrimarySource(PrimarySource::Gps)
+        );
+    }
+
+    #[test]
+    fn refid_from_bytes_stratum1_unknown() {
+        let bytes = *b"ZZZZ";
+        let refid = ReferenceIdentifier::from_bytes_with_stratum(bytes, Stratum::PRIMARY);
+        assert_eq!(refid, ReferenceIdentifier::Unknown(bytes));
+    }
+
+    #[test]
+    fn refid_from_bytes_stratum2_secondary() {
+        let bytes = [192, 168, 1, 1];
+        let refid = ReferenceIdentifier::from_bytes_with_stratum(bytes, Stratum(2));
+        assert_eq!(refid, ReferenceIdentifier::SecondaryOrClient(bytes));
+    }
+
+    #[test]
+    fn refid_from_bytes_stratum15_secondary() {
+        let bytes = [10, 0, 0, 1];
+        let refid = ReferenceIdentifier::from_bytes_with_stratum(bytes, Stratum(15));
+        assert_eq!(refid, ReferenceIdentifier::SecondaryOrClient(bytes));
+    }
+
+    #[test]
+    fn refid_from_bytes_stratum16_unknown() {
+        let bytes = [1, 2, 3, 4];
+        let refid = ReferenceIdentifier::from_bytes_with_stratum(bytes, Stratum(16));
+        assert_eq!(refid, ReferenceIdentifier::Unknown(bytes));
+    }
+
+    #[test]
+    fn refid_as_bytes_roundtrip() {
+        let src = ReferenceIdentifier::PrimarySource(PrimarySource::Gps);
+        let bytes = src.as_bytes();
+        assert_eq!(&bytes, b"GPS\0");
+    }
+
+    #[test]
+    fn refid_is_kiss_of_death() {
+        assert!(ReferenceIdentifier::KissOfDeath(KissOfDeath::Deny).is_kiss_of_death());
+        assert!(!ReferenceIdentifier::PrimarySource(PrimarySource::Gps).is_kiss_of_death());
+        assert!(!ReferenceIdentifier::SecondaryOrClient([1, 2, 3, 4]).is_kiss_of_death());
+        assert!(!ReferenceIdentifier::Unknown([0; 4]).is_kiss_of_death());
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn refid_from_ipv4_and_matches() {
+        let addr = std::net::Ipv4Addr::new(192, 168, 1, 1);
+        let refid = ReferenceIdentifier::from_ipv4(addr);
+        assert!(refid.matches_ipv4(addr));
+        assert!(!refid.matches_ipv4(std::net::Ipv4Addr::new(10, 0, 0, 1)));
+    }
+
+    #[test]
+    fn refid_packed_size() {
+        assert_eq!(ReferenceIdentifier::PACKED_SIZE_BYTES, 4);
+    }
+
+    // ── PrimarySource ───────────────────────────────────────────────
+
+    #[test]
+    fn primary_source_try_from_known() {
+        assert_eq!(
+            PrimarySource::try_from(u32::from_be_bytes(*b"GPS\0")),
+            Ok(PrimarySource::Gps)
+        );
+        assert_eq!(
+            PrimarySource::try_from(u32::from_be_bytes(*b"GOES")),
+            Ok(PrimarySource::Goes)
+        );
+        assert_eq!(
+            PrimarySource::try_from(u32::from_be_bytes(*b"PPS\0")),
+            Ok(PrimarySource::Pps)
+        );
+    }
+
+    #[test]
+    fn primary_source_try_from_unknown() {
+        assert!(PrimarySource::try_from(u32::from_be_bytes(*b"ZZZZ")).is_err());
+    }
+
+    #[test]
+    fn primary_source_bytes_roundtrip() {
+        let src = PrimarySource::Gps;
+        let bytes = src.bytes();
+        let u = u32::from_be_bytes(bytes);
+        assert_eq!(PrimarySource::try_from(u), Ok(PrimarySource::Gps));
+    }
+
+    #[test]
+    fn primary_source_display() {
+        assert_eq!(format!("{}", PrimarySource::Gps), "GPS");
+        assert_eq!(format!("{}", PrimarySource::Goes), "GOES");
+        assert_eq!(format!("{}", PrimarySource::Pps), "PPS");
+        assert_eq!(format!("{}", PrimarySource::Null), "");
+    }
+
+    // ── KissOfDeath ─────────────────────────────────────────────────
+
+    #[test]
+    fn kod_try_from_all_codes() {
+        assert_eq!(
+            KissOfDeath::try_from(u32::from_be_bytes(*b"DENY")),
+            Ok(KissOfDeath::Deny)
+        );
+        assert_eq!(
+            KissOfDeath::try_from(u32::from_be_bytes(*b"RSTR")),
+            Ok(KissOfDeath::Rstr)
+        );
+        assert_eq!(
+            KissOfDeath::try_from(u32::from_be_bytes(*b"RATE")),
+            Ok(KissOfDeath::Rate)
+        );
+    }
+
+    #[test]
+    fn kod_try_from_unknown() {
+        assert!(KissOfDeath::try_from(u32::from_be_bytes(*b"XXXX")).is_err());
+        assert!(KissOfDeath::try_from(0).is_err());
+    }
+
+    // ── Packet ──────────────────────────────────────────────────────
+
+    #[test]
+    fn packet_packed_size() {
+        assert_eq!(Packet::PACKED_SIZE_BYTES, 48);
+    }
+
+    #[test]
+    fn packet_default_is_client_template() {
+        let pkt = Packet::default();
+        assert_eq!(pkt.leap_indicator, LeapIndicator::NoWarning);
+        assert_eq!(pkt.version, Version::V4);
+        assert_eq!(pkt.mode, Mode::Client);
+        assert_eq!(pkt.stratum, Stratum::UNSPECIFIED);
+    }
+
+    #[test]
+    fn packet_roundtrip() {
+        let pkt = Packet {
+            leap_indicator: LeapIndicator::AddOne,
+            version: Version::V4,
+            mode: Mode::Server,
+            stratum: Stratum::PRIMARY,
+            poll: 6,
+            precision: -20,
+            root_delay: ShortFormat {
+                seconds: 1,
+                fraction: 2,
+            },
+            root_dispersion: ShortFormat {
+                seconds: 3,
+                fraction: 4,
+            },
+            reference_id: ReferenceIdentifier::PrimarySource(PrimarySource::Gps),
+            reference_timestamp: TimestampFormat {
+                seconds: 100,
+                fraction: 200,
+            },
+            origin_timestamp: TimestampFormat {
+                seconds: 300,
+                fraction: 400,
+            },
+            receive_timestamp: TimestampFormat {
+                seconds: 500,
+                fraction: 600,
+            },
+            transmit_timestamp: TimestampFormat {
+                seconds: 700,
+                fraction: 800,
+            },
+        };
+        let mut buf = [0u8; Packet::PACKED_SIZE_BYTES];
+        pkt.to_bytes(&mut buf).unwrap();
+        let (parsed, consumed) = Packet::from_bytes(&buf).unwrap();
+        assert_eq!(consumed, 48);
+        assert_eq!(parsed.leap_indicator, pkt.leap_indicator);
+        assert_eq!(parsed.version, pkt.version);
+        assert_eq!(parsed.mode, pkt.mode);
+        assert_eq!(parsed.stratum, pkt.stratum);
+        assert_eq!(parsed.poll, pkt.poll);
+        assert_eq!(parsed.precision, pkt.precision);
+        assert_eq!(parsed.root_delay, pkt.root_delay);
+        assert_eq!(parsed.root_dispersion, pkt.root_dispersion);
+        assert_eq!(parsed.reference_id, pkt.reference_id);
+        assert_eq!(parsed.reference_timestamp, pkt.reference_timestamp);
+        assert_eq!(parsed.origin_timestamp, pkt.origin_timestamp);
+        assert_eq!(parsed.receive_timestamp, pkt.receive_timestamp);
+        assert_eq!(parsed.transmit_timestamp, pkt.transmit_timestamp);
+    }
+
+    #[test]
+    fn packet_buffer_too_short() {
+        let buf = [0u8; 47];
+        assert!(Packet::from_bytes(&buf).is_err());
+    }
+
+    #[test]
+    fn packet_to_bytes_buffer_too_short() {
+        let pkt = Packet::default();
+        let mut buf = [0u8; 47];
+        assert!(pkt.to_bytes(&mut buf).is_err());
+    }
+
+    // ── PacketByte1 packed size ─────────────────────────────────────
+
+    #[test]
+    fn packet_byte1_packed_size() {
+        assert_eq!(<(LeapIndicator, Version, Mode)>::PACKED_SIZE_BYTES, 1);
+    }
+}

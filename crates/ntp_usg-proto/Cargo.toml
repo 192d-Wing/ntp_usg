@@ -40,6 +40,11 @@ cmac = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+criterion = "0.8"
+
+[[bench]]
+name = "parsing_benchmark"
+harness = false
 
 [[example]]
 name = "embedded_nostd"
