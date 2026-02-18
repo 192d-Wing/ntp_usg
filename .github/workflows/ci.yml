@@ -208,12 +208,18 @@ jobs:
     runs-on: ubuntu-latest
     env:
       MIRIFLAGS: "-Zmiri-disable-isolation"
+      # Limit proptest to 1 case per test — 256 interpreted iterations is very slow under Miri
+      PROPTEST_CASES: "1"
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Cache the Miri sysroot (pre-built std for Miri) in addition to the cargo registry.
+          # Without this, Miri rebuilds its sysroot from source on every run.
+          cache-directories: ~/.cache/miri
       - name: Run Miri on ntp_usg-proto
         run: cargo +nightly miri test -p ntp_usg-proto
       - name: Run Miri on ntp_usg-proto (no_std)
