@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-02-18
+
+### Fixed
+
+- Publish pipeline: install `cargo-cyclonedx`, collect SBOMs from crate subdirectories, clean up before `cargo publish`
+- Added `ntp_usg-wasm` to crates.io publish workflow
+- Added publishing metadata (docs.rs, keywords, categories) to `ntp_usg-wasm`
+
 ## [4.0.0] - 2026-02-18
 
 ### Breaking Changes
@@ -580,6 +588,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[4.0.1]: https://github.com/192d-Wing/ntp_usg/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/192d-Wing/ntp_usg/compare/v3.4.0...v4.0.0
 [3.4.0]: https://github.com/192d-Wing/ntp_usg/compare/v3.3.3...v3.4.0
 [3.3.3]: https://github.com/192d-Wing/ntp_usg/compare/v3.3.2...v3.3.3
