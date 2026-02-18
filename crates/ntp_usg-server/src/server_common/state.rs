@@ -1,6 +1,11 @@
 use crate::protocol;
 use crate::unix_time;
 
+#[cfg(feature = "ntpv5")]
+use ntp_proto::protocol::bloom::BloomFilter;
+#[cfg(feature = "ntpv5")]
+use ntp_proto::protocol::ntpv5::Timescale;
+
 /// Server-wide system variables (RFC 5905 Section 11).
 ///
 /// These values are populated from the server's reference clock or upstream
@@ -23,6 +28,19 @@ pub struct ServerSystemState {
     pub reference_id: protocol::ReferenceIdentifier,
     /// Time when the system clock was last set or corrected.
     pub reference_timestamp: protocol::TimestampFormat,
+
+    /// NTPv5 timescale for this server.
+    #[cfg(feature = "ntpv5")]
+    pub timescale: Timescale,
+    /// NTPv5 era number.
+    #[cfg(feature = "ntpv5")]
+    pub era: u8,
+    /// NTPv5 Bloom filter containing upstream reference IDs for loop detection.
+    #[cfg(feature = "ntpv5")]
+    pub bloom_filter: BloomFilter,
+    /// This server's 120-bit NTPv5 reference ID.
+    #[cfg(feature = "ntpv5")]
+    pub v5_reference_id: [u8; 15],
 }
 
 impl Default for ServerSystemState {
@@ -37,6 +55,14 @@ impl Default for ServerSystemState {
                 protocol::PrimarySource::Locl,
             ),
             reference_timestamp: unix_time::Instant::now().into(),
+            #[cfg(feature = "ntpv5")]
+            timescale: Timescale::Utc,
+            #[cfg(feature = "ntpv5")]
+            era: 0,
+            #[cfg(feature = "ntpv5")]
+            bloom_filter: BloomFilter::new(),
+            #[cfg(feature = "ntpv5")]
+            v5_reference_id: [0u8; 15],
         }
     }
 }

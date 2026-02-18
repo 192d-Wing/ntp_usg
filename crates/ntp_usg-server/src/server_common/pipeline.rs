@@ -14,8 +14,11 @@ use super::{
 
 /// The complete result of handling a client request.
 pub(crate) enum HandleResult {
-    /// Send this response buffer to the client.
+    /// Send this response buffer to the client (NTPv4, fixed 48 bytes).
     Response([u8; protocol::Packet::PACKED_SIZE_BYTES]),
+    /// Send this response buffer to the client (NTPv5, variable length).
+    #[cfg(feature = "ntpv5")]
+    V5Response(Vec<u8>),
     /// Drop the packet (invalid request, silently ignored).
     Drop,
 }
@@ -35,6 +38,25 @@ pub(crate) fn handle_request(
     client_table: &mut ClientTable,
     enable_interleaved: bool,
 ) -> HandleResult {
+    // 0. NTPv5 version dispatch: peek at VN field in byte 0.
+    #[cfg(feature = "ntpv5")]
+    {
+        if recv_len >= 1 {
+            let vn = (recv_buf[0] >> 3) & 0b111;
+            if vn == 5 {
+                return super::ntpv5::handle_v5_request(
+                    recv_buf,
+                    recv_len,
+                    src_ip,
+                    server_state,
+                    access_control,
+                    rate_limit_config,
+                    client_table,
+                );
+            }
+        }
+    }
+
     // 1. Validate the request.
     let request = match validate_client_request(recv_buf, recv_len) {
         Ok(req) => req,
@@ -95,13 +117,25 @@ pub(crate) fn handle_request(
     };
 
     // 6. Build response (basic, interleaved, or symmetric passive).
-    let response = response.unwrap_or_else(|| {
+    let mut response = response.unwrap_or_else(|| {
         #[cfg(feature = "symmetric")]
         if request.mode == protocol::Mode::SymmetricActive {
             return super::build_symmetric_passive_response(&request, server_state, t2);
         }
         build_server_response(&request, server_state, t2)
     });
+
+    // 6b. NTPv5 version negotiation: echo magic in V4 reference timestamp.
+    #[cfg(feature = "ntpv5")]
+    {
+        let magic_secs = (ntp_proto::ntpv5_ext::NEGOTIATION_MAGIC_DRAFT >> 32) as u32;
+        let magic_frac = ntp_proto::ntpv5_ext::NEGOTIATION_MAGIC_DRAFT as u32;
+        if request.reference_timestamp.seconds == magic_secs
+            && request.reference_timestamp.fraction == magic_frac
+        {
+            response.reference_timestamp = request.reference_timestamp;
+        }
+    }
 
     // 7. Serialize with T3.
     let buf = match serialize_response_with_t3(&response) {
@@ -177,6 +211,14 @@ mod tests {
                 seconds: 3_913_000_000,
                 fraction: 0,
             },
+            #[cfg(feature = "ntpv5")]
+            timescale: ntp_proto::protocol::ntpv5::Timescale::Utc,
+            #[cfg(feature = "ntpv5")]
+            era: 0,
+            #[cfg(feature = "ntpv5")]
+            bloom_filter: ntp_proto::protocol::bloom::BloomFilter::new(),
+            #[cfg(feature = "ntpv5")]
+            v5_reference_id: [0u8; 15],
         }
     }
 
@@ -585,6 +627,8 @@ mod tests {
                     .unwrap();
                 assert_eq!(response.mode, protocol::Mode::SymmetricPassive);
             }
+            #[cfg(feature = "ntpv5")]
+            HandleResult::V5Response(_) => panic!("expected V4 Response, got V5Response"),
             HandleResult::Drop => panic!("expected Response, got Drop"),
         }
     }
@@ -599,5 +643,105 @@ mod tests {
         let buf = serialize_packet(&pkt);
         let result = validate_client_request(&buf, 48);
         assert!(result.is_err());
+    }
+
+    // ── NTPv5 version negotiation ─────────────────────────────────
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn test_v4_negotiation_magic_echo() {
+        use ntp_proto::ntpv5_ext::NEGOTIATION_MAGIC_DRAFT;
+
+        let magic_secs = (NEGOTIATION_MAGIC_DRAFT >> 32) as u32;
+        let magic_frac = NEGOTIATION_MAGIC_DRAFT as u32;
+
+        let mut pkt = make_client_request_packet(protocol::Version::V4);
+        pkt.reference_timestamp = protocol::TimestampFormat {
+            seconds: magic_secs,
+            fraction: magic_frac,
+        };
+        let buf = serialize_packet(&pkt);
+        let state = test_server_state();
+        let ac = AccessControl::default();
+        let mut table = ClientTable::new(100);
+
+        let result = handle_request(
+            &buf,
+            48,
+            "127.0.0.1".parse().unwrap(),
+            &state,
+            &ac,
+            None,
+            &mut table,
+            false,
+        );
+
+        if let HandleResult::Response(resp_buf) = result {
+            let response: protocol::Packet = (&resp_buf[..48]).read_bytes().unwrap();
+            assert_eq!(response.reference_timestamp.seconds, magic_secs);
+            assert_eq!(response.reference_timestamp.fraction, magic_frac);
+        } else {
+            panic!("expected Response");
+        }
+    }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn test_v5_request_dispatches_to_v5_handler() {
+        use ntp_proto::extension::write_extension_fields_buf;
+        use ntp_proto::ntpv5_ext::{DraftIdentification, Padding};
+        use ntp_proto::protocol::ntpv5::{NtpV5Flags, PacketV5, Time32, Timescale};
+        use ntp_proto::protocol::{LeapIndicator, ToBytes};
+
+        let pkt = PacketV5 {
+            leap_indicator: LeapIndicator::NoWarning,
+            version: protocol::Version::V5,
+            mode: protocol::Mode::Client,
+            stratum: protocol::Stratum::UNSPECIFIED,
+            poll: 6,
+            precision: 0,
+            root_delay: Time32::ZERO,
+            root_dispersion: Time32::ZERO,
+            timescale: Timescale::Utc,
+            era: 0,
+            flags: NtpV5Flags::default(),
+            server_cookie: 0,
+            client_cookie: 0xDEAD_BEEF_CAFE_BABE,
+            receive_timestamp: protocol::TimestampFormat::default(),
+            transmit_timestamp: protocol::TimestampFormat::default(),
+        };
+
+        let mut buf = vec![0u8; 228];
+        pkt.to_bytes(&mut buf[..48]).unwrap();
+        let draft_id = DraftIdentification::current().to_extension_field();
+        let ext_written = write_extension_fields_buf(&[draft_id], &mut buf[48..]).unwrap();
+        // Fill remaining with Padding extension.
+        let used = 48 + ext_written;
+        let remaining = 228 - used;
+        if remaining >= 4 {
+            let pad = Padding {
+                size: remaining - 4,
+            }
+            .to_extension_field();
+            write_extension_fields_buf(&[pad], &mut buf[used..]).unwrap();
+        }
+
+        let state = test_server_state();
+        let ac = AccessControl::default();
+        let mut table = ClientTable::new(100);
+
+        let result = handle_request(
+            &buf,
+            buf.len(),
+            "127.0.0.1".parse().unwrap(),
+            &state,
+            &ac,
+            None,
+            &mut table,
+            false,
+        );
+
+        // Should get a V5Response, not a V4 Response.
+        assert!(matches!(result, HandleResult::V5Response(_)));
     }
 }

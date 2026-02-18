@@ -113,6 +113,14 @@ mod tests {
                 seconds: 3_913_000_000,
                 fraction: 0,
             },
+            #[cfg(feature = "ntpv5")]
+            timescale: ntp_proto::protocol::ntpv5::Timescale::Utc,
+            #[cfg(feature = "ntpv5")]
+            era: 0,
+            #[cfg(feature = "ntpv5")]
+            bloom_filter: ntp_proto::protocol::bloom::BloomFilter::new(),
+            #[cfg(feature = "ntpv5")]
+            v5_reference_id: [0u8; 15],
         }
     }
 

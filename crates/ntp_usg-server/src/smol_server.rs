@@ -128,6 +128,32 @@ impl NtpServerBuilder {
         self
     }
 
+    /// Set the NTPv5 timescale for this server.
+    #[cfg(feature = "ntpv5")]
+    pub fn timescale(mut self, ts: ntp_proto::protocol::ntpv5::Timescale) -> Self {
+        self.system_state.timescale = ts;
+        self
+    }
+
+    /// Set the NTPv5 120-bit reference ID for this server.
+    ///
+    /// This ID is inserted into the server's Bloom filter for loop detection.
+    #[cfg(feature = "ntpv5")]
+    pub fn v5_reference_id(mut self, id: [u8; 15]) -> Self {
+        self.system_state.bloom_filter.insert(&id);
+        self.system_state.v5_reference_id = id;
+        self
+    }
+
+    /// Set the NTPv5 Bloom filter for loop detection.
+    ///
+    /// The filter should contain the reference IDs of all upstream time sources.
+    #[cfg(feature = "ntpv5")]
+    pub fn v5_bloom_filter(mut self, filter: ntp_proto::protocol::bloom::BloomFilter) -> Self {
+        self.system_state.bloom_filter = filter;
+        self
+    }
+
     /// Set the maximum number of client entries tracked (default: 100,000).
     pub fn max_clients(mut self, max: usize) -> Self {
         self.max_clients = max;
@@ -240,6 +266,10 @@ impl NtpServer {
 
             match result {
                 HandleResult::Response(resp_buf) => {
+                    let _ = self.sock.send_to(&resp_buf, src_addr).await;
+                }
+                #[cfg(feature = "ntpv5")]
+                HandleResult::V5Response(resp_buf) => {
                     let _ = self.sock.send_to(&resp_buf, src_addr).await;
                 }
                 HandleResult::Drop => {

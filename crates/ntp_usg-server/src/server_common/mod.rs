@@ -10,6 +10,8 @@
 mod access_control;
 mod interleaved;
 mod network;
+#[cfg(feature = "ntpv5")]
+mod ntpv5;
 mod pipeline;
 mod rate_limit;
 mod response;
