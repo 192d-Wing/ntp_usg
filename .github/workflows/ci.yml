@@ -58,6 +58,10 @@ jobs:
         run: cargo nextest run --workspace --verbose -F ntp_usg-client/ipv4 -F ntp_usg-server/ipv4
       - name: Run tests (socket-opts)
         run: cargo nextest run --workspace --verbose -F ntp_usg-client/socket-opts -F ntp_usg-server/socket-opts
+      - name: Run tests (discipline)
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/discipline
+      - name: Run tests (refclock)
+        run: cargo nextest run --workspace --verbose -F ntp_usg-client/refclock -F ntp_usg-server/refclock
 
   test-windows:
     name: Test (${{ matrix.runner }}, ${{ matrix.rust }})
@@ -227,6 +231,17 @@ jobs:
         run: cargo +nightly miri test -p ntp_usg-proto --no-default-features
       - name: Run Miri on ntp_usg-proto (alloc)
         run: cargo +nightly miri test -p ntp_usg-proto --no-default-features --features alloc
+      - name: Run Miri on ntp_usg-proto (ntpv5)
+        run: cargo +nightly miri test -p ntp_usg-proto --features ntpv5
+
+  deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
 
   fuzz:
     name: Fuzz (smoke)
@@ -243,6 +258,12 @@ jobs:
       - name: Fuzz extension fields (30s)
         working-directory: crates/ntp_usg-proto
         run: cargo +nightly fuzz run fuzz_extension_fields -- -max_total_time=30
+      - name: Fuzz NTPv5 packet parsing (30s)
+        working-directory: crates/ntp_usg-proto
+        run: cargo +nightly fuzz run fuzz_packet_v5 -- -max_total_time=30
+      - name: Fuzz Roughtime parsing (30s)
+        working-directory: crates/ntp_usg-proto
+        run: cargo +nightly fuzz run fuzz_roughtime -- -max_total_time=30
 
   wasm:
     name: WASM

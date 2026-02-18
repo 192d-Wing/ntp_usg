@@ -12,7 +12,9 @@ use std::io;
 use std::time::Duration;
 
 #[cfg(feature = "tokio")]
-use async_trait::async_trait;
+use std::future::Future;
+#[cfg(feature = "tokio")]
+use std::pin::Pin;
 
 /// NMEA 0183 sentence parser for GPS receivers
 pub mod nmea;
@@ -53,14 +55,15 @@ pub struct RefClockSample {
 /// and clients. Implementations include GPS receivers, PPS signals,
 /// atomic clocks, and other high-precision time sources.
 #[cfg(feature = "tokio")]
-#[async_trait]
 pub trait RefClock: Send + Sync {
     /// Read a time sample from the reference clock
     ///
     /// This may block waiting for the next time update (e.g., GPS sentence,
     /// PPS pulse). Returns an error if the clock is unavailable or the
     /// sample is invalid.
-    async fn read_sample(&mut self) -> io::Result<RefClockSample>;
+    fn read_sample(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = io::Result<RefClockSample>> + Send + '_>>;
 
     /// Get the stratum to advertise when using this reference clock
     ///
@@ -122,14 +125,18 @@ impl LocalClock {
 }
 
 #[cfg(feature = "tokio")]
-#[async_trait]
 impl RefClock for LocalClock {
-    async fn read_sample(&mut self) -> io::Result<RefClockSample> {
-        Ok(RefClockSample {
-            timestamp: crate::unix_time::Instant::now(),
-            offset: 0.0,
-            dispersion: self.dispersion,
-            quality: 50, // Medium quality
+    fn read_sample(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = io::Result<RefClockSample>> + Send + '_>> {
+        let dispersion = self.dispersion;
+        Box::pin(async move {
+            Ok(RefClockSample {
+                timestamp: crate::unix_time::Instant::now(),
+                offset: 0.0,
+                dispersion,
+                quality: 50, // Medium quality
+            })
         })
     }
 

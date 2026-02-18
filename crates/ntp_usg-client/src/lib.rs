@@ -177,3 +177,20 @@ mod socket_opts;
 mod request;
 
 pub use request::{KissOfDeathError, NtpResult, request, request_with_timeout};
+
+/// Clock discipline states per RFC 5905 Figure 24.
+///
+/// Represents the state machine of the PLL/FLL clock discipline algorithm.
+/// Defined unconditionally so that [`client_common::NtpSyncState`] can always
+/// reference it regardless of which feature flags are enabled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DisciplineState {
+    /// No frequency information available; waiting for first offset.
+    Nset,
+    /// First offset received; waiting for second to compute frequency.
+    Fset,
+    /// Normal PLL/FLL hybrid operation.
+    Sync,
+    /// Time spike detected; waiting for recovery or stepout timeout.
+    Spik,
+}

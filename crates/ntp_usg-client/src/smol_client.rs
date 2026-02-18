@@ -449,7 +449,7 @@ impl NtpClient {
 
         #[cfg(feature = "socket-opts")]
         let sock = {
-            let bind_addr: SocketAddr = bind_addr_for(&peer.addr).parse().unwrap();
+            let bind_addr = bind_addr_for(&peer.addr);
             let std_sock = socket_opts.bind_udp(bind_addr)?;
             UdpSocket::from(smol::Async::new(std_sock)?)
         };
@@ -539,7 +539,7 @@ impl NtpClient {
 
         #[cfg(feature = "socket-opts")]
         let sock = {
-            let bind_addr: SocketAddr = bind_addr_for(&peer.addr).parse().unwrap();
+            let bind_addr = bind_addr_for(&peer.addr);
             let std_sock = socket_opts.bind_udp(bind_addr)?;
             UdpSocket::from(smol::Async::new(std_sock)?)
         };
@@ -614,7 +614,7 @@ impl NtpClient {
 
                 #[cfg(feature = "socket-opts")]
                 let sock = {
-                    let bind_addr: SocketAddr = bind_addr_for(&peer.addr).parse().unwrap();
+                    let bind_addr = bind_addr_for(&peer.addr);
                     let std_sock = socket_opts.bind_udp(bind_addr)?;
                     UdpSocket::from(smol::Async::new(std_sock)?)
                 };
@@ -716,7 +716,7 @@ impl NtpClient {
 
                 #[cfg(feature = "socket-opts")]
                 let sock = {
-                    let bind_addr: SocketAddr = bind_addr_for(&peer.addr).parse().unwrap();
+                    let bind_addr = bind_addr_for(&peer.addr);
                     let std_sock = socket_opts.bind_udp(bind_addr)?;
                     UdpSocket::from(smol::Async::new(std_sock)?)
                 };
@@ -776,7 +776,7 @@ impl NtpClient {
             } => {
                 #[cfg(feature = "socket-opts")]
                 let sock = {
-                    let bind_addr: SocketAddr = bind_addr_for(&peer.addr).parse().unwrap();
+                    let bind_addr = bind_addr_for(&peer.addr);
                     let std_sock = socket_opts.bind_udp(bind_addr)?;
                     UdpSocket::from(smol::Async::new(std_sock)?)
                 };
@@ -842,11 +842,11 @@ impl NtpClient {
     fn publish_best_state(&mut self) -> Option<(f64, f64)> {
         #[cfg(feature = "discipline")]
         let (frequency, discipline_state) = match &self.discipline {
-            Some(d) => (d.frequency(), format!("{:?}", d.state())),
-            None => (0.0, String::new()),
+            Some(d) => (d.frequency(), Some(d.state())),
+            None => (0.0, None),
         };
         #[cfg(not(feature = "discipline"))]
-        let (frequency, discipline_state) = (0.0, String::new());
+        let (frequency, discipline_state) = (0.0, None);
 
         let result = select_and_build_state(
             &mut self.peers,

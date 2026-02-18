@@ -42,18 +42,7 @@ pub const FREQ_TOLERANCE: f64 = 15e-6;
 /// indicate a broken clock and are clamped.
 const FREQ_MAX: f64 = 500e-6;
 
-/// Clock discipline states per RFC 5905 Figure 24.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DisciplineState {
-    /// No frequency information available; waiting for first offset.
-    Nset,
-    /// First offset received; waiting for second to compute frequency.
-    Fset,
-    /// Normal PLL/FLL hybrid operation.
-    Sync,
-    /// Time spike detected; waiting for recovery or stepout timeout.
-    Spik,
-}
+pub use crate::DisciplineState;
 
 /// Output of the discipline algorithm, describing the correction to apply.
 #[derive(Clone, Debug)]

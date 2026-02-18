@@ -6,11 +6,12 @@
 use super::nmea::{FixQuality, GpsFix, parse_sentence};
 use super::{RefClock, RefClockSample};
 use crate::unix_time;
-use async_trait::async_trait;
 use log::{debug, warn};
 use serialport::SerialPort;
+use std::future::Future;
 use std::io::{self, BufRead, BufReader};
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task;
@@ -174,78 +175,81 @@ impl GpsReceiver {
     }
 }
 
-#[async_trait]
 impl RefClock for GpsReceiver {
-    async fn read_sample(&mut self) -> io::Result<RefClockSample> {
-        // Drain all pending fixes and keep the latest
-        while let Ok(fix) = self.sample_rx.try_recv() {
-            self.last_fix = Some(fix);
-        }
+    fn read_sample(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = io::Result<RefClockSample>> + Send + '_>> {
+        Box::pin(async move {
+            // Drain all pending fixes and keep the latest
+            while let Ok(fix) = self.sample_rx.try_recv() {
+                self.last_fix = Some(fix);
+            }
 
-        // Wait for a new fix if we don't have one
-        if self.last_fix.is_none() {
-            self.last_fix = self.sample_rx.recv().await;
-        }
+            // Wait for a new fix if we don't have one
+            if self.last_fix.is_none() {
+                self.last_fix = self.sample_rx.recv().await;
+            }
 
-        let fix = self
-            .last_fix
-            .as_ref()
-            .ok_or_else(|| io::Error::other("GPS receiver channel closed"))?;
+            let fix = self
+                .last_fix
+                .as_ref()
+                .ok_or_else(|| io::Error::other("GPS receiver channel closed"))?;
 
-        // Check if fix is valid
-        if !fix.quality.is_valid() {
-            return Err(io::Error::other(format!(
-                "GPS fix quality insufficient: {:?}",
-                fix.quality
-            )));
-        }
+            // Check if fix is valid
+            if !fix.quality.is_valid() {
+                return Err(io::Error::other(format!(
+                    "GPS fix quality insufficient: {:?}",
+                    fix.quality
+                )));
+            }
 
-        if (fix.quality as u8) < (self.config.min_quality as u8) {
-            return Err(io::Error::other(format!(
-                "GPS fix quality {:?} below minimum {:?}",
-                fix.quality, self.config.min_quality
-            )));
-        }
+            if (fix.quality as u8) < (self.config.min_quality as u8) {
+                return Err(io::Error::other(format!(
+                    "GPS fix quality {:?} below minimum {:?}",
+                    fix.quality, self.config.min_quality
+                )));
+            }
 
-        if fix.satellites < self.config.min_satellites {
-            return Err(io::Error::other(format!(
-                "GPS satellite count {} below minimum {}",
-                fix.satellites, self.config.min_satellites
-            )));
-        }
+            if fix.satellites < self.config.min_satellites {
+                return Err(io::Error::other(format!(
+                    "GPS satellite count {} below minimum {}",
+                    fix.satellites, self.config.min_satellites
+                )));
+            }
 
-        // Convert GPS time to Unix timestamp
-        let gps_timestamp = fix
-            .to_unix_timestamp()
-            .ok_or_else(|| io::Error::other("GPS fix missing date information"))?;
+            // Convert GPS time to Unix timestamp
+            let gps_timestamp = fix
+                .to_unix_timestamp()
+                .ok_or_else(|| io::Error::other("GPS fix missing date information"))?;
 
-        // Get current system time for offset calculation
-        let now = unix_time::Instant::now();
-        let now_secs = now.secs() as f64 + (now.subsec_nanos() as f64 / 1e9);
+            // Get current system time for offset calculation
+            let now = unix_time::Instant::now();
+            let now_secs = now.secs() as f64 + (now.subsec_nanos() as f64 / 1e9);
 
-        // Offset = GPS time - system time
-        let offset = gps_timestamp - now_secs;
+            // Offset = GPS time - system time
+            let offset = gps_timestamp - now_secs;
 
-        // Quality indicator: higher quality = lower dispersion
-        // PPS fix (quality 3) gets best dispersion, GPS (1) gets moderate
-        let dispersion = match fix.quality {
-            FixQuality::Pps => 0.000001,                       // 1 microsecond
-            FixQuality::DGps => 0.00001,                       // 10 microseconds
-            FixQuality::Rtk | FixQuality::FloatRtk => 0.00005, // 50 microseconds
-            FixQuality::Gps => 0.0001,                         // 100 microseconds
-            _ => 0.001,                                        // 1 millisecond
-        };
+            // Quality indicator: higher quality = lower dispersion
+            // PPS fix (quality 3) gets best dispersion, GPS (1) gets moderate
+            let dispersion = match fix.quality {
+                FixQuality::Pps => 0.000001,                       // 1 microsecond
+                FixQuality::DGps => 0.00001,                       // 10 microseconds
+                FixQuality::Rtk | FixQuality::FloatRtk => 0.00005, // 50 microseconds
+                FixQuality::Gps => 0.0001,                         // 100 microseconds
+                _ => 0.001,                                        // 1 millisecond
+            };
 
-        // Quality score: 0 (worst) to 255 (best)
-        // Based on satellite count and fix quality
-        let quality =
-            ((fix.satellites.min(16) as u16 * 10 + fix.quality as u16 * 5).min(255)) as u8;
+            // Quality score: 0 (worst) to 255 (best)
+            // Based on satellite count and fix quality
+            let quality =
+                ((fix.satellites.min(16) as u16 * 10 + fix.quality as u16 * 5).min(255)) as u8;
 
-        Ok(RefClockSample {
-            timestamp: now,
-            offset,
-            dispersion,
-            quality,
+            Ok(RefClockSample {
+                timestamp: now,
+                offset,
+                dispersion,
+                quality,
+            })
         })
     }
 

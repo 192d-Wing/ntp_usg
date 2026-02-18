@@ -17,7 +17,7 @@ use std::time::Duration;
 use crate::filter::{ClockSample, SampleFilter};
 use crate::request::compute_offset_delay;
 use crate::selection::{self, PeerCandidate};
-use crate::{KissOfDeathError, protocol, unix_time};
+use crate::{DisciplineState, KissOfDeathError, protocol, unix_time};
 
 #[cfg(feature = "ntpv5")]
 use ntp_proto::protocol::bloom::BloomFilter;
@@ -60,9 +60,9 @@ pub struct NtpSyncState {
     /// Current frequency correction from the clock discipline (seconds/second).
     /// Only populated when the `discipline` feature is enabled.
     pub frequency: f64,
-    /// Current discipline state (e.g., "Nset", "Fset", "Sync", "Spik").
-    /// Only populated when the `discipline` feature is enabled.
-    pub discipline_state: String,
+    /// Current discipline state per RFC 5905 Figure 24.
+    /// `None` when the `discipline` feature is not enabled or no discipline is active.
+    pub discipline_state: Option<DisciplineState>,
 }
 
 impl Default for NtpSyncState {
@@ -80,7 +80,7 @@ impl Default for NtpSyncState {
             root_dispersion: 0.0,
             system_peer_count: 0,
             frequency: 0.0,
-            discipline_state: String::new(),
+            discipline_state: None,
         }
     }
 }
@@ -531,7 +531,7 @@ pub(crate) fn select_and_build_state(
     peers: &mut [PeerState],
     total_responses: u64,
     frequency: f64,
-    discipline_state: String,
+    discipline_state: Option<DisciplineState>,
 ) -> Option<SelectionResult> {
     // Update ages and dispersion for all peer filters.
     for peer in peers.iter_mut() {
@@ -998,6 +998,6 @@ mod tests {
         assert_eq!(state.root_dispersion, 0.0);
         assert_eq!(state.system_peer_count, 0);
         assert_eq!(state.frequency, 0.0);
-        assert!(state.discipline_state.is_empty());
+        assert!(state.discipline_state.is_none());
     }
 }

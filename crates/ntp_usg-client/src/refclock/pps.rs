@@ -8,12 +8,13 @@
 
 use super::{RefClock, RefClockSample};
 use crate::unix_time;
-use async_trait::async_trait;
 use log::debug;
 use std::fs::File;
+use std::future::Future;
 use std::io;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::time::Duration;
 use tokio::task;
 
@@ -184,89 +185,94 @@ impl PpsReceiver {
     }
 }
 
-#[async_trait]
 impl RefClock for PpsReceiver {
-    async fn read_sample(&mut self) -> io::Result<RefClockSample> {
-        // Fetch PPS event in blocking task (kernel ioctl blocks)
-        let timeout_secs = self.config.timeout.as_secs();
-        let config = self.config.clone();
+    fn read_sample(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = io::Result<RefClockSample>> + Send + '_>> {
+        Box::pin(async move {
+            // Fetch PPS event in blocking task (kernel ioctl blocks)
+            let timeout_secs = self.config.timeout.as_secs();
+            let config = self.config.clone();
 
-        // Clone file descriptor for blocking operation
-        let fd = self.device.as_raw_fd();
-        let last_seq = self.last_sequence;
+            // Clone file descriptor for blocking operation
+            let fd = self.device.as_raw_fd();
+            let last_seq = self.last_sequence;
 
-        let result = task::spawn_blocking(move || -> io::Result<(PpsTimespec, u32)> {
-            let mut fetch_data = PpsFetchData {
-                info: PpsInfo {
-                    assert_sequence: 0,
-                    clear_sequence: 0,
-                    assert_tu: PpsTimespec { sec: 0, nsec: 0 },
-                    clear_tu: PpsTimespec { sec: 0, nsec: 0 },
-                    current_mode: 0,
-                },
-                timeout: PpsTimespec {
-                    sec: timeout_secs as i64,
-                    nsec: 0,
-                },
-            };
+            let result = task::spawn_blocking(move || -> io::Result<(PpsTimespec, u32)> {
+                let mut fetch_data = PpsFetchData {
+                    info: PpsInfo {
+                        assert_sequence: 0,
+                        clear_sequence: 0,
+                        assert_tu: PpsTimespec { sec: 0, nsec: 0 },
+                        clear_tu: PpsTimespec { sec: 0, nsec: 0 },
+                        current_mode: 0,
+                    },
+                    timeout: PpsTimespec {
+                        sec: timeout_secs as i64,
+                        nsec: 0,
+                    },
+                };
 
-            unsafe {
-                let ret = libc::ioctl(fd, PPS_FETCH, &mut fetch_data as *mut PpsFetchData);
-                if ret != 0 {
-                    return Err(io::Error::last_os_error());
-                }
-            }
-
-            let (timestamp, sequence) = match config.capture_mode {
-                PpsCaptureMode::Assert => {
-                    (fetch_data.info.assert_tu, fetch_data.info.assert_sequence)
-                }
-                PpsCaptureMode::Clear => (fetch_data.info.clear_tu, fetch_data.info.clear_sequence),
-                PpsCaptureMode::Both => {
-                    if fetch_data.info.assert_sequence > fetch_data.info.clear_sequence {
-                        (fetch_data.info.assert_tu, fetch_data.info.assert_sequence)
-                    } else {
-                        (fetch_data.info.clear_tu, fetch_data.info.clear_sequence)
+                unsafe {
+                    let ret = libc::ioctl(fd, PPS_FETCH, &mut fetch_data as *mut PpsFetchData);
+                    if ret != 0 {
+                        return Err(io::Error::last_os_error());
                     }
                 }
-            };
 
-            if sequence <= last_seq {
-                return Err(io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    "No new PPS event received",
-                ));
-            }
+                let (timestamp, sequence) = match config.capture_mode {
+                    PpsCaptureMode::Assert => {
+                        (fetch_data.info.assert_tu, fetch_data.info.assert_sequence)
+                    }
+                    PpsCaptureMode::Clear => {
+                        (fetch_data.info.clear_tu, fetch_data.info.clear_sequence)
+                    }
+                    PpsCaptureMode::Both => {
+                        if fetch_data.info.assert_sequence > fetch_data.info.clear_sequence {
+                            (fetch_data.info.assert_tu, fetch_data.info.assert_sequence)
+                        } else {
+                            (fetch_data.info.clear_tu, fetch_data.info.clear_sequence)
+                        }
+                    }
+                };
 
-            Ok((timestamp, sequence))
-        })
-        .await
-        .map_err(|e| io::Error::other(format!("Task join error: {}", e)))?;
+                if sequence <= last_seq {
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "No new PPS event received",
+                    ));
+                }
 
-        let (pps_time, sequence) = result?;
-        self.last_sequence = sequence;
+                Ok((timestamp, sequence))
+            })
+            .await
+            .map_err(|e| io::Error::other(format!("Task join error: {}", e)))?;
 
-        // Convert PPS timestamp to Instant
-        let pps_instant = unix_time::Instant::new(pps_time.sec, pps_time.nsec as i32);
+            let (pps_time, sequence) = result?;
+            self.last_sequence = sequence;
 
-        // Get current system time
-        let now = unix_time::Instant::now();
+            // Convert PPS timestamp to Instant
+            let pps_instant = unix_time::Instant::new(pps_time.sec, pps_time.nsec as i32);
 
-        // Calculate offset: PPS time - system time
-        let pps_secs = pps_time.sec as f64 + (pps_time.nsec as f64 / 1e9);
-        let now_secs = now.secs() as f64 + (now.subsec_nanos() as f64 / 1e9);
-        let offset = pps_secs - now_secs;
+            // Get current system time
+            let now = unix_time::Instant::now();
 
-        debug!(
-            "PPS offset: {:.9}s (PPS: {:.9}, System: {:.9})",
-            offset, pps_secs, now_secs
-        );
+            // Calculate offset: PPS time - system time
+            let pps_secs = pps_time.sec as f64 + (pps_time.nsec as f64 / 1e9);
+            let now_secs = now.secs() as f64 + (now.subsec_nanos() as f64 / 1e9);
+            let offset = pps_secs - now_secs;
 
-        Ok(RefClockSample {
-            timestamp: pps_instant,
-            offset,
-            dispersion: self.config.dispersion,
-            quality: 255, // Maximum quality - PPS is extremely precise
+            debug!(
+                "PPS offset: {:.9}s (PPS: {:.9}, System: {:.9})",
+                offset, pps_secs, now_secs
+            );
+
+            Ok(RefClockSample {
+                timestamp: pps_instant,
+                offset,
+                dispersion: self.config.dispersion,
+                quality: 255, // Maximum quality - PPS is extremely precise
+            })
         })
     }
 

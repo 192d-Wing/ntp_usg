@@ -176,8 +176,8 @@ pub fn cluster_survivors(candidates: &mut Vec<PeerCandidate>) {
             break;
         }
 
-        // Remove the outlier.
-        candidates.remove(max_idx);
+        // Remove the outlier (order doesn't matter for the pruning algorithm).
+        candidates.swap_remove(max_idx);
     }
 }
 

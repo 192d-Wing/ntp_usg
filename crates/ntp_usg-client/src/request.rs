@@ -16,11 +16,11 @@ use std::time::Duration;
 
 /// Select the appropriate bind address based on the target address family.
 ///
-/// Returns `"0.0.0.0:0"` for IPv4 targets and `"[::]:0"` for IPv6 targets.
-pub(crate) fn bind_addr_for(target: &SocketAddr) -> &'static str {
+/// Returns `0.0.0.0:0` for IPv4 targets and `[::]:0` for IPv6 targets.
+pub(crate) fn bind_addr_for(target: &SocketAddr) -> SocketAddr {
     match target {
-        SocketAddr::V4(_) => "0.0.0.0:0",
-        SocketAddr::V6(_) => "[::]:0",
+        SocketAddr::V4(_) => SocketAddr::from(([0, 0, 0, 0], 0)),
+        SocketAddr::V6(_) => SocketAddr::from(([0u16; 8], 0)),
     }
 }
 

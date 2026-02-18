@@ -11,7 +11,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-ntp_proto = { package = "ntp_usg-proto", path = "..", features = ["std", "nts"] }
+ntp_proto = { package = "ntp_usg-proto", path = "..", features = ["std", "nts", "ntpv5", "roughtime"] }
 
 [[bin]]
 name = "fuzz_packet_from_bytes"
@@ -31,4 +31,14 @@ doc = false
 [[bin]]
 name = "fuzz_nts_authenticator"
 path = "fuzz_targets/fuzz_nts_authenticator.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_packet_v5"
+path = "fuzz_targets/fuzz_packet_v5.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_roughtime"
+path = "fuzz_targets/fuzz_roughtime.rs"
 doc = false

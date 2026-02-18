@@ -109,10 +109,9 @@ sudo ethtool -T eth0
 All reference clocks implement the `RefClock` trait:
 
 ```rust
-#[async_trait]
 pub trait RefClock: Send + Sync {
     /// Read a time sample from the reference clock
-    async fn read_sample(&mut self) -> io::Result<RefClockSample>;
+    fn read_sample(&mut self) -> Pin<Box<dyn Future<Output = io::Result<RefClockSample>> + Send + '_>>;
 
     /// Get the stratum to advertise (typically 0 or 1)
     fn stratum(&self) -> u8;

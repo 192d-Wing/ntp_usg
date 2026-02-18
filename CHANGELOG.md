@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-02-18
+
+### Added
+
+#### Testing & CI
+
+- **12 smol server integration tests**: Mirrors the tokio integration test suite for the smol runtime — server bind/respond, client library roundtrip, stratum/reference echo, KoD (DENY/RSTR/RATE), rate limiting, interleaved mode, NTPv3 compat, concurrent clients, origin timestamp echo.
+- **2 new fuzz targets**: `fuzz_packet_v5` (NTPv5 `PacketV5::from_bytes`) and `fuzz_roughtime` (Roughtime `TagValueMap::from_bytes`) added to `ntp_usg-proto/fuzz`.
+- **CI enhancements**: `cargo deny` license/advisory check, `discipline` and `refclock` feature testing, new fuzz targets in smoke test, Miri NTPv5 test.
+
+#### Examples
+
+- **`discipline.rs`** (client) — Clock discipline loop with `DisciplineState` transitions (Nset→Fset→Sync).
+- **`ntpv5_client.rs`** (client) — NTPv5 packet construction and parsing (draft-ietf-ntp-ntpv5).
+- **`nts_smol.rs`** (client) — NTS-secured request using smol runtime.
+- **`symmetric.rs`** (client) — Symmetric active/passive mode exchange.
+- **`socket_opts.rs`** (client) — Socket options (SO_TIMESTAMPNS, IP_TOS/DSCP) for precision timestamping.
+- **`ntpv5_server.rs`** (server) — NTPv5-capable server demonstration.
+
+### Changed
+
+#### Performance
+
+- **`NtpSyncState::discipline_state`**: Changed from `String` to `Option<DisciplineState>` — eliminates heap allocation, enables pattern matching. (**Breaking**: field type changed.)
+- **`SampleFilter::jitter()`**: Replaced `Vec` collection with iterator-based computation — eliminates heap allocation in the filter hot path.
+- **`cluster_survivors()`**: Replaced `Vec::remove()` (O(n) shift) with `Vec::swap_remove()` (O(1)) — order is irrelevant for the pruning algorithm.
+- **`bind_addr_for()`**: Returns `SocketAddr` directly instead of `&'static str` — eliminates 10 call sites of `.parse().unwrap()`.
+
+#### Dependency Cleanup
+
+- **Removed `async-trait`**: Manual desugaring (`fn -> Pin<Box<dyn Future + Send + '_>>`) for the `RefClock` trait and all implementations. MSRV 1.93 has native async fn in traits, but `dyn RefClock` requires manual desugaring for object safety. Eliminates proc-macro compile cost.
+
 ## [4.1.0] - 2026-02-18
 
 ### Added
@@ -610,6 +642,8 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[4.2.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.1.0...v4.2.0
+[4.1.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.0.1...v4.1.0
 [4.0.1]: https://github.com/192d-Wing/ntp_usg/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/192d-Wing/ntp_usg/compare/v3.4.0...v4.0.0
 [3.4.0]: https://github.com/192d-Wing/ntp_usg/compare/v3.3.3...v3.4.0

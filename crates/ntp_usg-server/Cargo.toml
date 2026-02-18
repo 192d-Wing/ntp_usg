@@ -32,7 +32,7 @@ nts = [
 ]
 symmetric = []
 broadcast = []
-refclock = ["tokio", "dep:ntp_usg-client", "dep:async-trait"]
+refclock = ["tokio", "dep:ntp_usg-client"]
 gps = ["refclock", "ntp_usg-client/gps"]
 pps = ["refclock", "ntp_usg-client/pps"]
 socket-opts = ["dep:socket2"]
@@ -50,7 +50,7 @@ nts-smol = [
 
 [dependencies]
 ntp_usg-proto = { workspace = true }
-ntp_usg-client = { path = "../ntp_usg-client", version = "4.1.0", optional = true, default-features = false, features = ["refclock"] }
+ntp_usg-client = { path = "../ntp_usg-client", version = "4.2.0", optional = true, default-features = false, features = ["refclock"] }
 log = { workspace = true }
 tokio = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
@@ -61,11 +61,13 @@ futures-rustls = { workspace = true, optional = true }
 futures-lite = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 socket2 = { workspace = true, optional = true }
-async-trait = { version = "0.1.50", optional = true }
+
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
-ntp_usg-client = { path = "../ntp_usg-client", version = "4.1.0", features = ["tokio"] }
+ntp_usg-client = { path = "../ntp_usg-client", version = "4.2.0", features = ["tokio", "smol-runtime"] }
+smol = { workspace = true }
+futures-lite = { workspace = true }
 env_logger = "0.11"
 
 [[example]]
@@ -83,6 +85,10 @@ required-features = ["refclock"]
 [[example]]
 name = "rate_limiter"
 required-features = ["tokio"]
+
+[[example]]
+name = "ntpv5_server"
+required-features = ["ntpv5", "tokio"]
 
 [lints]
 workspace = true

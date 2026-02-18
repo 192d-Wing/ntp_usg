@@ -103,18 +103,20 @@ impl SampleFilter {
             Some(s) => s,
             None => return 0.0,
         };
-        let valid: Vec<&ClockSample> = self.samples.iter().flatten().collect();
-        if valid.len() < 2 {
+        let count = self.samples.iter().flatten().count();
+        if count < 2 {
             return 0.0;
         }
-        let sum_sq: f64 = valid
+        let sum_sq: f64 = self
+            .samples
             .iter()
+            .flatten()
             .map(|s| {
                 let diff = s.offset - best.offset;
                 diff * diff
             })
             .sum();
-        (sum_sq / (valid.len() - 1) as f64).sqrt()
+        (sum_sq / (count - 1) as f64).sqrt()
     }
 
     /// Returns the number of valid samples currently in the filter.

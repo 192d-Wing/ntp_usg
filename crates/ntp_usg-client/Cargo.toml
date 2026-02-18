@@ -33,7 +33,7 @@ clock = ["dep:libc", "dep:windows-sys"]
 discipline = ["clock"]
 symmetric = []
 broadcast = []
-refclock = ["tokio", "dep:async-trait"]
+refclock = ["tokio"]
 gps = ["refclock", "dep:serialport"]
 pps = ["refclock", "dep:libc"]
 hwts = ["refclock", "dep:libc"]
@@ -62,7 +62,7 @@ futures-rustls = { workspace = true, optional = true }
 futures-lite = { workspace = true, optional = true }
 socket2 = { workspace = true, optional = true }
 serialport = { version = "4.6", optional = true }
-async-trait = { version = "0.1.50", optional = true }
+
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true, optional = true }
@@ -158,6 +158,26 @@ required-features = ["pps", "hwts"]
 [[example]]
 name = "roughtime"
 required-features = ["roughtime"]
+
+[[example]]
+name = "discipline"
+required-features = ["discipline"]
+
+[[example]]
+name = "ntpv5_client"
+required-features = ["ntpv5", "tokio"]
+
+[[example]]
+name = "nts_smol"
+required-features = ["nts-smol"]
+
+[[example]]
+name = "symmetric"
+required-features = ["symmetric", "tokio"]
+
+[[example]]
+name = "socket_opts"
+required-features = ["socket-opts", "tokio"]
 
 [[bench]]
 name = "selection_benchmark"

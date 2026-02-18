@@ -385,6 +385,33 @@ Full NTPv4-to-NTPv5 protocol upgrade per `draft-ietf-ntp-ntpv5-07` (active, expi
 
 ---
 
+## Version 4.2.0 - Testing, Performance & Examples ✅
+
+**Released**: 2026-02-18
+
+### Testing & CI
+
+- ✅ **12 smol server integration tests**: Full parity with tokio integration tests on the smol runtime
+- ✅ **2 new fuzz targets**: `fuzz_packet_v5` (NTPv5) and `fuzz_roughtime` (Roughtime) in `ntp_usg-proto/fuzz`
+- ✅ **CI enhancements**: `cargo deny` license/advisory checks, `discipline`/`refclock` feature coverage, Miri NTPv5, expanded fuzz smoke tests
+
+### Performance
+
+- ✅ **`discipline_state` type upgrade**: `String` → `Option<DisciplineState>` — zero allocation, pattern matching
+- ✅ **SampleFilter jitter**: Iterator-based computation replaces heap-allocated `Vec`
+- ✅ **`cluster_survivors()` swap_remove**: O(1) removal replaces O(n) shift
+- ✅ **`bind_addr_for()` cleanup**: Returns `SocketAddr` directly, eliminates 10 `.parse().unwrap()` calls
+
+### Dependency Cleanup
+
+- ✅ **Removed `async-trait`**: Manual desugaring for `RefClock` trait preserving `dyn` object safety
+
+### Examples
+
+- ✅ 6 new examples: `discipline.rs`, `ntpv5_client.rs`, `nts_smol.rs`, `symmetric.rs`, `socket_opts.rs`, `ntpv5_server.rs`
+
+---
+
 ## Contributing
 
 We welcome contributions! If you'd like to work on any of these roadmap items:
@@ -405,8 +432,8 @@ Have ideas for the roadmap? Open an issue with the `enhancement` label or start 
 ---
 
 **Last Updated**: 2026-02-18
-**Current Version**: 4.1.0
-**Next Planned Release**: 4.2.0
+**Current Version**: 4.2.0
+**Next Planned Release**: 4.3.0
 
 ## Version 3.2.0 Progress Summary
 
