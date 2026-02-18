@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /*!
+NTP client library with synchronous, async (tokio/smol), and NTS support.
+
 # Example
 Shows how to use the ntp_client library to fetch the current time according
 to the requested ntp server.
@@ -21,6 +23,28 @@ fn main() {
     println!("Offset: {:.6} seconds", result.offset_seconds);
 }
 ```
+
+# Feature Flags
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `tokio` | no | Async client and helpers using the tokio runtime. |
+| `smol-runtime` | no | Async client and helpers using the smol runtime. |
+| `nts` | no | Network Time Security (RFC 8915) via tokio + tokio-rustls. Implies `tokio`. |
+| `nts-smol` | no | NTS via smol + futures-rustls. Implies `smol-runtime`. Cannot be combined with `nts` (different TLS backends). |
+| `pq-nts` | no | Enable post-quantum key exchange for NTS (ML-KEM via aws-lc-rs). |
+| `clock` | no | System clock step/slew functions (`libc`/`windows-sys`). |
+| `discipline` | no | PLL/FLL clock discipline algorithm. Implies `clock`. |
+| `symmetric` | no | NTP symmetric active/passive mode (RFC 5905 modes 1 & 2). |
+| `broadcast` | no | NTP broadcast client (mode 5). Deprecated by RFC 8633. |
+| `refclock` | no | Reference clock abstraction layer. Implies `tokio`. |
+| `gps` | no | GPS reference clock driver. Implies `refclock`. |
+| `pps` | no | PPS reference clock driver. Implies `refclock`. |
+| `hwts` | no | Hardware timestamping support. Implies `refclock`. |
+| `roughtime` | no | Roughtime client (draft-ietf-ntp-roughtime). Implies `tokio`. |
+| `socket-opts` | no | DSCP and `IPV6_V6ONLY` socket options via `socket2`. |
+| `ipv4` | no | Default to `0.0.0.0` instead of `[::]` for listen addresses. |
+| `ntpv5` | no | NTPv5 draft support (draft-ietf-ntp-ntpv5). |
 */
 
 #![warn(missing_docs)]

@@ -133,7 +133,7 @@ pub struct Version(pub(super) u8);
 /// As the only constructors are via associated constants, it should be impossible to create an
 /// invalid `Mode`.
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub enum Mode {
     /// Reserved mode (value 0).
     Reserved = 0,
@@ -142,6 +142,7 @@ pub enum Mode {
     /// Symmetric passive mode (value 2).
     SymmetricPassive = 2,
     /// Client mode (value 3).
+    #[default]
     Client = 3,
     /// Server mode (value 4).
     Server = 4,
@@ -189,7 +190,7 @@ impl TryFrom<u8> for Mode {
 /// variable p.stratum and to map p.stratum values of `MAXSTRAT` or greater to 0 in transmitted
 /// packets. This allows reference clocks, which normally appear at stratum 0, to be conveniently
 /// mitigated using the same clock selection algorithms used for external sources.
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Stratum(pub u8);
 
 /// A 32-bit code identifying the particular server or reference clock.
@@ -557,6 +558,17 @@ impl Version {
     /// NTP version 5 (`draft-ietf-ntp-ntpv5`).
     pub const V5: Self = Version(5);
 
+    /// Create a `Version` from a raw version number.
+    ///
+    /// Returns `None` if the value is outside the valid range (1-5).
+    pub fn new(v: u8) -> Option<Self> {
+        if (1..=5).contains(&v) {
+            Some(Version(v))
+        } else {
+            None
+        }
+    }
+
     /// Returns the raw version number as a `u8`.
     pub fn value(&self) -> u8 {
         self.0
@@ -626,6 +638,46 @@ impl ConstPackedSizeBytes for Packet {
         + ShortFormat::PACKED_SIZE_BYTES * 2
         + ReferenceIdentifier::PACKED_SIZE_BYTES
         + TimestampFormat::PACKED_SIZE_BYTES * 4;
+}
+
+// Default implementations.
+
+impl Default for Version {
+    /// Defaults to NTPv4, the current standard (RFC 5905).
+    fn default() -> Self {
+        Version::V4
+    }
+}
+
+impl Default for ReferenceIdentifier {
+    /// Defaults to `Unknown([0; 4])` (unset reference identifier).
+    fn default() -> Self {
+        ReferenceIdentifier::Unknown([0; 4])
+    }
+}
+
+impl Default for Packet {
+    /// Defaults to a valid NTPv4 client request template.
+    ///
+    /// All timestamp and delay fields are zeroed. Set `transmit_timestamp`
+    /// before sending.
+    fn default() -> Self {
+        Packet {
+            leap_indicator: LeapIndicator::default(),
+            version: Version::default(),
+            mode: Mode::default(),
+            stratum: Stratum::default(),
+            poll: 0,
+            precision: 0,
+            root_delay: ShortFormat::default(),
+            root_dispersion: ShortFormat::default(),
+            reference_id: ReferenceIdentifier::default(),
+            reference_timestamp: TimestampFormat::default(),
+            origin_timestamp: TimestampFormat::default(),
+            receive_timestamp: TimestampFormat::default(),
+            transmit_timestamp: TimestampFormat::default(),
+        }
+    }
 }
 
 // Display implementations.

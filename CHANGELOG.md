@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-02-18
+
+### Added
+
+#### Server Improvements
+
+- **Runtime metrics** (`ServerMetrics`): Lock-free `AtomicU64` counters for requests received/sent/dropped, KoD responses (DENY/RSTR/RATE), interleaved responses, and active clients. Attach via `.metrics(Arc<ServerMetrics>)` builder method; read via `.snapshot()`.
+- **Runtime configuration** (`ConfigHandle`): Update access control, rate limiting, and interleaved mode while the server is running via `Arc<RwLock<ServerConfig>>`. Obtain a `ConfigHandle` from `server.config_handle()` before calling `.run()`.
+- **12 server integration tests**: In-process loopback tests on ephemeral ports covering happy-path, KoD (DENY/RSTR/RATE), rate limiting, interleaved mode, NTPv3 compatibility, concurrent clients, and origin timestamp echo.
+
+#### API Polish & Developer Experience
+
+- **Trait derives**: Added `Default` for `Version` (V4), `Mode` (Client), `Stratum` (UNSPECIFIED), `ReferenceIdentifier` (Unknown), `Packet` (NTPv4 client template). Added `Eq`/`Hash` on `Instant`, `ParseError`, `ExtensionField`/`ExtensionFieldRef`, `KissOfDeathError`, `RateLimitConfig`, `IpNet`.
+- **`Version::new(v: u8)`**: Validated constructor for `Version` (1..=5), needed by external crates where the inner field is `pub(super)`.
+- **`Packet::default()`**: Produces a valid NTPv4 client request template. Simplified `build_request_packet()` and `buildClientRequest()` using struct update syntax.
+- **WASM API**: Added `NtpPacket.clientRequest()` static constructor, setters (`setVersion`, `setMode`, `setStratum`, `setPoll`, `setPrecision`, `setTransmitTimestamp`, `setOriginTimestamp`, `setReceiveTimestamp`, `setReferenceTimestamp`, `setLeapIndicator`), `computeOffsetDelay()` (RFC 5905 offset/delay from four timestamps), and `validateResponse()` (RFC 5905 response validation with KoD detection).
+- **Feature flag documentation**: Added feature flag tables to `ntp_usg-client` and `ntp_usg-server` lib.rs explaining all feature gates, their implications, and incompatibilities.
+
+### Changed
+
+- Server `run()` loop scopes config read lock in a block instead of using explicit `drop()`, ensuring `Send`-safety for the async future.
+
 ## [4.0.1] - 2026-02-18
 
 ### Fixed

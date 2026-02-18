@@ -34,7 +34,7 @@ use crate::error::ParseError;
 ///
 /// This type references data within the original byte buffer, avoiding
 /// the heap allocation required by [`ExtensionField`].
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ExtensionFieldRef<'a> {
     /// The extension field type code.
     pub field_type: u16,
@@ -117,7 +117,7 @@ pub const NTS_AUTHENTICATOR: u16 = 0x0404;
 
 /// A generic NTP extension field.
 #[cfg(any(feature = "alloc", feature = "std"))]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ExtensionField {
     /// The extension field type code.
     pub field_type: u16,

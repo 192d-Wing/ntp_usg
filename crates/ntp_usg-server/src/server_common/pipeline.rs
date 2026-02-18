@@ -7,9 +7,9 @@ use crate::protocol::{self, ConstPackedSizeBytes};
 use crate::unix_time;
 
 use super::{
-    AccessControl, AccessResult, ClientTable, RateLimitConfig, RateLimitResult, ServerSystemState,
-    build_interleaved_response, build_kod_response, build_server_response, check_rate_limit,
-    serialize_response_with_t3, update_client_state, validate_client_request,
+    AccessControl, AccessResult, ClientTable, RateLimitConfig, RateLimitResult, ServerMetrics,
+    ServerSystemState, build_interleaved_response, build_kod_response, build_server_response,
+    check_rate_limit, serialize_response_with_t3, update_client_state, validate_client_request,
 };
 
 /// The complete result of handling a client request.
@@ -37,7 +37,12 @@ pub(crate) fn handle_request(
     rate_limit_config: Option<&RateLimitConfig>,
     client_table: &mut ClientTable,
     enable_interleaved: bool,
+    metrics: Option<&ServerMetrics>,
 ) -> HandleResult {
+    if let Some(m) = metrics {
+        m.inc_requests_received();
+    }
+
     // 0. NTPv5 version dispatch: peek at VN field in byte 0.
     #[cfg(feature = "ntpv5")]
     {
@@ -52,6 +57,7 @@ pub(crate) fn handle_request(
                     access_control,
                     rate_limit_config,
                     client_table,
+                    metrics,
                 );
             }
         }
@@ -62,6 +68,9 @@ pub(crate) fn handle_request(
         Ok(req) => req,
         Err(e) => {
             debug!("dropping invalid request from {}: {}", src_ip, e);
+            if let Some(m) = metrics {
+                m.inc_requests_dropped();
+            }
             return HandleResult::Drop;
         }
     };
@@ -71,6 +80,9 @@ pub(crate) fn handle_request(
         AccessResult::Allow => {}
         AccessResult::Deny => {
             let kod = build_kod_response(&request, protocol::KissOfDeath::Deny);
+            if let Some(m) = metrics {
+                m.inc_kod_deny();
+            }
             match serialize_response_with_t3(&kod) {
                 Ok(buf) => return HandleResult::Response(buf),
                 Err(_) => return HandleResult::Drop,
@@ -78,6 +90,9 @@ pub(crate) fn handle_request(
         }
         AccessResult::Restrict => {
             let kod = build_kod_response(&request, protocol::KissOfDeath::Rstr);
+            if let Some(m) = metrics {
+                m.inc_kod_rstr();
+            }
             match serialize_response_with_t3(&kod) {
                 Ok(buf) => return HandleResult::Response(buf),
                 Err(_) => return HandleResult::Drop,
@@ -94,6 +109,9 @@ pub(crate) fn handle_request(
             RateLimitResult::Allow => {}
             RateLimitResult::RateExceeded => {
                 let kod = build_kod_response(&request, protocol::KissOfDeath::Rate);
+                if let Some(m) = metrics {
+                    m.inc_kod_rate();
+                }
                 match serialize_response_with_t3(&kod) {
                     Ok(buf) => return HandleResult::Response(buf),
                     Err(_) => return HandleResult::Drop,
@@ -106,7 +124,7 @@ pub(crate) fn handle_request(
     let t2: protocol::TimestampFormat = unix_time::Instant::now().into();
 
     // 5. Check for interleaved mode.
-    let response = if enable_interleaved {
+    let interleaved = if enable_interleaved {
         if let Some(client_state) = client_table.get(&src_ip) {
             build_interleaved_response(&request, server_state, client_state, t2)
         } else {
@@ -115,9 +133,11 @@ pub(crate) fn handle_request(
     } else {
         None
     };
+    let is_interleaved = interleaved.is_some();
 
     // 6. Build response (basic, interleaved, or symmetric passive).
-    let mut response = response.unwrap_or_else(|| {
+    #[allow(unused_mut)]
+    let mut response = interleaved.unwrap_or_else(|| {
         #[cfg(feature = "symmetric")]
         if request.mode == protocol::Mode::SymmetricActive {
             return super::build_symmetric_passive_response(&request, server_state, t2);
@@ -142,6 +162,9 @@ pub(crate) fn handle_request(
         Ok(buf) => buf,
         Err(e) => {
             debug!("failed to serialize response for {}: {}", src_ip, e);
+            if let Some(m) = metrics {
+                m.inc_requests_dropped();
+            }
             return HandleResult::Drop;
         }
     };
@@ -157,6 +180,13 @@ pub(crate) fn handle_request(
     // 9. Update per-client state.
     let client = client_table.get_or_insert(src_ip, now);
     update_client_state(client, t2, t3, request.transmit_timestamp);
+
+    if let Some(m) = metrics {
+        m.inc_responses_sent();
+        if is_interleaved {
+            m.inc_interleaved();
+        }
+    }
 
     HandleResult::Response(buf)
 }
@@ -501,6 +531,7 @@ mod tests {
             None,
             &mut table,
             false,
+            None,
         );
         assert!(matches!(result, HandleResult::Response(_)));
 
@@ -532,6 +563,7 @@ mod tests {
             None,
             &mut table,
             false,
+            None,
         );
         if let HandleResult::Response(resp_buf) = result {
             let response: protocol::Packet = (&resp_buf[..48]).read_bytes().unwrap();
@@ -561,6 +593,7 @@ mod tests {
             None,
             &mut table,
             false,
+            None,
         );
         assert!(matches!(result, HandleResult::Drop));
     }
@@ -617,6 +650,7 @@ mod tests {
             None,
             &mut table,
             false,
+            None,
         );
 
         match result {
@@ -674,6 +708,7 @@ mod tests {
             None,
             &mut table,
             false,
+            None,
         );
 
         if let HandleResult::Response(resp_buf) = result {
@@ -739,6 +774,7 @@ mod tests {
             None,
             &mut table,
             false,
+            None,
         );
 
         // Should get a V5Response, not a V4 Response.

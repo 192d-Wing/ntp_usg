@@ -32,8 +32,8 @@ use std::sync::{Arc, RwLock};
 use crate::default_listen_addr;
 use crate::protocol;
 use crate::server_common::{
-    AccessControl, ClientTable, HandleResult, IpNet, RateLimitConfig, ServerSystemState,
-    handle_request,
+    AccessControl, ClientTable, ConfigHandle, HandleResult, IpNet, RateLimitConfig, ServerConfig,
+    ServerMetrics, ServerSystemState, handle_request,
 };
 
 /// Builder for configuring and creating an [`NtpServer`].
@@ -46,6 +46,7 @@ pub struct NtpServerBuilder {
     enable_interleaved: bool,
     max_clients: usize,
     socket_opts: crate::socket_opts::SocketOptions,
+    metrics: Option<Arc<ServerMetrics>>,
 }
 
 impl NtpServerBuilder {
@@ -59,6 +60,7 @@ impl NtpServerBuilder {
             enable_interleaved: false,
             max_clients: 100_000,
             socket_opts: crate::socket_opts::SocketOptions::default(),
+            metrics: None,
         }
     }
 
@@ -160,6 +162,16 @@ impl NtpServerBuilder {
         self
     }
 
+    /// Attach a shared metrics instance for runtime counter tracking.
+    ///
+    /// The server will increment atomic counters on every request. Pass the
+    /// same `Arc<ServerMetrics>` to other tasks to read snapshots via
+    /// [`ServerMetrics::snapshot()`].
+    pub fn metrics(mut self, metrics: Arc<ServerMetrics>) -> Self {
+        self.metrics = Some(metrics);
+        self
+    }
+
     /// Restrict IPv6 sockets to IPv6-only traffic (no IPv4-mapped addresses).
     ///
     /// Only applies to IPv6 listen addresses; ignored for IPv4.
@@ -200,13 +212,18 @@ impl NtpServerBuilder {
         };
         debug!("NTP server listening on {}", self.listen_addr);
 
+        let config = Arc::new(RwLock::new(ServerConfig {
+            access_control: AccessControl::new(self.allow_list, self.deny_list),
+            rate_limit: self.rate_limit,
+            enable_interleaved: self.enable_interleaved,
+        }));
+
         Ok(NtpServer {
             sock,
             system_state: Arc::new(RwLock::new(self.system_state)),
-            access_control: AccessControl::new(self.allow_list, self.deny_list),
-            rate_limit: self.rate_limit,
+            config,
             client_table: ClientTable::new(self.max_clients),
-            enable_interleaved: self.enable_interleaved,
+            metrics: self.metrics,
         })
     }
 }
@@ -218,10 +235,9 @@ impl NtpServerBuilder {
 pub struct NtpServer {
     sock: smol::net::UdpSocket,
     system_state: Arc<RwLock<ServerSystemState>>,
-    access_control: AccessControl,
-    rate_limit: Option<RateLimitConfig>,
+    config: Arc<RwLock<ServerConfig>>,
     client_table: ClientTable,
-    enable_interleaved: bool,
+    metrics: Option<Arc<ServerMetrics>>,
 }
 
 impl NtpServer {
@@ -233,6 +249,19 @@ impl NtpServer {
     /// Get a reference to the server's system state for external updates.
     pub fn system_state(&self) -> &Arc<RwLock<ServerSystemState>> {
         &self.system_state
+    }
+
+    /// Get a handle for updating server configuration at runtime.
+    ///
+    /// The returned [`ConfigHandle`] can be cloned and sent to other tasks.
+    /// Updates made through the handle take effect on the next incoming request.
+    pub fn config_handle(&self) -> ConfigHandle {
+        ConfigHandle::new(self.config.clone())
+    }
+
+    /// Get the attached metrics instance, if any.
+    pub fn metrics(&self) -> Option<&Arc<ServerMetrics>> {
+        self.metrics.as_ref()
     }
 
     /// Get the local address the server is bound to.
@@ -253,16 +282,27 @@ impl NtpServer {
                 .map_err(|_| io::Error::other("system state lock poisoned"))?
                 .clone();
 
-            let result = handle_request(
-                &recv_buf,
-                recv_len,
-                src_addr.ip(),
-                &server_state,
-                &self.access_control,
-                self.rate_limit.as_ref(),
-                &mut self.client_table,
-                self.enable_interleaved,
-            );
+            let result = {
+                let config = self
+                    .config
+                    .read()
+                    .map_err(|_| io::Error::other("config lock poisoned"))?;
+                handle_request(
+                    &recv_buf,
+                    recv_len,
+                    src_addr.ip(),
+                    &server_state,
+                    &config.access_control,
+                    config.rate_limit.as_ref(),
+                    &mut self.client_table,
+                    config.enable_interleaved,
+                    self.metrics.as_deref(),
+                )
+            };
+
+            if let Some(m) = &self.metrics {
+                m.set_active_clients(self.client_table.len() as u64);
+            }
 
             match result {
                 HandleResult::Response(resp_buf) => {

@@ -7,7 +7,7 @@ use crate::protocol;
 /// Configuration for per-client rate limiting.
 ///
 /// Rate limiting is per client IP address (not per port, per RFC 9109).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RateLimitConfig {
     /// Maximum requests allowed per window from a single client IP.
     pub max_requests_per_window: u32,
@@ -99,6 +99,11 @@ impl ClientTable {
     /// Get an existing client state entry (for interleaved mode lookup).
     pub(crate) fn get(&self, ip: &IpAddr) -> Option<&ClientState> {
         self.entries.get(ip)
+    }
+
+    /// Return the number of tracked clients.
+    pub(crate) fn len(&self) -> usize {
+        self.entries.len()
     }
 
     /// Remove entries older than the stale threshold.

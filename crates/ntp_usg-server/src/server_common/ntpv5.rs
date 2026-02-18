@@ -26,7 +26,7 @@ use crate::unix_time;
 
 use super::{
     AccessControl, AccessResult, ClientTable, HandleResult, RateLimitConfig, RateLimitResult,
-    ServerSystemState, check_rate_limit,
+    ServerMetrics, ServerSystemState, check_rate_limit,
 };
 
 /// Validate an incoming NTPv5 client request.
@@ -222,6 +222,9 @@ fn serialize_v5_response(
 }
 
 /// Handle a V5 request through the full server pipeline.
+///
+/// Note: `requests_received` is already incremented by the caller
+/// ([`super::handle_request`]) before dispatching here.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn handle_v5_request(
     recv_buf: &[u8],
@@ -231,12 +234,16 @@ pub(crate) fn handle_v5_request(
     access_control: &AccessControl,
     rate_limit_config: Option<&RateLimitConfig>,
     client_table: &mut ClientTable,
+    metrics: Option<&ServerMetrics>,
 ) -> HandleResult {
     // 1. Validate V5 request.
     let (request, extensions) = match validate_v5_client_request(recv_buf, recv_len) {
         Ok(r) => r,
         Err(e) => {
             debug!("dropping invalid V5 request from {}: {}", src_ip, e);
+            if let Some(m) = metrics {
+                m.inc_requests_dropped();
+            }
             return HandleResult::Drop;
         }
     };
@@ -244,8 +251,18 @@ pub(crate) fn handle_v5_request(
     // 2. Access control.
     match access_control.check(&src_ip) {
         AccessResult::Allow => {}
-        AccessResult::Deny | AccessResult::Restrict => {
+        AccessResult::Deny => {
             debug!("V5 access denied for {}", src_ip);
+            if let Some(m) = metrics {
+                m.inc_kod_deny();
+            }
+            return HandleResult::Drop;
+        }
+        AccessResult::Restrict => {
+            debug!("V5 access restricted for {}", src_ip);
+            if let Some(m) = metrics {
+                m.inc_kod_rstr();
+            }
             return HandleResult::Drop;
         }
     }
@@ -259,6 +276,9 @@ pub(crate) fn handle_v5_request(
             RateLimitResult::Allow => {}
             RateLimitResult::RateExceeded => {
                 debug!("V5 rate limit exceeded for {}", src_ip);
+                if let Some(m) = metrics {
+                    m.inc_kod_rate();
+                }
                 return HandleResult::Drop;
             }
         }
@@ -275,12 +295,20 @@ pub(crate) fn handle_v5_request(
 
     // 7. Serialize response, matching request length exactly.
     match serialize_v5_response(&response, &response_ext, recv_len) {
-        Some(buf) => HandleResult::V5Response(buf),
+        Some(buf) => {
+            if let Some(m) = metrics {
+                m.inc_responses_sent();
+            }
+            HandleResult::V5Response(buf)
+        }
         None => {
             debug!(
                 "V5 response exceeds request length ({} bytes) for {}",
                 recv_len, src_ip
             );
+            if let Some(m) = metrics {
+                m.inc_requests_dropped();
+            }
             HandleResult::Drop
         }
     }
@@ -577,6 +605,7 @@ mod tests {
             &ac,
             None,
             &mut table,
+            None,
         );
 
         match result {
@@ -608,6 +637,7 @@ mod tests {
             &ac,
             None,
             &mut table,
+            None,
         );
         assert!(matches!(result, HandleResult::Drop));
     }
@@ -633,6 +663,7 @@ mod tests {
             &ac,
             None,
             &mut table,
+            None,
         );
 
         match result {

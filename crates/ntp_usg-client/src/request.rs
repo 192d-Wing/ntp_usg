@@ -70,7 +70,7 @@ pub(crate) fn prefer_addresses(addrs: Vec<SocketAddr>) -> Vec<SocketAddr> {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct KissOfDeathError {
     /// The specific kiss code received from the server.
     pub code: protocol::KissOfDeath,
@@ -105,7 +105,7 @@ impl std::error::Error for KissOfDeathError {}
 ///
 /// This struct implements `Deref<Target = protocol::Packet>`, so all packet
 /// fields can be accessed directly (e.g., `result.transmit_timestamp`).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NtpResult {
     /// The parsed NTP response packet from the server.
     pub packet: protocol::Packet,
@@ -167,19 +167,8 @@ pub(crate) fn build_request_packet() -> io::Result<(
     protocol::TimestampFormat,
 )> {
     let packet = protocol::Packet {
-        leap_indicator: protocol::LeapIndicator::default(),
-        version: protocol::Version::V4,
-        mode: protocol::Mode::Client,
-        stratum: protocol::Stratum::UNSPECIFIED,
-        poll: 0,
-        precision: 0,
-        root_delay: protocol::ShortFormat::default(),
-        root_dispersion: protocol::ShortFormat::default(),
-        reference_id: protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Null),
-        reference_timestamp: protocol::TimestampFormat::default(),
-        origin_timestamp: protocol::TimestampFormat::default(),
-        receive_timestamp: protocol::TimestampFormat::default(),
         transmit_timestamp: unix_time::Instant::now().into(),
+        ..protocol::Packet::default()
     };
     let t1 = packet.transmit_timestamp;
     let mut send_buf = [0u8; protocol::Packet::PACKED_SIZE_BYTES];

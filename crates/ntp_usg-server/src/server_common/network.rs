@@ -4,7 +4,7 @@ use std::net::IpAddr;
 ///
 /// Supports both IPv4 and IPv6 addresses. Prefix lengths are bounded to
 /// the address type's maximum (32 for IPv4, 128 for IPv6).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct IpNet {
     addr: IpAddr,
     prefix_len: u8,

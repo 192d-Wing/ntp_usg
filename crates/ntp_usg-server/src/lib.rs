@@ -5,6 +5,24 @@
 //!
 //! This crate provides NTPv4 server implementations using either the tokio
 //! or smol async runtimes, with optional NTS (Network Time Security) support.
+//!
+//! # Feature Flags
+//!
+//! | Feature | Default | Description |
+//! |---------|---------|-------------|
+//! | `tokio` | no | NTP server using the tokio runtime. |
+//! | `smol-runtime` | no | NTP server using the smol runtime. |
+//! | `nts` | no | NTS-KE server (RFC 8915) via tokio + tokio-rustls. Implies `tokio`. |
+//! | `nts-smol` | no | NTS-KE server via smol + futures-rustls. Implies `smol-runtime`. Cannot be combined with `nts` (different TLS backends). |
+//! | `pq-nts` | no | Enable post-quantum key exchange for NTS (ML-KEM via aws-lc-rs). |
+//! | `symmetric` | no | NTP symmetric passive mode (RFC 5905 mode 2). |
+//! | `broadcast` | no | NTP broadcast mode (mode 5). Deprecated by RFC 8633. |
+//! | `refclock` | no | Reference clock support for Stratum 1. Implies `tokio`, pulls in `ntp_usg-client`. |
+//! | `gps` | no | GPS reference clock driver. Implies `refclock`. |
+//! | `pps` | no | PPS reference clock driver. Implies `refclock`. |
+//! | `socket-opts` | no | DSCP, `IPV6_V6ONLY`, and multicast socket options via `socket2`. |
+//! | `ipv4` | no | Default to `0.0.0.0` instead of `[::]` for listen addresses. |
+//! | `ntpv5` | no | NTPv5 draft support (draft-ietf-ntp-ntpv5). |
 
 #![warn(missing_docs)]
 

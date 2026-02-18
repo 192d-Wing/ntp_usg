@@ -10,7 +10,7 @@
 use core::fmt;
 
 /// Errors that can occur during buffer-based NTP packet parsing or serialization.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ParseError {
     /// The buffer is too short for the expected data.
     BufferTooShort {

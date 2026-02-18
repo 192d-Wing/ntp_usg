@@ -8,7 +8,9 @@
 //! and interleaved mode tracking per RFC 5905, RFC 8633, and RFC 9769.
 
 mod access_control;
+mod config;
 mod interleaved;
+mod metrics;
 mod network;
 #[cfg(feature = "ntpv5")]
 mod ntpv5;
@@ -19,6 +21,8 @@ mod state;
 mod validation;
 
 pub use self::access_control::AccessControl;
+pub use self::config::{ConfigHandle, ConfigSnapshot, ServerConfig};
+pub use self::metrics::{MetricsSnapshot, ServerMetrics};
 pub use self::network::IpNet;
 pub use self::rate_limit::RateLimitConfig;
 pub use self::state::ServerSystemState;

@@ -40,7 +40,7 @@ const NTP_SCALE_64: f64 = u64::MAX as f64;
 /// let local_time = chrono::Local.timestamp(unix_time.secs(), unix_time.subsec_nanos() as _);
 /// println!("{}", local_time);
 /// ```
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Instant {
     secs: i64,
     subsec_nanos: i32,

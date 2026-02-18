@@ -365,6 +365,26 @@ Full NTPv4-to-NTPv5 protocol upgrade per `draft-ietf-ntp-ntpv5-07` (active, expi
 
 ---
 
+## Version 4.1.0 - Server Improvements & API Polish ✅
+
+**Released**: 2026-02-18
+
+### Server Improvements
+
+- ✅ **Runtime metrics** (`ServerMetrics`): Lock-free `AtomicU64` counters for all server events
+- ✅ **Runtime configuration** (`ConfigHandle`): Live updates to access control, rate limiting, and interleaved mode
+- ✅ **12 server integration tests**: In-process loopback tests on ephemeral ports
+
+### API Polish & DX
+
+- ✅ **Trait derives**: `Default` for core types (`Packet`, `Version`, `Mode`, `Stratum`, `ReferenceIdentifier`), `Eq`/`Hash` where appropriate
+- ✅ **`Version::new()`**: Validated constructor for external crates
+- ✅ **WASM API**: Setters, `clientRequest()`, `computeOffsetDelay()`, `validateResponse()`
+- ✅ **Feature flag documentation**: Tables in `lib.rs` for all feature gates
+- ✅ **Code simplification**: `Packet::default()` used in client and WASM crates
+
+---
+
 ## Contributing
 
 We welcome contributions! If you'd like to work on any of these roadmap items:
@@ -384,9 +404,9 @@ Have ideas for the roadmap? Open an issue with the `enhancement` label or start 
 
 ---
 
-**Last Updated**: 2026-02-18 (WASM support complete)
-**Current Version**: 4.0.0
-**Next Planned Release**: 4.1.0
+**Last Updated**: 2026-02-18
+**Current Version**: 4.1.0
+**Next Planned Release**: 4.2.0
 
 ## Version 3.2.0 Progress Summary
 

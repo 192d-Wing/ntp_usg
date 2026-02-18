@@ -32,6 +32,16 @@ impl AccessControl {
         }
     }
 
+    /// Replace the allow list.
+    pub fn set_allow_list(&mut self, list: Option<Vec<IpNet>>) {
+        self.allow_list = list;
+    }
+
+    /// Replace the deny list.
+    pub fn set_deny_list(&mut self, list: Option<Vec<IpNet>>) {
+        self.deny_list = list;
+    }
+
     /// Check whether the given client IP is allowed.
     pub(crate) fn check(&self, client_ip: &IpAddr) -> AccessResult {
         // Deny list checked first.
