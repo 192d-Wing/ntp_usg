@@ -237,6 +237,28 @@ jobs:
         working-directory: crates/ntp_usg-proto
         run: cargo +nightly fuzz run fuzz_extension_fields -- -max_total_time=30
 
+  wasm:
+    name: WASM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Check proto (no_std, wasm32)
+        run: cargo check -p ntp_usg-proto --no-default-features --target wasm32-unknown-unknown --verbose
+      - name: Check proto (no_std + alloc, wasm32)
+        run: cargo check -p ntp_usg-proto --no-default-features --features alloc --target wasm32-unknown-unknown --verbose
+      - name: Check proto (std, wasm32)
+        run: cargo check -p ntp_usg-proto --target wasm32-unknown-unknown --verbose
+      - name: Check proto (ntpv5, wasm32)
+        run: cargo check -p ntp_usg-proto --features ntpv5 --target wasm32-unknown-unknown --verbose
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build wasm-pack (ntp_usg-wasm)
+        run: wasm-pack build crates/ntp_usg-wasm --target web
+
   minimal-versions:
     name: Minimal Versions
     runs-on: ubuntu-latest

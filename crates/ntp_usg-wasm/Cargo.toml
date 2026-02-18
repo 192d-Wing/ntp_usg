@@ -1,0 +1,28 @@
+[package]
+name = "ntp_usg-wasm"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "WebAssembly bindings for NTP packet parsing and timestamp conversion"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ntp_usg-proto = { workspace = true }
+wasm-bindgen = { workspace = true }
+js-sys = { workspace = true }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[package.metadata.wasm-pack.profile.release]
+# Disable wasm-opt: the bundled binary doesn't support bulk-memory and
+# saturating-float-to-int ops emitted by Rust edition 2024.
+wasm-opt = false
+
+[lints]
+workspace = true

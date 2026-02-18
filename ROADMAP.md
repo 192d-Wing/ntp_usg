@@ -347,21 +347,21 @@ Full NTPv4-to-NTPv5 protocol upgrade per `draft-ietf-ntp-ntpv5-07` (active, expi
 
 ---
 
-### 5. WASM Support 🕸️
+### 5. WASM Support 🕸️ ✅
 
 **Priority**: Low — parsing-only in browser, full client needs WASI
-**Status**: Planned (documentation + CI target, limited scope)
+**Status**: Complete (browser packet inspection; WASI deferred)
 
-`ntp_usg-proto` already compiles to `wasm32-unknown-unknown` with `default-features = false`. Browser-based full NTP client is not feasible (UDP unavailable in browser sandbox).
+`ntp_usg-proto` compiles to `wasm32-unknown-unknown` with all non-crypto feature combinations (`no_std`, `alloc`, `std`, `ntpv5`). The `ntp_usg-wasm` wrapper crate provides a JavaScript-friendly API via `wasm-bindgen`.
 
-- [ ] Verify and document `ntp_usg-proto` WASM compatibility (`wasm32-unknown-unknown` CI target)
-- [ ] Publish `wasm-pack` build of `ntp_usg-proto` for browser packet inspection tools
-- [ ] WASI (`wasm32-wasip2`) support for full NTP client in server-side WASM (Cloudflare Workers, Fastly Compute)
-- [ ] Feature gate: no change needed — `default-features = false` already works
+- [x] Verify `ntp_usg-proto` WASM compatibility (`wasm32-unknown-unknown` CI target with 4 feature combinations)
+- [x] `wasm-pack` build of `ntp_usg-wasm` for browser packet inspection tools
+- [x] CI job: `cargo check` for 4 feature combos + `wasm-pack build --target web`
+- [ ] WASI (`wasm32-wasip2`) support for full NTP client — deferred (ecosystem not mature; needs `wasi-sockets` + async runtime support)
 
-**Scope**: Packet parsing, timestamp conversion, extension field handling work today. Full NTP client (tokio/smol) requires WASI with `wasi-sockets`. No browser-native NTP API exists (confirmed: no W3C Network Time API spec).
+**Implementation**: Separate `ntp_usg-wasm` crate wraps `ntp_usg-proto` with `wasm-bindgen`. Exports: `NtpPacket` (parse/inspect/serialize), `buildClientRequest()`, `ntpTimestampToUnixSeconds()` / `unixSecondsToNtpTimestamp()`, `parseExtensionFields()`. 37 KB WASM binary, 6 wasm-bindgen tests.
 
-**Note**: "Network Time API integration" removed from roadmap — no such browser spec exists.
+**Scope**: Packet parsing, timestamp conversion, extension field handling. `nts` and `roughtime` features excluded from WASM (require `getrandom` WASM backend). Full NTP client (tokio/smol) requires WASI with `wasi-sockets`. No browser-native NTP API exists.
 
 ---
 
@@ -384,7 +384,7 @@ Have ideas for the roadmap? Open an issue with the `enhancement` label or start 
 
 ---
 
-**Last Updated**: 2026-02-18 (NTPv5 support complete)
+**Last Updated**: 2026-02-18 (WASM support complete)
 **Current Version**: 4.0.0
 **Next Planned Release**: 4.1.0
 

@@ -557,6 +557,11 @@ impl Version {
     /// NTP version 5 (`draft-ietf-ntp-ntpv5`).
     pub const V5: Self = Version(5);
 
+    /// Returns the raw version number as a `u8`.
+    pub fn value(&self) -> u8 {
+        self.0
+    }
+
     /// Whether or not the version is a known, valid version.
     pub fn is_known(&self) -> bool {
         self.0 >= 1 && self.0 <= 5
