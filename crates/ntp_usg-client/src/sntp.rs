@@ -307,13 +307,23 @@ mod tests {
                     result.delay_seconds
                 );
             }
-            Err(e)
-                if e.kind() == io::ErrorKind::TimedOut || e.kind() == io::ErrorKind::WouldBlock =>
-            {
+            Err(e) if is_network_skip_error(&e) => {
                 eprintln!("Skipping SNTP test: network unavailable ({})", e);
             }
             Err(e) => panic!("Unexpected error: {}", e),
         }
+    }
+
+    fn is_network_skip_error(e: &io::Error) -> bool {
+        matches!(
+            e.kind(),
+            io::ErrorKind::TimedOut
+                | io::ErrorKind::WouldBlock
+                | io::ErrorKind::ConnectionRefused
+                | io::ErrorKind::ConnectionReset
+                | io::ErrorKind::AddrNotAvailable
+        ) || e.raw_os_error() == Some(101) // ENETUNREACH
+          || e.raw_os_error() == Some(113) // EHOSTUNREACH
     }
 
     #[test]

@@ -681,14 +681,29 @@ pub fn request_with_timeout<A: ToSocketAddrs>(addr: A, timeout: Duration) -> io:
     validate_response(&recv_buf, recv_len, src_addr, &resolved_addrs, &t1)
 }
 
+/// Returns true if the error is a network connectivity issue that should
+/// cause a test to skip rather than fail (e.g., firewall, no route).
+#[cfg(test)]
+fn is_network_skip_error(e: &io::Error) -> bool {
+    matches!(
+        e.kind(),
+        io::ErrorKind::TimedOut
+            | io::ErrorKind::WouldBlock
+            | io::ErrorKind::ConnectionRefused
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::AddrNotAvailable
+    ) || e.raw_os_error() == Some(101) // ENETUNREACH (Network is unreachable)
+      || e.raw_os_error() == Some(113) // EHOSTUNREACH (No route to host)
+}
+
 #[cfg(test)]
 #[cfg(not(miri))]
 #[test]
 fn test_request_nist() {
     match request_with_timeout("time.nist.gov:123", Duration::from_secs(10)) {
         Ok(_) => {}
-        Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut => {
-            eprintln!("skipping test_request_nist: NTP port unreachable ({e})");
+        Err(e) if is_network_skip_error(&e) => {
+            eprintln!("skipping test_request_nist: {e}");
         }
         Err(e) => panic!("unexpected error from time.nist.gov: {e}"),
     }
@@ -700,8 +715,8 @@ fn test_request_nist() {
 fn test_request_nist_alt() {
     match request_with_timeout("time-a-g.nist.gov:123", Duration::from_secs(10)) {
         Ok(_) => {}
-        Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut => {
-            eprintln!("skipping test_request_nist_alt: NTP port unreachable ({e})");
+        Err(e) if is_network_skip_error(&e) => {
+            eprintln!("skipping test_request_nist_alt: {e}");
         }
         Err(e) => panic!("unexpected error from time-a-g.nist.gov: {e}"),
     }
