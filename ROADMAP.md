@@ -321,29 +321,29 @@ Improved correctness and ergonomics for IPv6-only deployments.
 
 ---
 
-### 4. NTPv5 Support ⏱️
+### 4. NTPv5 Support ⏱️ ✅
 
 **Priority**: Low — blocked on draft stabilization (not yet RFC)
-**Status**: Waiting on `draft-ietf-ntp-ntpv5` RFC publication
+**Status**: Complete
 
 Full NTPv4-to-NTPv5 protocol upgrade per `draft-ietf-ntp-ntpv5-07` (active, expires Apr 2026).
 
-- [ ] New 48-byte header struct: era number, timescale, flags, client/server cookies
-- [ ] `time32` type: 4 integer + 28 fractional bits, ~3.7 ns resolution (vs NTPv4's ~15 µs)
-- [ ] 120-bit Bloom filter Reference IDs for loop detection (replaces 32-bit REFID)
-- [ ] Explicit interleaved mode via `ServerCookie`/`ClientCookie` fields
-- [ ] AES-CMAC MAC extension field (0xF502) — requires `cmac` + `aes` crates
-- [ ] 0xF503–0xF509 extension fields (Reference IDs, Server Info, Correction, timestamps)
-- [ ] NTPv5 server: remove symmetric/broadcast/control modes (client-server only)
-- [ ] Feature gate: `ntpv5`
+- [x] New 48-byte header struct: era number, timescale, flags, client/server cookies (`PacketV5`)
+- [x] `Time32` type: 4 integer + 28 fractional bits, ~3.7 ns resolution (vs NTPv4's ~15 µs)
+- [x] 120-bit Bloom filter Reference IDs for loop detection (replaces 32-bit REFID)
+- [x] Explicit interleaved mode via `ServerCookie`/`ClientCookie` fields
+- [x] AES-CMAC MAC extension field (0xF502) — `cmac` + `aes` crates
+- [x] 0xF501–0xF509 + 0xF5FF extension fields (Padding, MAC, Reference IDs, Server Info, Correction, timestamps, Draft Identification)
+- [x] NTPv5 server: client-server only (no symmetric/broadcast/control modes)
+- [x] NTPv5 client: version negotiation, V5 request/response, Bloom filter assembly
+- [x] NTS-KE NTPv5 protocol ID negotiation (0x8001)
+- [x] Feature gate: `ntpv5` (off by default)
 
 **Key differences from NTPv4**: Removes symmetric, broadcast, control modes. Adds era-aware timestamps, explicit timescale, 120-bit loop detection, and unambiguous extension field architecture.
 
-**Interop**: NTPv5 clients can negotiate with NTPv4 servers (version downgrade path defined in spec).
+**Interop**: NTPv5 clients can negotiate with NTPv4 servers (version downgrade path defined in spec). Magic value `NTP5DRFT` in V4 Reference Timestamp field signals V5 support.
 
-**Existing Rust impl**: ntpd-rs v1.7.1 has experimental NTPv5 support targeting draft-06.
-
-**New deps**: `cmac = "0.7"` (RustCrypto AES-CMAC for MAC extension field)
+**New deps**: `cmac = "0.7"`, `aes = "0.8"` (RustCrypto AES-CMAC-128 for MAC extension field)
 
 ---
 
@@ -384,9 +384,9 @@ Have ideas for the roadmap? Open an issue with the `enhancement` label or start 
 
 ---
 
-**Last Updated**: 2026-02-17 (v4.0.0 features researched and detailed)
-**Current Version**: 3.4.0
-**Next Planned Release**: 4.0.0 (2027)
+**Last Updated**: 2026-02-18 (NTPv5 support complete)
+**Current Version**: 4.0.0
+**Next Planned Release**: 4.1.0
 
 ## Version 3.2.0 Progress Summary
 
