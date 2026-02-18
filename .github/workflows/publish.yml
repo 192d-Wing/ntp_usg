@@ -55,7 +55,7 @@ jobs:
 
       - name: Generate SBOM (CycloneDX)
         run: |
-          cargo cyclonedx --all --format json --output-prefix ntp_usg
+          cargo cyclonedx --all --format json
           TAG_VERSION=${GITHUB_REF#refs/tags/v}
           for f in ntp_usg*.cdx.json; do
             mv "$f" "${f%.cdx.json}-${TAG_VERSION}.cdx.json"
