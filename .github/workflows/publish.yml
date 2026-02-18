@@ -13,8 +13,16 @@ permissions:
   packages: read
 
 jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      packages: read
+
   publish:
     name: Release & Publish
+    needs: ci
     runs-on: ubuntu-latest
     container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
@@ -30,12 +38,6 @@ jobs:
           fi
           echo "Version check passed: $CARGO_VERSION"
 
-      - name: Run tests
-        run: cargo nextest run --workspace --all-features --verbose
-
-      - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
       - name: Install cargo-semver-checks
         run: cargo binstall --no-confirm cargo-semver-checks || cargo install cargo-semver-checks
 
@@ -47,11 +49,6 @@ jobs:
 
       - name: Semver check ntp_usg-server
         run: cargo semver-checks check-release -p ntp_usg-server --default-features
-
-      - name: Check documentation
-        env:
-          RUSTDOCFLAGS: "-D warnings"
-        run: cargo doc --workspace --all-features --no-deps
 
       - name: Install cargo-cyclonedx
         run: cargo binstall --no-confirm cargo-cyclonedx || cargo install cargo-cyclonedx
