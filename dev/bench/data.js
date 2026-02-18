@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1771399655720,
+  "lastUpdate": 1771401649794,
   "repoUrl": "https://github.com/192d-Wing/ntp_usg",
   "entries": {
     "Selection Algorithm Benchmarks": [
@@ -647,6 +647,114 @@ window.BENCHMARK_DATA = {
             "name": "full_selection_pipeline/20",
             "value": 2810,
             "range": "± 1252",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "1456055067",
+            "username": "1456055067"
+          },
+          "committer": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "1456055067",
+            "username": "1456055067"
+          },
+          "distinct": true,
+          "id": "e48f418147115b7bad64ea6c6d59d325cb8637e1",
+          "message": "feat: add WASM support with ntp_usg-wasm wrapper crate\n\nAdd wasm32-unknown-unknown compilation support for ntp_usg-proto and a\nnew ntp_usg-wasm crate providing JavaScript-friendly bindings via\nwasm-bindgen for browser packet inspection tools.\n\n- New ntp_usg-wasm crate: NtpPacket parser, timestamp conversion,\n  extension field parsing, client request builder (37 KB WASM binary)\n- CI wasm job: cargo check (4 feature combos) + wasm-pack build\n- Version::value() accessor on ntp_usg-proto for WASM wrapper use\n- ROADMAP §5 marked complete (WASI deferred)",
+          "timestamp": "2026-02-18T01:54:56-06:00",
+          "tree_id": "029ab5b7f0be18a9a549fd2fddeb9b5a93e31ca9",
+          "url": "https://github.com/192d-Wing/ntp_usg/commit/e48f418147115b7bad64ea6c6d59d325cb8637e1"
+        },
+        "date": 1771401648866,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "select_truechimers/3",
+            "value": 62,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/5",
+            "value": 141,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/10",
+            "value": 354,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/20",
+            "value": 804,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/3",
+            "value": 22,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/5",
+            "value": 106,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/10",
+            "value": 495,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/15",
+            "value": 1304,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/3",
+            "value": 29,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/5",
+            "value": 37,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/10",
+            "value": 51,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/5",
+            "value": 343,
+            "range": "± 306",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/10",
+            "value": 976,
+            "range": "± 743",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/20",
+            "value": 2675,
+            "range": "± 2131",
             "unit": "ns/iter"
           }
         ]
