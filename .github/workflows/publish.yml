@@ -61,6 +61,8 @@ jobs:
           mkdir -p sbom
           find crates -name '*.cdx.json' -exec sh -c \
             'base=$(basename "$1" .cdx.json); cp "$1" "sbom/${base}-'"${TAG_VERSION}"'.cdx.json"' _ {} \;
+          # Remove generated files from crate dirs so cargo publish doesn't see dirty tree
+          find crates -name '*.cdx.json' -delete
           ls -la sbom/
 
       - name: Extract changelog for this version
