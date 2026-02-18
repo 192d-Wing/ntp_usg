@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1771401649794,
+  "lastUpdate": 1771401965557,
   "repoUrl": "https://github.com/192d-Wing/ntp_usg",
   "entries": {
     "Selection Algorithm Benchmarks": [
@@ -755,6 +755,114 @@ window.BENCHMARK_DATA = {
             "name": "full_selection_pipeline/20",
             "value": 2675,
             "range": "± 2131",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "1456055067",
+            "username": "1456055067"
+          },
+          "committer": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "1456055067",
+            "username": "1456055067"
+          },
+          "distinct": true,
+          "id": "7d9c7322b22cfa86d1e1c8f60de0a540a05f9b00",
+          "message": "fix: skip network tests on unreachable/no-route errors\n\nThe NIST network tests panicked on arm64 CI runners where the network\nwas unreachable (os error 101). Extend the skip condition to cover\nENETUNREACH, EHOSTUNREACH, ConnectionRefused, ConnectionReset, and\nAddrNotAvailable in addition to the existing TimedOut/WouldBlock.",
+          "timestamp": "2026-02-18T02:01:03-06:00",
+          "tree_id": "82c69b8019ccce013477950b32cd90757f884e8f",
+          "url": "https://github.com/192d-Wing/ntp_usg/commit/7d9c7322b22cfa86d1e1c8f60de0a540a05f9b00"
+        },
+        "date": 1771401965151,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "select_truechimers/3",
+            "value": 65,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/5",
+            "value": 139,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/10",
+            "value": 343,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/20",
+            "value": 795,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/3",
+            "value": 21,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/5",
+            "value": 106,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/10",
+            "value": 495,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/15",
+            "value": 1304,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/3",
+            "value": 29,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/5",
+            "value": 37,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/10",
+            "value": 51,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/5",
+            "value": 345,
+            "range": "± 340",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/10",
+            "value": 990,
+            "range": "± 604",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/20",
+            "value": 2663,
+            "range": "± 1578",
             "unit": "ns/iter"
           }
         ]
