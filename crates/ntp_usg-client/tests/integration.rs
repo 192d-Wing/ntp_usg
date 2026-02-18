@@ -13,6 +13,8 @@
 
 #![cfg(feature = "tokio")]
 
+mod common;
+
 use ntp_client::client::NtpClient;
 use std::time::Duration;
 
@@ -56,10 +58,7 @@ async fn test_nist_time_server() {
             );
             assert!(result.delay_seconds > 0.0, "Delay must be positive");
         }
-        Err(e)
-            if e.kind() == std::io::ErrorKind::TimedOut
-                || e.kind() == std::io::ErrorKind::WouldBlock =>
-        {
+        Err(e) if common::is_network_skip_error(&e) => {
             eprintln!("Skipping NIST test: network unreachable ({e})");
         }
         Err(e) => panic!("Unexpected error from time.nist.gov: {e}"),
@@ -84,10 +83,7 @@ async fn test_cloudflare_time_server() {
             assert!(result.delay_seconds < MAX_DELAY);
             assert!(result.delay_seconds > 0.0);
         }
-        Err(e)
-            if e.kind() == std::io::ErrorKind::TimedOut
-                || e.kind() == std::io::ErrorKind::WouldBlock =>
-        {
+        Err(e) if common::is_network_skip_error(&e) => {
             eprintln!("Skipping Cloudflare test: network unreachable ({e})");
         }
         Err(e) => panic!("Unexpected error from time.cloudflare.com: {e}"),
@@ -110,10 +106,7 @@ async fn test_google_time_server() {
             assert!(result.delay_seconds < MAX_DELAY);
             assert!(result.delay_seconds > 0.0);
         }
-        Err(e)
-            if e.kind() == std::io::ErrorKind::TimedOut
-                || e.kind() == std::io::ErrorKind::WouldBlock =>
-        {
+        Err(e) if common::is_network_skip_error(&e) => {
             eprintln!("Skipping Google test: network unreachable ({e})");
         }
         Err(e) => panic!("Unexpected error from time.google.com: {e}"),
@@ -139,10 +132,7 @@ async fn test_multiple_server_consistency() {
                 println!("{}: offset={:.6}s", server, result.offset_seconds);
                 results.push(result.offset_seconds);
             }
-            Err(e)
-                if e.kind() == std::io::ErrorKind::TimedOut
-                    || e.kind() == std::io::ErrorKind::WouldBlock =>
-            {
+            Err(e) if common::is_network_skip_error(&e) => {
                 eprintln!("Skipping {}: network unreachable", server);
             }
             Err(e) => panic!("Unexpected error from {}: {}", server, e),
@@ -255,10 +245,7 @@ async fn test_sntp_api_nist() {
             assert!(result.offset_seconds.abs() < MAX_OFFSET);
             assert!(result.delay_seconds < MAX_DELAY);
         }
-        Err(e)
-            if e.kind() == std::io::ErrorKind::TimedOut
-                || e.kind() == std::io::ErrorKind::WouldBlock =>
-        {
+        Err(e) if common::is_network_skip_error(&e) => {
             eprintln!("Skipping SNTP test: network unreachable");
         }
         Err(e) => panic!("Unexpected SNTP error: {e}"),
@@ -277,11 +264,7 @@ async fn test_ipv6_server() {
             println!("IPv6 test: offset={:.6}s", result.offset_seconds);
             assert!(result.offset_seconds.abs() < MAX_OFFSET);
         }
-        Err(e)
-            if e.kind() == std::io::ErrorKind::TimedOut
-                || e.kind() == std::io::ErrorKind::WouldBlock
-                || e.to_string().contains("Network is unreachable") =>
-        {
+        Err(e) if common::is_network_skip_error(&e) => {
             eprintln!("Skipping IPv6 test: network unavailable or no IPv6 support");
         }
         Err(e) => panic!("Unexpected error in IPv6 test: {e}"),
@@ -304,10 +287,7 @@ async fn test_rapid_successive_queries() {
                 println!("Query #{}: offset={:.6}s", i + 1, result.offset_seconds);
                 results.push(result.offset_seconds);
             }
-            Err(e)
-                if e.kind() == std::io::ErrorKind::TimedOut
-                    || e.kind() == std::io::ErrorKind::WouldBlock =>
-            {
+            Err(e) if common::is_network_skip_error(&e) => {
                 eprintln!("Query #{} failed: network unreachable", i + 1);
             }
             Err(e) => panic!("Query #{} unexpected error: {}", i + 1, e),
@@ -345,10 +325,7 @@ async fn test_pool_server() {
             assert!(result.offset_seconds.abs() < MAX_OFFSET);
             assert!(result.delay_seconds < MAX_DELAY);
         }
-        Err(e)
-            if e.kind() == std::io::ErrorKind::TimedOut
-                || e.kind() == std::io::ErrorKind::WouldBlock =>
-        {
+        Err(e) if common::is_network_skip_error(&e) => {
             eprintln!("Skipping pool test: network unreachable");
         }
         Err(e) => panic!("Unexpected error from pool.ntp.org: {e}"),
@@ -368,10 +345,7 @@ async fn test_stratum_validation() {
             println!("Received valid NTP response from NIST");
             assert!(result.offset_seconds.abs() < MAX_OFFSET);
         }
-        Err(e)
-            if e.kind() == std::io::ErrorKind::TimedOut
-                || e.kind() == std::io::ErrorKind::WouldBlock =>
-        {
+        Err(e) if common::is_network_skip_error(&e) => {
             eprintln!("Skipping stratum test: network unreachable");
         }
         Err(e) => panic!("Unexpected error: {e}"),

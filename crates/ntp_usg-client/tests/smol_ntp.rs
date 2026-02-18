@@ -3,6 +3,8 @@
 
 #![cfg(feature = "smol-runtime")]
 
+mod common;
+
 use std::time::Duration;
 
 #[test]
@@ -15,10 +17,7 @@ fn test_smol_request_nist() {
         .await
         {
             Ok(_) => {}
-            Err(e)
-                if e.kind() == std::io::ErrorKind::WouldBlock
-                    || e.kind() == std::io::ErrorKind::TimedOut =>
-            {
+            Err(e) if common::is_network_skip_error(&e) => {
                 eprintln!("skipping test_smol_request_nist: NTP port unreachable ({e})");
             }
             Err(e) => panic!("unexpected error from time.nist.gov: {e}"),
@@ -36,10 +35,7 @@ fn test_smol_request_nist_alt() {
         .await
         {
             Ok(_) => {}
-            Err(e)
-                if e.kind() == std::io::ErrorKind::WouldBlock
-                    || e.kind() == std::io::ErrorKind::TimedOut =>
-            {
+            Err(e) if common::is_network_skip_error(&e) => {
                 eprintln!("skipping test_smol_request_nist_alt: NTP port unreachable ({e})");
             }
             Err(e) => panic!("unexpected error from time-a-g.nist.gov: {e}"),

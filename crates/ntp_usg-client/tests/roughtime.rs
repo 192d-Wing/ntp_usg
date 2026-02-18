@@ -8,6 +8,8 @@
 
 #![cfg(feature = "roughtime")]
 
+mod common;
+
 use std::time::Duration;
 
 fn skip_network() -> bool {
@@ -47,10 +49,7 @@ fn test_roughtime_sync_cloudflare() {
                 result.radius_seconds()
             );
         }
-        Err(e)
-            if e.kind() == std::io::ErrorKind::WouldBlock
-                || e.kind() == std::io::ErrorKind::TimedOut =>
-        {
+        Err(e) if common::is_network_skip_error(&e) => {
             eprintln!("skipping: Roughtime server unreachable ({e})");
         }
         Err(e) => panic!("unexpected error: {e}"),
@@ -84,10 +83,7 @@ async fn test_roughtime_async_cloudflare() {
                 result.radius_seconds()
             );
         }
-        Err(e)
-            if e.kind() == std::io::ErrorKind::WouldBlock
-                || e.kind() == std::io::ErrorKind::TimedOut =>
-        {
+        Err(e) if common::is_network_skip_error(&e) => {
             eprintln!("skipping: Roughtime server unreachable ({e})");
         }
         Err(e) => panic!("unexpected error: {e}"),

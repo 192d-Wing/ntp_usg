@@ -8,6 +8,8 @@
 
 #![cfg(feature = "nts")]
 
+mod common;
+
 use ntp_client::client::NtpClient;
 use ntp_client::nts::NtsSession;
 use std::time::Duration;
@@ -47,15 +49,7 @@ async fn test_nts_cloudflare() {
                 Err(_) => panic!("NTS request timed out after {:?}", QUERY_TIMEOUT),
             }
         }
-        Err(e)
-            if e.to_string().contains("timed out")
-                || e.to_string().contains("Connection refused")
-                || e.to_string().contains("Connection reset")
-                || e.to_string().contains("close_notify")
-                || e.kind() == std::io::ErrorKind::TimedOut
-                || e.kind() == std::io::ErrorKind::ConnectionReset
-                || e.kind() == std::io::ErrorKind::ConnectionRefused =>
-        {
+        Err(e) if common::is_network_skip_error(&e) => {
             eprintln!("Skipping Cloudflare NTS test: network unreachable ({e})");
         }
         Err(e) => panic!("NTS-KE failed: {e}"),
@@ -95,15 +89,7 @@ async fn test_nts_multiple_requests() {
                 assert!(spread < 0.5, "NTS requests spread too wide: {:.3}s", spread);
             }
         }
-        Err(e)
-            if e.to_string().contains("timed out")
-                || e.to_string().contains("Connection refused")
-                || e.to_string().contains("Connection reset")
-                || e.to_string().contains("close_notify")
-                || e.kind() == std::io::ErrorKind::TimedOut
-                || e.kind() == std::io::ErrorKind::ConnectionReset
-                || e.kind() == std::io::ErrorKind::ConnectionRefused =>
-        {
+        Err(e) if common::is_network_skip_error(&e) => {
             eprintln!("Skipping NTS multi-request test: network unreachable");
         }
         Err(e) => panic!("NTS-KE failed: {e}"),
@@ -126,15 +112,7 @@ async fn test_nts_continuous_client() {
 
     let (client, mut state_rx) = match result {
         Ok(x) => x,
-        Err(e)
-            if e.to_string().contains("timed out")
-                || e.to_string().contains("Connection refused")
-                || e.to_string().contains("Connection reset")
-                || e.to_string().contains("close_notify")
-                || e.kind() == std::io::ErrorKind::AddrNotAvailable
-                || e.kind() == std::io::ErrorKind::ConnectionReset
-                || e.kind() == std::io::ErrorKind::ConnectionRefused =>
-        {
+        Err(e) if common::is_network_skip_error(&e) => {
             eprintln!("Skipping NTS continuous client test: network unreachable");
             return;
         }
@@ -200,15 +178,7 @@ async fn test_nts_mixed_deployment() {
 
     let (client, mut state_rx) = match result {
         Ok(x) => x,
-        Err(e)
-            if e.to_string().contains("timed out")
-                || e.to_string().contains("Connection refused")
-                || e.to_string().contains("Connection reset")
-                || e.to_string().contains("close_notify")
-                || e.kind() == std::io::ErrorKind::AddrNotAvailable
-                || e.kind() == std::io::ErrorKind::ConnectionReset
-                || e.kind() == std::io::ErrorKind::ConnectionRefused =>
-        {
+        Err(e) if common::is_network_skip_error(&e) => {
             eprintln!("Skipping mixed deployment test: network unreachable");
             return;
         }
@@ -307,15 +277,7 @@ async fn test_nts_cookie_persistence() {
 
             println!("NTS cookie rotation working correctly");
         }
-        Err(e)
-            if e.to_string().contains("timed out")
-                || e.to_string().contains("Connection refused")
-                || e.to_string().contains("Connection reset")
-                || e.to_string().contains("close_notify")
-                || e.kind() == std::io::ErrorKind::TimedOut
-                || e.kind() == std::io::ErrorKind::ConnectionReset
-                || e.kind() == std::io::ErrorKind::ConnectionRefused =>
-        {
+        Err(e) if common::is_network_skip_error(&e) => {
             eprintln!("Skipping NTS cookie test: network unreachable");
         }
         Err(e) => panic!("NTS-KE failed: {e}"),
