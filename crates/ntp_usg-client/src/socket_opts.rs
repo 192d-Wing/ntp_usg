@@ -59,7 +59,11 @@ impl SocketOptions {
         if let Some(dscp) = self.dscp {
             // DSCP occupies bits 7-2 of the TOS/Traffic Class byte.
             let tos = u32::from(dscp & 0x3F) << 2;
-            socket.set_tos(tos)?;
+            if bind_addr.is_ipv4() {
+                socket.set_tos_v4(tos)?;
+            } else {
+                socket.set_tclass_v6(tos)?;
+            }
         }
 
         socket.set_nonblocking(true)?;

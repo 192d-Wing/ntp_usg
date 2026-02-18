@@ -322,3 +322,447 @@ impl ToBytes for Packet {
         Ok(offset)
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── ShortFormat ──────────────────────────────────────────────────
+
+    #[test]
+    fn short_format_roundtrip() {
+        let sf = ShortFormat {
+            seconds: 0x1234,
+            fraction: 0x5678,
+        };
+        let mut buf = [0u8; 4];
+        let written = sf.to_bytes(&mut buf).unwrap();
+        assert_eq!(written, 4);
+        let (decoded, consumed) = ShortFormat::from_bytes(&buf).unwrap();
+        assert_eq!(consumed, 4);
+        assert_eq!(decoded.seconds, sf.seconds);
+        assert_eq!(decoded.fraction, sf.fraction);
+    }
+
+    #[test]
+    fn short_format_edge_values() {
+        for (s, f) in [(0u16, 0u16), (u16::MAX, u16::MAX)] {
+            let sf = ShortFormat {
+                seconds: s,
+                fraction: f,
+            };
+            let mut buf = [0u8; 4];
+            sf.to_bytes(&mut buf).unwrap();
+            let (decoded, _) = ShortFormat::from_bytes(&buf).unwrap();
+            assert_eq!(decoded.seconds, s);
+            assert_eq!(decoded.fraction, f);
+        }
+    }
+
+    #[test]
+    fn short_format_buffer_too_short_read() {
+        let buf = [0u8; 3];
+        let err = ShortFormat::from_bytes(&buf).unwrap_err();
+        assert!(matches!(
+            err,
+            ParseError::BufferTooShort {
+                needed: 4,
+                available: 3
+            }
+        ));
+    }
+
+    #[test]
+    fn short_format_buffer_too_short_write() {
+        let sf = ShortFormat::default();
+        let mut buf = [0u8; 3];
+        let err = sf.to_bytes(&mut buf).unwrap_err();
+        assert!(matches!(err, ParseError::BufferTooShort { .. }));
+    }
+
+    // ── TimestampFormat ─────────────────────────────────────────────
+
+    #[test]
+    fn timestamp_format_roundtrip() {
+        let ts = TimestampFormat {
+            seconds: 3_913_056_000,
+            fraction: 0xABCD_1234,
+        };
+        let mut buf = [0u8; 8];
+        let written = ts.to_bytes(&mut buf).unwrap();
+        assert_eq!(written, 8);
+        let (decoded, consumed) = TimestampFormat::from_bytes(&buf).unwrap();
+        assert_eq!(consumed, 8);
+        assert_eq!(decoded.seconds, ts.seconds);
+        assert_eq!(decoded.fraction, ts.fraction);
+    }
+
+    #[test]
+    fn timestamp_format_edge_values() {
+        for (s, f) in [(0u32, 0u32), (u32::MAX, u32::MAX)] {
+            let ts = TimestampFormat {
+                seconds: s,
+                fraction: f,
+            };
+            let mut buf = [0u8; 8];
+            ts.to_bytes(&mut buf).unwrap();
+            let (decoded, _) = TimestampFormat::from_bytes(&buf).unwrap();
+            assert_eq!(decoded.seconds, s);
+            assert_eq!(decoded.fraction, f);
+        }
+    }
+
+    #[test]
+    fn timestamp_format_buffer_too_short() {
+        let buf = [0u8; 7];
+        let err = TimestampFormat::from_bytes(&buf).unwrap_err();
+        assert!(matches!(
+            err,
+            ParseError::BufferTooShort {
+                needed: 8,
+                available: 7
+            }
+        ));
+    }
+
+    // ── DateFormat ──────────────────────────────────────────────────
+
+    #[test]
+    fn date_format_roundtrip() {
+        let df = DateFormat {
+            era_number: -1,
+            era_offset: 0x1234_5678,
+            fraction: 0xDEAD_BEEF_CAFE_BABE,
+        };
+        let mut buf = [0u8; 16];
+        let written = df.to_bytes(&mut buf).unwrap();
+        assert_eq!(written, 16);
+        let (decoded, consumed) = DateFormat::from_bytes(&buf).unwrap();
+        assert_eq!(consumed, 16);
+        assert_eq!(decoded.era_number, df.era_number);
+        assert_eq!(decoded.era_offset, df.era_offset);
+        assert_eq!(decoded.fraction, df.fraction);
+    }
+
+    #[test]
+    fn date_format_buffer_too_short() {
+        let buf = [0u8; 15];
+        let err = DateFormat::from_bytes(&buf).unwrap_err();
+        assert!(matches!(
+            err,
+            ParseError::BufferTooShort {
+                needed: 16,
+                available: 15
+            }
+        ));
+    }
+
+    // ── Stratum ─────────────────────────────────────────────────────
+
+    #[test]
+    fn stratum_roundtrip() {
+        for val in [0u8, 1, 2, 15, 16, 255] {
+            let s = Stratum(val);
+            let mut buf = [0u8; 1];
+            s.to_bytes(&mut buf).unwrap();
+            let (decoded, consumed) = Stratum::from_bytes(&buf).unwrap();
+            assert_eq!(consumed, 1);
+            assert_eq!(decoded.0, val);
+        }
+    }
+
+    #[test]
+    fn stratum_buffer_empty() {
+        let buf: [u8; 0] = [];
+        let err = Stratum::from_bytes(&buf).unwrap_err();
+        assert!(matches!(err, ParseError::BufferTooShort { .. }));
+    }
+
+    // ── (LeapIndicator, Version, Mode) ──────────────────────────────
+
+    #[test]
+    fn li_vn_mode_roundtrip() {
+        let tuple = (LeapIndicator::NoWarning, Version::V4, Mode::Client);
+        let mut buf = [0u8; 1];
+        let written = tuple.to_bytes(&mut buf).unwrap();
+        assert_eq!(written, 1);
+        let (decoded, consumed) = <(LeapIndicator, Version, Mode)>::from_bytes(&buf).unwrap();
+        assert_eq!(consumed, 1);
+        assert_eq!(decoded.0, LeapIndicator::NoWarning);
+        assert_eq!(decoded.1, Version::V4);
+        assert_eq!(decoded.2, Mode::Client);
+    }
+
+    #[test]
+    fn li_vn_mode_byte_encoding() {
+        // LI=0, VN=4, Mode=3 → (0<<6)|(4<<3)|3 = 0x23
+        let tuple = (LeapIndicator::NoWarning, Version::V4, Mode::Client);
+        let mut buf = [0u8; 1];
+        tuple.to_bytes(&mut buf).unwrap();
+        assert_eq!(buf[0], 0x23);
+    }
+
+    #[test]
+    fn li_vn_mode_all_leap_indicators() {
+        for li in [
+            LeapIndicator::NoWarning,
+            LeapIndicator::AddOne,
+            LeapIndicator::SubOne,
+            LeapIndicator::Unknown,
+        ] {
+            let mut buf = [0u8; 1];
+            (li, Version::V4, Mode::Server).to_bytes(&mut buf).unwrap();
+            let (decoded, _) = <(LeapIndicator, Version, Mode)>::from_bytes(&buf).unwrap();
+            assert_eq!(decoded.0, li);
+        }
+    }
+
+    #[test]
+    fn li_vn_mode_buffer_empty() {
+        let buf: [u8; 0] = [];
+        let err = <(LeapIndicator, Version, Mode)>::from_bytes(&buf).unwrap_err();
+        assert!(matches!(err, ParseError::BufferTooShort { .. }));
+    }
+
+    // ── ReferenceIdentifier ─────────────────────────────────────────
+
+    #[test]
+    fn reference_id_to_bytes_primary() {
+        let ref_id = ReferenceIdentifier::PrimarySource(PrimarySource::Gps);
+        let mut buf = [0u8; 4];
+        let written = ref_id.to_bytes(&mut buf).unwrap();
+        assert_eq!(written, 4);
+    }
+
+    #[test]
+    fn reference_id_to_bytes_secondary() {
+        let ref_id = ReferenceIdentifier::SecondaryOrClient([192, 168, 1, 1]);
+        let mut buf = [0u8; 4];
+        ref_id.to_bytes(&mut buf).unwrap();
+        assert_eq!(buf, [192, 168, 1, 1]);
+    }
+
+    #[test]
+    fn reference_id_buffer_too_short() {
+        let ref_id = ReferenceIdentifier::PrimarySource(PrimarySource::Gps);
+        let mut buf = [0u8; 3];
+        let err = ref_id.to_bytes(&mut buf).unwrap_err();
+        assert!(matches!(err, ParseError::BufferTooShort { .. }));
+    }
+
+    #[test]
+    fn reference_id_from_bytes_with_stratum_kod() {
+        let kod = ReferenceIdentifier::KissOfDeath(KissOfDeath::Deny);
+        let bytes = kod.as_bytes();
+        let decoded = ReferenceIdentifier::from_bytes_with_stratum(bytes, Stratum::UNSPECIFIED);
+        assert!(matches!(
+            decoded,
+            ReferenceIdentifier::KissOfDeath(KissOfDeath::Deny)
+        ));
+    }
+
+    #[test]
+    fn reference_id_from_bytes_with_stratum_primary() {
+        let src = ReferenceIdentifier::PrimarySource(PrimarySource::Gps);
+        let bytes = src.as_bytes();
+        let decoded = ReferenceIdentifier::from_bytes_with_stratum(bytes, Stratum::PRIMARY);
+        assert!(matches!(
+            decoded,
+            ReferenceIdentifier::PrimarySource(PrimarySource::Gps)
+        ));
+    }
+
+    #[test]
+    fn reference_id_from_bytes_with_stratum_secondary() {
+        let bytes = [10, 0, 0, 1];
+        let decoded = ReferenceIdentifier::from_bytes_with_stratum(bytes, Stratum(2));
+        assert!(matches!(
+            decoded,
+            ReferenceIdentifier::SecondaryOrClient([10, 0, 0, 1])
+        ));
+    }
+
+    #[test]
+    fn reference_id_from_bytes_with_stratum_unknown() {
+        let bytes = [0xFF, 0xFE, 0xFD, 0xFC];
+        let decoded = ReferenceIdentifier::from_bytes_with_stratum(bytes, Stratum(16));
+        assert!(matches!(decoded, ReferenceIdentifier::Unknown(_)));
+    }
+
+    // ── Packet ──────────────────────────────────────────────────────
+
+    fn make_test_packet() -> Packet {
+        Packet {
+            leap_indicator: LeapIndicator::NoWarning,
+            version: Version::V4,
+            mode: Mode::Client,
+            stratum: Stratum::UNSPECIFIED,
+            poll: 6,
+            precision: -20,
+            root_delay: ShortFormat {
+                seconds: 1,
+                fraction: 0x8000,
+            },
+            root_dispersion: ShortFormat {
+                seconds: 0,
+                fraction: 0x4000,
+            },
+            reference_id: ReferenceIdentifier::default(),
+            reference_timestamp: TimestampFormat {
+                seconds: 3_913_056_000,
+                fraction: 0,
+            },
+            origin_timestamp: TimestampFormat::default(),
+            receive_timestamp: TimestampFormat::default(),
+            transmit_timestamp: TimestampFormat {
+                seconds: 3_913_056_001,
+                fraction: 0x1234_5678,
+            },
+        }
+    }
+
+    #[test]
+    fn packet_roundtrip() {
+        let pkt = make_test_packet();
+        let mut buf = [0u8; 48];
+        let written = pkt.to_bytes(&mut buf).unwrap();
+        assert_eq!(written, 48);
+        let (decoded, consumed) = Packet::from_bytes(&buf).unwrap();
+        assert_eq!(consumed, 48);
+        assert_eq!(decoded.leap_indicator, pkt.leap_indicator);
+        assert_eq!(decoded.version, pkt.version);
+        assert_eq!(decoded.mode, pkt.mode);
+        assert_eq!(decoded.stratum, pkt.stratum);
+        assert_eq!(decoded.poll, pkt.poll);
+        assert_eq!(decoded.precision, pkt.precision);
+        assert_eq!(decoded.root_delay, pkt.root_delay);
+        assert_eq!(decoded.root_dispersion, pkt.root_dispersion);
+        assert_eq!(decoded.reference_timestamp, pkt.reference_timestamp);
+        assert_eq!(decoded.origin_timestamp, pkt.origin_timestamp);
+        assert_eq!(decoded.receive_timestamp, pkt.receive_timestamp);
+        assert_eq!(decoded.transmit_timestamp, pkt.transmit_timestamp);
+    }
+
+    #[test]
+    fn packet_size_constant() {
+        assert_eq!(Packet::PACKED_SIZE_BYTES, 48);
+    }
+
+    #[test]
+    fn packet_from_bytes_too_short() {
+        let buf = [0u8; 47];
+        let err = Packet::from_bytes(&buf).unwrap_err();
+        assert!(matches!(
+            err,
+            ParseError::BufferTooShort {
+                needed: 48,
+                available: 47
+            }
+        ));
+    }
+
+    #[test]
+    fn packet_to_bytes_too_short() {
+        let pkt = make_test_packet();
+        let mut buf = [0u8; 47];
+        let err = pkt.to_bytes(&mut buf).unwrap_err();
+        assert!(matches!(err, ParseError::BufferTooShort { .. }));
+    }
+
+    #[test]
+    fn packet_stratum1_gps_reference() {
+        let pkt = Packet {
+            stratum: Stratum::PRIMARY,
+            reference_id: ReferenceIdentifier::PrimarySource(PrimarySource::Gps),
+            ..make_test_packet()
+        };
+        let mut buf = [0u8; 48];
+        pkt.to_bytes(&mut buf).unwrap();
+        let (decoded, _) = Packet::from_bytes(&buf).unwrap();
+        assert!(matches!(
+            decoded.reference_id,
+            ReferenceIdentifier::PrimarySource(PrimarySource::Gps)
+        ));
+    }
+
+    #[test]
+    fn packet_stratum0_kod() {
+        let pkt = Packet {
+            stratum: Stratum::UNSPECIFIED,
+            reference_id: ReferenceIdentifier::KissOfDeath(KissOfDeath::Deny),
+            ..make_test_packet()
+        };
+        let mut buf = [0u8; 48];
+        pkt.to_bytes(&mut buf).unwrap();
+        let (decoded, _) = Packet::from_bytes(&buf).unwrap();
+        assert!(matches!(
+            decoded.reference_id,
+            ReferenceIdentifier::KissOfDeath(KissOfDeath::Deny)
+        ));
+    }
+
+    #[test]
+    fn packet_stratum2_secondary() {
+        let pkt = Packet {
+            stratum: Stratum(2),
+            reference_id: ReferenceIdentifier::SecondaryOrClient([10, 0, 0, 1]),
+            ..make_test_packet()
+        };
+        let mut buf = [0u8; 48];
+        pkt.to_bytes(&mut buf).unwrap();
+        let (decoded, _) = Packet::from_bytes(&buf).unwrap();
+        assert!(matches!(
+            decoded.reference_id,
+            ReferenceIdentifier::SecondaryOrClient([10, 0, 0, 1])
+        ));
+    }
+
+    #[test]
+    fn packet_negative_poll_precision() {
+        let pkt = Packet {
+            poll: -6,
+            precision: -32,
+            ..make_test_packet()
+        };
+        let mut buf = [0u8; 48];
+        pkt.to_bytes(&mut buf).unwrap();
+        let (decoded, _) = Packet::from_bytes(&buf).unwrap();
+        assert_eq!(decoded.poll, -6);
+        assert_eq!(decoded.precision, -32);
+    }
+
+    #[test]
+    fn packet_extra_bytes_ignored() {
+        let pkt = make_test_packet();
+        let mut buf = [0u8; 64];
+        pkt.to_bytes(&mut buf).unwrap();
+        let (decoded, consumed) = Packet::from_bytes(&buf).unwrap();
+        assert_eq!(consumed, 48);
+        assert_eq!(decoded.version, pkt.version);
+    }
+
+    // ── Cross-module consistency ────────────────────────────────────
+
+    #[test]
+    fn bytes_and_io_produce_same_output() {
+        // Verify that ToBytes (buffer-based) produces the same bytes as
+        // WriteToBytes (io-based) for the same packet.
+        use crate::protocol::WriteBytes;
+
+        let pkt = make_test_packet();
+
+        // Buffer-based
+        let mut buf_bytes = [0u8; 48];
+        pkt.to_bytes(&mut buf_bytes).unwrap();
+
+        // IO-based
+        let mut io_bytes = Vec::new();
+        io_bytes.write_bytes(pkt).unwrap();
+
+        assert_eq!(&buf_bytes[..], &io_bytes[..]);
+    }
+}

@@ -15,7 +15,7 @@
 //! (RFC 8915) for authenticated time synchronization instead.
 
 use std::io;
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
 use crate::protocol::{self, ConstPackedSizeBytes, WriteBytes};
 use crate::server_common::ServerSystemState;
@@ -40,7 +40,7 @@ pub struct BroadcastConfig {
 impl Default for BroadcastConfig {
     fn default() -> Self {
         BroadcastConfig {
-            dest_addr: "224.0.1.1:123".parse().unwrap(),
+            dest_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(224, 0, 1, 1), 123)),
             interval_secs: 64,
             poll_exponent: 6,
         }

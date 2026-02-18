@@ -12,7 +12,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "4.3.0"
+version = "4.4.0"
 authors = [
     "Jeff Belgum <jeffbelgum@gmail.com>",
     "John Willman <john.willman.1@us.af.mil>",
@@ -24,7 +24,7 @@ homepage = "https://github.com/192d-Wing/ntp_usg"
 repository = "https://github.com/192d-Wing/ntp_usg"
 
 [workspace.dependencies]
-ntp_usg-proto = { path = "crates/ntp_usg-proto", version = "4.3.0" }
+ntp_usg-proto = { path = "crates/ntp_usg-proto", version = "4.4.0" }
 byteorder = "1.5"
 log = "0.4"
 tokio = { version = "1", features = ["net", "time", "sync", "io-util", "rt"] }
@@ -55,7 +55,7 @@ windows-sys = { version = "0.61", features = [
 ] }
 chrono = "0.4"
 ring = "0.17"
-socket2 = { version = "0.5", features = ["all"] }
+socket2 = { version = "0.6", features = ["all"] }
 proptest = "1"
 wasm-bindgen = "0.2"
 js-sys = "0.3"

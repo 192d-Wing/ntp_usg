@@ -441,6 +441,29 @@ A hardening release with no new features — focused on test coverage, safety do
 
 ---
 
+## Version 4.4.0 - Testing & Dependency Hygiene ✅
+
+**Released**: 2026-02-18
+
+Focused on wire serialization test coverage, dependency deduplication, and code quality improvements.
+
+### Test Coverage
+
+- ✅ **25 unit tests for `protocol/io.rs`**: Complete coverage for `WriteToBytes`/`ReadFromBytes` — round-trips, edge values, all mode/leap variants
+- ✅ **32 unit tests for `protocol/bytes.rs`**: Complete coverage for `FromBytes`/`ToBytes` — `ParseError` validation, stratum-based reference ID disambiguation, cross-module consistency
+- ✅ **5 NTS edge-case tests**: Multiple cookie responses, empty KE records, `read_be_u16`, RFC 8915 constants, wrong-key AEAD
+
+### Dependency Hygiene
+
+- ✅ **`socket2` 0.5 → 0.6**: Eliminated dual-version (0.5 direct + 0.6 via tokio). Updated IPv4/IPv6 TOS/tclass API split.
+
+### Code Quality
+
+- ✅ **Removed `#[allow(dead_code)]` from NTS server**: Promoted 3 items to `pub` — `NtsRequestContext`, `process_nts_extensions()`, `build_nts_response()`
+- ✅ **Const address constructors**: Replaced `.parse().unwrap()` in `broadcast.rs` and `multicast.rs` defaults with compile-time constructors
+
+---
+
 ## Contributing
 
 We welcome contributions! If you'd like to work on any of these roadmap items:
@@ -461,7 +484,7 @@ Have ideas for the roadmap? Open an issue with the `enhancement` label or start 
 ---
 
 **Last Updated**: 2026-02-18
-**Current Version**: 4.3.0
+**Current Version**: 4.4.0
 
 ## Version 3.2.0 Progress Summary
 

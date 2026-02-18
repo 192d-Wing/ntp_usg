@@ -248,8 +248,7 @@ impl MasterKeyStore {
 
 /// Context extracted from an NTS-authenticated request, used to build the response.
 #[derive(Debug)]
-#[allow(dead_code)]
-pub(crate) struct NtsRequestContext {
+pub struct NtsRequestContext {
     /// Unique Identifier to echo back.
     pub uid_data: Vec<u8>,
     /// Server-to-client AEAD key (recovered from cookie).
@@ -266,8 +265,7 @@ pub(crate) struct NtsRequestContext {
 /// keys, and prepares replacement cookies.
 ///
 /// Returns the NTS context needed to build the authenticated response.
-#[allow(dead_code)]
-pub(crate) fn process_nts_extensions(
+pub fn process_nts_extensions(
     request_buf: &[u8],
     request_len: usize,
     key_store: &MasterKeyStore,
@@ -367,8 +365,7 @@ pub(crate) fn process_nts_extensions(
 /// Takes the NTP response packet (with timestamps set) and the NTS context
 /// from [`process_nts_extensions`], and returns the complete serialized response
 /// including extension fields and AEAD authenticator.
-#[allow(dead_code)]
-pub(crate) fn build_nts_response(
+pub fn build_nts_response(
     response_packet: &protocol::Packet,
     ctx: &NtsRequestContext,
 ) -> io::Result<Vec<u8>> {

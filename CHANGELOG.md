@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-02-18
+
+### Added
+
+#### Testing
+
+- **25 unit tests for `protocol/io.rs`**: Full coverage for `WriteToBytes`/`ReadFromBytes` implementations — round-trip serialization for `ShortFormat`, `TimestampFormat`, `DateFormat`, `Stratum`, `(LeapIndicator, Version, Mode)`, `ReferenceIdentifier`, and `Packet`. Edge values, buffer-too-short errors, all leap indicator and mode variants.
+- **32 unit tests for `protocol/bytes.rs`**: Full coverage for `FromBytes`/`ToBytes` implementations — round-trip serialization, `ParseError::BufferTooShort` validation, `ReferenceIdentifier::from_bytes_with_stratum()` per stratum level (KoD, Primary, Secondary, Unknown), cross-module consistency test verifying `bytes.rs` and `io.rs` produce identical output.
+- **5 NTS edge-case tests**: Multiple cookie response validation, `write_ke_record` empty body, `read_be_u16`, RFC 8915 constant validation, wrong-key AEAD decryption failure.
+
+### Changed
+
+#### Dependencies
+
+- **`socket2` upgraded from 0.5 to 0.6**: Eliminates dual-version dependency (0.5 direct + 0.6 via tokio). Updated `set_tos()` → `set_tos_v4()`/`set_tclass_v6()` for the socket2 0.6 IPv4/IPv6-split API. MSRV 1.93 meets socket2 0.6's minimum (1.70).
+
+#### Code Quality
+
+- **Removed `#[allow(dead_code)]` from NTS server**: Promoted `NtsRequestContext`, `process_nts_extensions()`, and `build_nts_response()` from `pub(crate)` to `pub` — available to users building custom NTS-authenticated NTP server handlers. Module already gated behind `#[cfg(any(feature = "nts", feature = "nts-smol"))]`.
+- **Eliminated `.parse().unwrap()` on const addresses**: `broadcast.rs` default (`"224.0.1.1:123"`) and `multicast.rs` default (`"ff02::101"`) replaced with compile-time `SocketAddr`/`Ipv6Addr` constructors.
+
 ## [4.3.0] - 2026-02-18
 
 ### Added
@@ -679,6 +700,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[4.4.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.0.1...v4.1.0

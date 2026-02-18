@@ -348,3 +348,369 @@ impl ReadFromBytes for PacketV5 {
         })
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    // ── ShortFormat ──────────────────────────────────────────────────
+
+    #[test]
+    fn short_format_roundtrip() {
+        let sf = ShortFormat {
+            seconds: 0x1234,
+            fraction: 0x5678,
+        };
+        let mut buf = Vec::new();
+        buf.write_bytes(sf).unwrap();
+        assert_eq!(buf.len(), 4);
+        let decoded: ShortFormat = Cursor::new(&buf).read_bytes().unwrap();
+        assert_eq!(decoded.seconds, sf.seconds);
+        assert_eq!(decoded.fraction, sf.fraction);
+    }
+
+    #[test]
+    fn short_format_edge_values() {
+        for (s, f) in [(0u16, 0u16), (u16::MAX, u16::MAX)] {
+            let sf = ShortFormat {
+                seconds: s,
+                fraction: f,
+            };
+            let mut buf = Vec::new();
+            buf.write_bytes(sf).unwrap();
+            let decoded: ShortFormat = Cursor::new(&buf).read_bytes().unwrap();
+            assert_eq!(decoded.seconds, s);
+            assert_eq!(decoded.fraction, f);
+        }
+    }
+
+    #[test]
+    fn short_format_read_too_short() {
+        let buf = [0u8; 3];
+        let result = Cursor::new(&buf[..]).read_bytes::<ShortFormat>();
+        assert!(result.is_err());
+    }
+
+    // ── TimestampFormat ─────────────────────────────────────────────
+
+    #[test]
+    fn timestamp_format_roundtrip() {
+        let ts = TimestampFormat {
+            seconds: 3_913_056_000,
+            fraction: 0xABCD_1234,
+        };
+        let mut buf = Vec::new();
+        buf.write_bytes(ts).unwrap();
+        assert_eq!(buf.len(), 8);
+        let decoded: TimestampFormat = Cursor::new(&buf).read_bytes().unwrap();
+        assert_eq!(decoded.seconds, ts.seconds);
+        assert_eq!(decoded.fraction, ts.fraction);
+    }
+
+    #[test]
+    fn timestamp_format_edge_values() {
+        for (s, f) in [(0u32, 0u32), (u32::MAX, u32::MAX)] {
+            let ts = TimestampFormat {
+                seconds: s,
+                fraction: f,
+            };
+            let mut buf = Vec::new();
+            buf.write_bytes(ts).unwrap();
+            let decoded: TimestampFormat = Cursor::new(&buf).read_bytes().unwrap();
+            assert_eq!(decoded.seconds, s);
+            assert_eq!(decoded.fraction, f);
+        }
+    }
+
+    #[test]
+    fn timestamp_format_read_too_short() {
+        let buf = [0u8; 7];
+        let result = Cursor::new(&buf[..]).read_bytes::<TimestampFormat>();
+        assert!(result.is_err());
+    }
+
+    // ── DateFormat ──────────────────────────────────────────────────
+
+    #[test]
+    fn date_format_roundtrip() {
+        let df = DateFormat {
+            era_number: -1,
+            era_offset: 0x1234_5678,
+            fraction: 0xDEAD_BEEF_CAFE_BABE,
+        };
+        let mut buf = Vec::new();
+        buf.write_bytes(df).unwrap();
+        assert_eq!(buf.len(), 16);
+        let decoded: DateFormat = Cursor::new(&buf).read_bytes().unwrap();
+        assert_eq!(decoded.era_number, df.era_number);
+        assert_eq!(decoded.era_offset, df.era_offset);
+        assert_eq!(decoded.fraction, df.fraction);
+    }
+
+    #[test]
+    fn date_format_read_too_short() {
+        let buf = [0u8; 15];
+        let result = Cursor::new(&buf[..]).read_bytes::<DateFormat>();
+        assert!(result.is_err());
+    }
+
+    // ── Stratum ─────────────────────────────────────────────────────
+
+    #[test]
+    fn stratum_roundtrip() {
+        for val in [0u8, 1, 2, 15, 16, 255] {
+            let s = Stratum(val);
+            let mut buf = Vec::new();
+            buf.write_bytes(s).unwrap();
+            assert_eq!(buf.len(), 1);
+            let decoded: Stratum = Cursor::new(&buf).read_bytes().unwrap();
+            assert_eq!(decoded.0, val);
+        }
+    }
+
+    #[test]
+    fn stratum_read_empty() {
+        let buf: [u8; 0] = [];
+        let result = Cursor::new(&buf[..]).read_bytes::<Stratum>();
+        assert!(result.is_err());
+    }
+
+    // ── (LeapIndicator, Version, Mode) ──────────────────────────────
+
+    #[test]
+    fn li_vn_mode_roundtrip() {
+        let li = LeapIndicator::NoWarning;
+        let vn = Version::V4;
+        let mode = Mode::Client;
+        let mut buf = Vec::new();
+        buf.write_bytes((li, vn, mode)).unwrap();
+        assert_eq!(buf.len(), 1);
+        let (dli, dvn, dmode): (LeapIndicator, Version, Mode) =
+            Cursor::new(&buf).read_bytes().unwrap();
+        assert_eq!(dli, li);
+        assert_eq!(dvn, vn);
+        assert_eq!(dmode, mode);
+    }
+
+    #[test]
+    fn li_vn_mode_all_leap_indicators() {
+        for li in [
+            LeapIndicator::NoWarning,
+            LeapIndicator::AddOne,
+            LeapIndicator::SubOne,
+            LeapIndicator::Unknown,
+        ] {
+            let mut buf = Vec::new();
+            buf.write_bytes((li, Version::V4, Mode::Server)).unwrap();
+            let (dli, _, _): (LeapIndicator, Version, Mode) =
+                Cursor::new(&buf).read_bytes().unwrap();
+            assert_eq!(dli, li);
+        }
+    }
+
+    #[test]
+    fn li_vn_mode_all_modes() {
+        for mode in [
+            Mode::Reserved,
+            Mode::SymmetricActive,
+            Mode::SymmetricPassive,
+            Mode::Client,
+            Mode::Server,
+            Mode::Broadcast,
+            Mode::NtpControlMessage,
+            Mode::ReservedForPrivateUse,
+        ] {
+            let mut buf = Vec::new();
+            buf.write_bytes((LeapIndicator::NoWarning, Version::V4, mode))
+                .unwrap();
+            let (_, _, dm): (LeapIndicator, Version, Mode) =
+                Cursor::new(&buf).read_bytes().unwrap();
+            assert_eq!(dm, mode);
+        }
+    }
+
+    #[test]
+    fn li_vn_mode_read_empty() {
+        let buf: [u8; 0] = [];
+        let result = Cursor::new(&buf[..]).read_bytes::<(LeapIndicator, Version, Mode)>();
+        assert!(result.is_err());
+    }
+
+    // ── ReferenceIdentifier ─────────────────────────────────────────
+
+    #[test]
+    fn reference_id_primary_source_roundtrip() {
+        let ref_id = ReferenceIdentifier::PrimarySource(PrimarySource::Gps);
+        let mut buf = Vec::new();
+        buf.write_bytes(ref_id).unwrap();
+        assert_eq!(buf.len(), 4);
+    }
+
+    #[test]
+    fn reference_id_kiss_of_death_roundtrip() {
+        let ref_id = ReferenceIdentifier::KissOfDeath(KissOfDeath::Deny);
+        let mut buf = Vec::new();
+        buf.write_bytes(ref_id).unwrap();
+        assert_eq!(buf.len(), 4);
+    }
+
+    #[test]
+    fn reference_id_secondary_roundtrip() {
+        let ref_id = ReferenceIdentifier::SecondaryOrClient([192, 168, 1, 1]);
+        let mut buf = Vec::new();
+        buf.write_bytes(ref_id).unwrap();
+        assert_eq!(buf, [192, 168, 1, 1]);
+    }
+
+    // ── Packet ──────────────────────────────────────────────────────
+
+    fn make_test_packet() -> Packet {
+        Packet {
+            leap_indicator: LeapIndicator::NoWarning,
+            version: Version::V4,
+            mode: Mode::Client,
+            stratum: Stratum::UNSPECIFIED,
+            poll: 6,
+            precision: -20,
+            root_delay: ShortFormat {
+                seconds: 1,
+                fraction: 0x8000,
+            },
+            root_dispersion: ShortFormat {
+                seconds: 0,
+                fraction: 0x4000,
+            },
+            reference_id: ReferenceIdentifier::default(),
+            reference_timestamp: TimestampFormat {
+                seconds: 3_913_056_000,
+                fraction: 0,
+            },
+            origin_timestamp: TimestampFormat::default(),
+            receive_timestamp: TimestampFormat::default(),
+            transmit_timestamp: TimestampFormat {
+                seconds: 3_913_056_001,
+                fraction: 0x1234_5678,
+            },
+        }
+    }
+
+    #[test]
+    fn packet_roundtrip() {
+        let pkt = make_test_packet();
+        let mut buf = Vec::new();
+        buf.write_bytes(pkt).unwrap();
+        assert_eq!(buf.len(), 48);
+        let decoded: Packet = Cursor::new(&buf).read_bytes().unwrap();
+        assert_eq!(decoded.leap_indicator, pkt.leap_indicator);
+        assert_eq!(decoded.version, pkt.version);
+        assert_eq!(decoded.mode, pkt.mode);
+        assert_eq!(decoded.stratum, pkt.stratum);
+        assert_eq!(decoded.poll, pkt.poll);
+        assert_eq!(decoded.precision, pkt.precision);
+        assert_eq!(decoded.root_delay, pkt.root_delay);
+        assert_eq!(decoded.root_dispersion, pkt.root_dispersion);
+        assert_eq!(decoded.reference_timestamp, pkt.reference_timestamp);
+        assert_eq!(decoded.origin_timestamp, pkt.origin_timestamp);
+        assert_eq!(decoded.receive_timestamp, pkt.receive_timestamp);
+        assert_eq!(decoded.transmit_timestamp, pkt.transmit_timestamp);
+    }
+
+    #[test]
+    fn packet_read_too_short() {
+        let buf = [0u8; 47];
+        let result = Cursor::new(&buf[..]).read_bytes::<Packet>();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn packet_stratum1_gps_reference() {
+        let pkt = Packet {
+            stratum: Stratum::PRIMARY,
+            reference_id: ReferenceIdentifier::PrimarySource(PrimarySource::Gps),
+            ..make_test_packet()
+        };
+        let mut buf = Vec::new();
+        buf.write_bytes(pkt).unwrap();
+        let decoded: Packet = Cursor::new(&buf).read_bytes().unwrap();
+        assert!(matches!(
+            decoded.reference_id,
+            ReferenceIdentifier::PrimarySource(PrimarySource::Gps)
+        ));
+    }
+
+    #[test]
+    fn packet_stratum0_kod_deny() {
+        let pkt = Packet {
+            stratum: Stratum::UNSPECIFIED,
+            reference_id: ReferenceIdentifier::KissOfDeath(KissOfDeath::Deny),
+            ..make_test_packet()
+        };
+        let mut buf = Vec::new();
+        buf.write_bytes(pkt).unwrap();
+        let decoded: Packet = Cursor::new(&buf).read_bytes().unwrap();
+        assert!(matches!(
+            decoded.reference_id,
+            ReferenceIdentifier::KissOfDeath(KissOfDeath::Deny)
+        ));
+    }
+
+    #[test]
+    fn packet_stratum2_secondary_reference() {
+        let pkt = Packet {
+            stratum: Stratum(2),
+            reference_id: ReferenceIdentifier::SecondaryOrClient([10, 0, 0, 1]),
+            ..make_test_packet()
+        };
+        let mut buf = Vec::new();
+        buf.write_bytes(pkt).unwrap();
+        let decoded: Packet = Cursor::new(&buf).read_bytes().unwrap();
+        assert!(matches!(
+            decoded.reference_id,
+            ReferenceIdentifier::SecondaryOrClient([10, 0, 0, 1])
+        ));
+    }
+
+    #[test]
+    fn packet_stratum16_unknown_reference() {
+        let pkt = Packet {
+            stratum: Stratum(16),
+            reference_id: ReferenceIdentifier::Unknown([0xFF, 0xFE, 0xFD, 0xFC]),
+            ..make_test_packet()
+        };
+        let mut buf = Vec::new();
+        buf.write_bytes(pkt).unwrap();
+        let decoded: Packet = Cursor::new(&buf).read_bytes().unwrap();
+        assert!(matches!(
+            decoded.reference_id,
+            ReferenceIdentifier::Unknown([0xFF, 0xFE, 0xFD, 0xFC])
+        ));
+    }
+
+    #[test]
+    fn packet_negative_poll_precision() {
+        let pkt = Packet {
+            poll: -6,
+            precision: -32,
+            ..make_test_packet()
+        };
+        let mut buf = Vec::new();
+        buf.write_bytes(pkt).unwrap();
+        let decoded: Packet = Cursor::new(&buf).read_bytes().unwrap();
+        assert_eq!(decoded.poll, -6);
+        assert_eq!(decoded.precision, -32);
+    }
+
+    #[test]
+    fn packet_reference_write_is_big_endian() {
+        let pkt = make_test_packet();
+        let mut buf = Vec::new();
+        buf.write_bytes(pkt).unwrap();
+        // Byte 0: LI=0, VN=4, Mode=3 → (0<<6)|(4<<3)|3 = 0x23
+        assert_eq!(buf[0], 0x23);
+    }
+}

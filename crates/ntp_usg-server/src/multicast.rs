@@ -35,7 +35,12 @@ pub struct MulticastConfig {
 impl Default for MulticastConfig {
     fn default() -> Self {
         MulticastConfig {
-            group_addr: SocketAddrV6::new("ff02::101".parse::<Ipv6Addr>().unwrap(), 123, 0, 0),
+            group_addr: SocketAddrV6::new(
+                Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 0x101),
+                123,
+                0,
+                0,
+            ),
             interface: 0,
             interval_secs: 64,
             poll_exponent: 6,

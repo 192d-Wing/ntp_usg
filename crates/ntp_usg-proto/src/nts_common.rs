@@ -757,4 +757,116 @@ mod tests {
                 .contains("no extension fields")
         );
     }
+
+    #[test]
+    fn test_validate_nts_response_multiple_cookies() {
+        // Server returns 3 cookies in a single response.
+        let c2s_key = vec![0x42u8; 32];
+        let s2c_key = vec![0x43u8; 32];
+        let cookie = vec![0xABu8; 100];
+        let (_, t1, uid_data) = build_nts_request(&c2s_key, AEAD_AES_SIV_CMAC_256, cookie).unwrap();
+
+        let response_pkt = protocol::Packet {
+            leap_indicator: protocol::LeapIndicator::NoWarning,
+            version: protocol::Version::V4,
+            mode: protocol::Mode::Server,
+            stratum: protocol::Stratum(2),
+            poll: 6,
+            precision: -20,
+            root_delay: protocol::ShortFormat::default(),
+            root_dispersion: protocol::ShortFormat::default(),
+            reference_id: protocol::ReferenceIdentifier::SecondaryOrClient([127, 0, 0, 1]),
+            reference_timestamp: protocol::TimestampFormat::default(),
+            origin_timestamp: t1,
+            receive_timestamp: protocol::TimestampFormat::default(),
+            transmit_timestamp: protocol::TimestampFormat {
+                seconds: t1.seconds,
+                fraction: t1.fraction.wrapping_add(1000),
+            },
+        };
+        let mut resp_header = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
+        (&mut resp_header[..]).write_bytes(response_pkt).unwrap();
+
+        let uid = UniqueIdentifier::new(uid_data.clone());
+        let cookie1 = NtsCookie::new(vec![0xC1u8; 80]);
+        let cookie2 = NtsCookie::new(vec![0xC2u8; 80]);
+        let cookie3 = NtsCookie::new(vec![0xC3u8; 80]);
+        let pre_auth_fields = vec![
+            uid.to_extension_field(),
+            cookie1.to_extension_field(),
+            cookie2.to_extension_field(),
+            cookie3.to_extension_field(),
+        ];
+        let pre_auth_bytes = extension::write_extension_fields(&pre_auth_fields).unwrap();
+
+        let mut resp_aad = Vec::new();
+        resp_aad.extend_from_slice(&resp_header);
+        resp_aad.extend_from_slice(&pre_auth_bytes);
+
+        let (nonce, ciphertext) =
+            aead_encrypt(AEAD_AES_SIV_CMAC_256, &s2c_key, &resp_aad, &[]).unwrap();
+        let auth = NtsAuthenticator::new(nonce, ciphertext);
+        let auth_bytes = extension::write_extension_fields(&[auth.to_extension_field()]).unwrap();
+
+        let mut recv_buf = vec![0u8; 2048];
+        let mut pos = 0;
+        recv_buf[..resp_header.len()].copy_from_slice(&resp_header);
+        pos += resp_header.len();
+        recv_buf[pos..pos + pre_auth_bytes.len()].copy_from_slice(&pre_auth_bytes);
+        pos += pre_auth_bytes.len();
+        recv_buf[pos..pos + auth_bytes.len()].copy_from_slice(&auth_bytes);
+        pos += auth_bytes.len();
+
+        let new_cookies =
+            validate_nts_response(&s2c_key, AEAD_AES_SIV_CMAC_256, &uid_data, &recv_buf, pos)
+                .unwrap();
+
+        assert_eq!(new_cookies.len(), 3);
+        assert_eq!(new_cookies[0], vec![0xC1u8; 80]);
+        assert_eq!(new_cookies[1], vec![0xC2u8; 80]);
+        assert_eq!(new_cookies[2], vec![0xC3u8; 80]);
+    }
+
+    #[test]
+    fn test_write_ke_record_empty_body() {
+        let mut buf = Vec::new();
+        write_ke_record(&mut buf, true, NTS_KE_END_OF_MESSAGE, &[]);
+        assert_eq!(buf, [0x80, 0x00, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn test_read_be_u16() {
+        assert_eq!(read_be_u16(&[0x00, 0x00]), 0);
+        assert_eq!(read_be_u16(&[0xFF, 0xFF]), 0xFFFF);
+        assert_eq!(read_be_u16(&[0x12, 0x34]), 0x1234);
+    }
+
+    #[test]
+    fn test_ke_constants_match_rfc8915() {
+        assert_eq!(NTS_KE_END_OF_MESSAGE, 0);
+        assert_eq!(NTS_KE_NEXT_PROTOCOL, 1);
+        assert_eq!(NTS_KE_ERROR, 2);
+        assert_eq!(NTS_KE_WARNING, 3);
+        assert_eq!(NTS_KE_AEAD_ALGORITHM, 4);
+        assert_eq!(NTS_KE_NEW_COOKIE, 5);
+        assert_eq!(NTS_KE_SERVER, 6);
+        assert_eq!(NTS_KE_PORT, 7);
+        assert_eq!(NTS_KE_DEFAULT_PORT, 4460);
+        assert_eq!(NTS_PROTOCOL_NTPV4, 0);
+        assert_eq!(AEAD_AES_SIV_CMAC_256, 15);
+        assert_eq!(AEAD_AES_SIV_CMAC_512, 17);
+    }
+
+    #[test]
+    fn test_aead_wrong_key() {
+        let key = vec![0x42u8; 32];
+        let wrong_key = vec![0x99u8; 32];
+        let aad = b"test aad";
+        let plaintext = b"secret";
+
+        let (nonce, ciphertext) =
+            aead_encrypt(AEAD_AES_SIV_CMAC_256, &key, aad, plaintext).unwrap();
+        let result = aead_decrypt(AEAD_AES_SIV_CMAC_256, &wrong_key, aad, &nonce, &ciphertext);
+        assert!(result.is_err());
+    }
 }
