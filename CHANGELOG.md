@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-02-18
+
+### Breaking Changes
+
+- **Major version bump**: Protocol-level additions (NTPv5, Roughtime) and new public API surface warrant a semver-major release. Existing NTPv4 APIs are unchanged.
+
+### Added
+
+#### Roughtime Protocol Client (`roughtime` feature)
+
+- Authenticated coarse time synchronization per `draft-ietf-ntp-roughtime-15`
+- Tag-value map encoder/decoder (zero-copy `TagValueMap<'a>`)
+- Ed25519 signature verification (delegation certificate + response)
+- SHA-512 Merkle tree path verifier (client-side proof validation)
+- Sync and async API: `roughtime::request()` / `roughtime::async_request()`
+- Multi-server chaining via `build_chained_request()` (SHA-512 nonce derivation)
+- Integration tests against Cloudflare Roughtime (`roughtime.cloudflare.com:2003`)
+
+#### Post-Quantum NTS (`pq-nts` feature)
+
+- ML-KEM hybrid X25519MLKEM768 key exchange for NTS-KE via `aws-lc-rs` backend
+- `prefer-post-quantum` enabled by default when `nts` or `nts-smol` features are active
+- Automatic fallback to classical X25519 when server doesn't support PQ
+- Centralized TLS config modules (`tls_config.rs`) with `builder_with_provider()`
+
+#### IPv6-only Mode Optimizations
+
+- IPv6-first DNS resolution (`prefer_addresses()` helper)
+- Server default listen addresses changed to `[::]` (dual-stack)
+- `ipv4` feature gate to restore IPv4-only behavior
+- Type-safe RefId helpers: `from_ipv4()`, `from_ipv6()` (MD5 hash), `matches_ipv4()`
+- IPv6 multicast server discovery (`[ff02::101]:123`) with `MulticastConfig`
+- `IPV6_V6ONLY` socket option via `v6only()` builder method (`socket-opts` feature)
+- DSCP/Traffic Class marking via `dscp()` builder method (`socket-opts` feature)
+
+#### NTPv5 Support (`ntpv5` feature)
+
+- Full NTPv4-to-NTPv5 protocol per `draft-ietf-ntp-ntpv5-07`
+- 48-byte `PacketV5` header with era number, timescale, flags, client/server cookies
+- `Time32` type: 4 integer + 28 fractional bits (~3.7 ns resolution)
+- 120-bit Bloom filter Reference IDs for loop detection
+- AES-CMAC-128 MAC extension field (0xF502)
+- 0xF501–0xF509 + 0xF5FF extension fields (Padding, MAC, Reference IDs, Server Info, Correction, timestamps, Draft Identification)
+- NTPv5 server (client-server mode only)
+- NTPv5 client with version negotiation and Bloom filter assembly
+- NTS-KE NTPv5 protocol ID negotiation (0x8001)
+
+#### WASM Support (`ntp_usg-wasm` crate)
+
+- New `ntp_usg-wasm` crate: JavaScript-friendly API via `wasm-bindgen`
+- Exports: `NtpPacket` (parse/inspect/serialize), `buildClientRequest()`, `ntpTimestampToUnixSeconds()`, `unixSecondsToNtpTimestamp()`, `parseExtensionFields()`
+- 37 KB WASM binary, 6 wasm-bindgen tests
+- CI: `wasm32-unknown-unknown` target with 4 feature combos + `wasm-pack build`
+
+### Fixed
+
+- Network tests now gracefully skip on `ENETUNREACH` (101), `EHOSTUNREACH` (113), `ConnectionRefused`, `ConnectionReset`, and `AddrNotAvailable` — shared `is_network_skip_error()` helper across all integration tests
+- `cargo cyclonedx` invalid `--output-prefix` flag removed from publish workflow
+- Miri CI: excluded network/GPS/PPS tests, added sysroot caching
+- Minimal-versions: resolved transitive dependency conflicts
+
+### New Dependencies
+
+| Dependency | Feature | Purpose |
+|------------|---------|---------|
+| `ring` 0.17 | `roughtime` | Ed25519 signatures, SHA-512 Merkle proofs |
+| `aes` 0.8 | `ntpv5` | AES-CMAC-128 MAC extension field |
+| `cmac` 0.7 | `ntpv5` | CMAC construction for NTPv5 |
+| `wasm-bindgen` 0.2 | `ntp_usg-wasm` | JS interop for WASM builds |
+| `js-sys` 0.3 | `ntp_usg-wasm` | JavaScript built-in object bindings |
+
+### New Feature Flags
+
+| Crate | Feature | Description |
+|-------|---------|-------------|
+| `ntp_usg-proto` | `roughtime` | Roughtime tag-value maps and verification |
+| `ntp_usg-proto` | `ntpv5` | NTPv5 protocol types and extensions |
+| `ntp_usg-client` | `roughtime` | Roughtime sync/async client |
+| `ntp_usg-server` | `ntpv5` | NTPv5 server mode |
+| `ntp_usg-server` | `pq-nts` | Post-quantum NTS key exchange |
+| `ntp_usg-server` | `ipv4` | IPv4-only mode (default is dual-stack) |
+
 ## [3.4.0] - 2026-02-17
 
 ### Added
@@ -498,6 +580,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[4.0.0]: https://github.com/192d-Wing/ntp_usg/compare/v3.4.0...v4.0.0
 [3.4.0]: https://github.com/192d-Wing/ntp_usg/compare/v3.3.3...v3.4.0
 [3.3.3]: https://github.com/192d-Wing/ntp_usg/compare/v3.3.2...v3.3.3
 [3.3.2]: https://github.com/192d-Wing/ntp_usg/compare/v3.3.1...v3.3.2

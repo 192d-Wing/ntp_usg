@@ -7,6 +7,10 @@ edition.workspace = true
 homepage.workspace = true
 repository.workspace = true
 description = "WebAssembly bindings for NTP packet parsing and timestamp conversion"
+documentation = "https://docs.rs/ntp_usg-wasm/"
+readme = "../../README.md"
+keywords = ["ntp", "wasm", "webassembly", "time", "parser"]
+categories = ["date-and-time", "wasm", "web-programming"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
