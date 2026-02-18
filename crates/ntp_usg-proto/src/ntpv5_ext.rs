@@ -15,6 +15,9 @@
 use crate::extension::ExtensionField;
 use crate::protocol::TimestampFormat;
 
+use aes::Aes128;
+use cmac::{Cmac, Mac};
+
 // ============================================================================
 // Extension field type codes (draft provisional, 0xF5xx range)
 // ============================================================================
@@ -274,6 +277,68 @@ impl Padding {
     }
 }
 
+/// MAC extension field (0xF502) — AES-CMAC-128 authentication.
+///
+/// Provides symmetric-key authentication for NTPv5 packets. The MAC is
+/// computed over the concatenation of the NTPv5 header and all preceding
+/// extension fields. The MAC extension field MUST be the last extension
+/// field in the packet.
+///
+/// Wire format: 4-byte Key ID + 16-byte AES-CMAC-128 tag = 20 bytes.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct MacField {
+    /// Identifies which symmetric key was used.
+    pub key_id: u32,
+    /// 16-byte AES-CMAC-128 authentication tag.
+    pub mac: [u8; 16],
+}
+
+impl MacField {
+    /// Convert to a generic extension field.
+    pub fn to_extension_field(&self) -> ExtensionField {
+        let mut value = Vec::with_capacity(20);
+        value.extend_from_slice(&self.key_id.to_be_bytes());
+        value.extend_from_slice(&self.mac);
+        ExtensionField {
+            field_type: MAC,
+            value,
+        }
+    }
+
+    /// Try to extract from a generic extension field.
+    pub fn from_extension_field(ef: &ExtensionField) -> Option<Self> {
+        if ef.field_type != MAC || ef.value.len() < 20 {
+            return None;
+        }
+        let key_id = u32::from_be_bytes([ef.value[0], ef.value[1], ef.value[2], ef.value[3]]);
+        let mut mac = [0u8; 16];
+        mac.copy_from_slice(&ef.value[4..20]);
+        Some(MacField { key_id, mac })
+    }
+}
+
+/// Compute an AES-CMAC-128 tag over the NTPv5 header and extension fields.
+///
+/// The `data` parameter should be the concatenation of the 48-byte NTPv5 header
+/// and all serialized extension fields that precede the MAC extension field.
+pub fn compute_mac(key: &[u8; 16], data: &[u8]) -> [u8; 16] {
+    let mut cmac =
+        <Cmac<Aes128> as Mac>::new_from_slice(key).expect("AES-128 key is always 16 bytes");
+    cmac.update(data);
+    let result = cmac.finalize();
+    result.into_bytes().into()
+}
+
+/// Verify an AES-CMAC-128 tag in constant time.
+///
+/// Returns `true` if the computed tag matches `expected`.
+pub fn verify_mac(key: &[u8; 16], data: &[u8], expected: &[u8; 16]) -> bool {
+    let mut cmac =
+        <Cmac<Aes128> as Mac>::new_from_slice(key).expect("AES-128 key is always 16 bytes");
+    cmac.update(data);
+    cmac.verify_slice(expected).is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,5 +459,126 @@ mod tests {
         assert_eq!(MONOTONIC_RECV_TS & 0xFF00, 0xF500);
         assert_eq!(SECONDARY_RECV_TS & 0xFF00, 0xF500);
         assert_eq!(DRAFT_IDENTIFICATION & 0xFF00, 0xF500);
+    }
+
+    #[test]
+    fn test_mac_field_roundtrip() {
+        let key = [0x42u8; 16];
+        let data = b"NTPv5 header + extension fields";
+        let tag = compute_mac(&key, data);
+
+        let mf = MacField {
+            key_id: 0xDEAD_BEEF,
+            mac: tag,
+        };
+        let ef = mf.to_extension_field();
+        assert_eq!(ef.field_type, MAC);
+        assert_eq!(ef.value.len(), 20);
+
+        let back = MacField::from_extension_field(&ef).unwrap();
+        assert_eq!(back, mf);
+    }
+
+    #[test]
+    fn test_mac_field_wrong_type() {
+        let ef = ExtensionField {
+            field_type: 0x1234,
+            value: vec![0u8; 20],
+        };
+        assert!(MacField::from_extension_field(&ef).is_none());
+    }
+
+    #[test]
+    fn test_mac_field_too_short() {
+        let ef = ExtensionField {
+            field_type: MAC,
+            value: vec![0u8; 19],
+        };
+        assert!(MacField::from_extension_field(&ef).is_none());
+    }
+
+    #[test]
+    fn test_compute_mac_deterministic() {
+        let key = [0x01u8; 16];
+        let data = b"same input";
+        let tag1 = compute_mac(&key, data);
+        let tag2 = compute_mac(&key, data);
+        assert_eq!(tag1, tag2);
+    }
+
+    #[test]
+    fn test_compute_mac_different_keys() {
+        let key1 = [0x01u8; 16];
+        let key2 = [0x02u8; 16];
+        let data = b"same input";
+        let tag1 = compute_mac(&key1, data);
+        let tag2 = compute_mac(&key2, data);
+        assert_ne!(tag1, tag2);
+    }
+
+    #[test]
+    fn test_compute_mac_different_data() {
+        let key = [0x01u8; 16];
+        let tag1 = compute_mac(&key, b"data A");
+        let tag2 = compute_mac(&key, b"data B");
+        assert_ne!(tag1, tag2);
+    }
+
+    #[test]
+    fn test_verify_mac_valid() {
+        let key = [0x42u8; 16];
+        let data = b"authenticate this";
+        let tag = compute_mac(&key, data);
+        assert!(verify_mac(&key, data, &tag));
+    }
+
+    #[test]
+    fn test_verify_mac_wrong_key() {
+        let key = [0x42u8; 16];
+        let wrong_key = [0x43u8; 16];
+        let data = b"authenticate this";
+        let tag = compute_mac(&key, data);
+        assert!(!verify_mac(&wrong_key, data, &tag));
+    }
+
+    #[test]
+    fn test_verify_mac_tampered_data() {
+        let key = [0x42u8; 16];
+        let data = b"authenticate this";
+        let tag = compute_mac(&key, data);
+        assert!(!verify_mac(&key, b"tampered data!!", &tag));
+    }
+
+    #[test]
+    fn test_verify_mac_tampered_tag() {
+        let key = [0x42u8; 16];
+        let data = b"authenticate this";
+        let mut tag = compute_mac(&key, data);
+        tag[0] ^= 0xFF;
+        assert!(!verify_mac(&key, data, &tag));
+    }
+
+    #[test]
+    fn test_mac_with_realistic_packet() {
+        // Simulate MAC over a 48-byte V5 header + extension fields.
+        let key = [0xAB; 16];
+        let mut packet_data = vec![0u8; 48]; // header
+        packet_data[0] = 0x2B; // VN=5, Mode=3
+        packet_data[1] = 1; // stratum
+
+        // Add a Draft Identification extension field.
+        let di = DraftIdentification::current();
+        let ef = di.to_extension_field();
+        // Serialize: type(2) + length(2) + value
+        packet_data.extend_from_slice(&ef.field_type.to_be_bytes());
+        packet_data.extend_from_slice(&(ef.value.len() as u16).to_be_bytes());
+        packet_data.extend_from_slice(&ef.value);
+
+        let tag = compute_mac(&key, &packet_data);
+        assert!(verify_mac(&key, &packet_data, &tag));
+
+        // Tamper with the header.
+        packet_data[1] = 2; // change stratum
+        assert!(!verify_mac(&key, &packet_data, &tag));
     }
 }

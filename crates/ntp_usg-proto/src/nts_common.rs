@@ -39,6 +39,10 @@ pub const NTS_KE_PORT: u16 = 7;
 /// NTPv4 protocol ID for NTS Next Protocol Negotiation.
 pub const NTS_PROTOCOL_NTPV4: u16 = 0;
 
+/// NTPv5 protocol ID for NTS Next Protocol Negotiation (provisional, 0x8001).
+#[cfg(feature = "ntpv5")]
+pub const NTS_PROTOCOL_NTPV5: u16 = 0x8001;
+
 /// Default NTS-KE port (RFC 8915 Section 4).
 pub const NTS_KE_DEFAULT_PORT: u16 = 4460;
 
@@ -72,6 +76,8 @@ pub struct NtsKeResult {
     pub ntp_server: String,
     /// NTP server port (default 123).
     pub ntp_port: u16,
+    /// Negotiated NTP protocol ID (0 = NTPv4, 0x8001 = NTPv5).
+    pub next_protocol: u16,
 }
 
 /// NTS-KE record as read from the TLS stream.

@@ -127,7 +127,7 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
     tls_stream.flush().await?;
 
     // Parse NTS-KE response.
-    let mut got_next_protocol = false;
+    let mut next_protocol: Option<u16> = None;
     let mut aead_algorithm = AEAD_AES_SIV_CMAC_256;
     let mut cookies = Vec::new();
     let mut ntp_server = hostname.to_string();
@@ -149,14 +149,17 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
                     ));
                 }
                 let proto = read_be_u16(&record.body[..2]);
-                if proto != NTS_PROTOCOL_NTPV4 {
+                let supported = proto == NTS_PROTOCOL_NTPV4;
+                #[cfg(feature = "ntpv5")]
+                let supported = supported || proto == NTS_PROTOCOL_NTPV5;
+                if !supported {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
                         format!("NTS-KE: unsupported protocol: {}", proto),
                     ));
                 }
-                got_next_protocol = true;
-                debug!("NTS-KE: next protocol = NTPv4");
+                next_protocol = Some(proto);
+                debug!("NTS-KE: next protocol = 0x{:04X}", proto);
             }
             NTS_KE_AEAD_ALGORITHM => {
                 if record.body.len() < 2 {
@@ -225,12 +228,12 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
         }
     }
 
-    if !got_next_protocol {
-        return Err(io::Error::new(
+    let next_protocol = next_protocol.ok_or_else(|| {
+        io::Error::new(
             io::ErrorKind::InvalidData,
             "NTS-KE: server did not send Next Protocol record",
-        ));
-    }
+        )
+    })?;
 
     if cookies.is_empty() {
         return Err(io::Error::new(
@@ -279,6 +282,7 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
         aead_algorithm,
         ntp_server,
         ntp_port,
+        next_protocol,
     })
 }
 

@@ -134,7 +134,7 @@ async fn handle_nts_ke_connection(
     cookie_count: usize,
 ) -> io::Result<()> {
     // 1. Read client NTS-KE records until End of Message.
-    let mut client_next_protocol = false;
+    let mut client_next_protocol: Option<u16> = None;
     let mut client_aead_algorithms = Vec::new();
 
     loop {
@@ -145,7 +145,11 @@ async fn handle_nts_ke_connection(
                 if record.body.len() >= 2 {
                     let proto = read_be_u16(&record.body[..2]);
                     if proto == NTS_PROTOCOL_NTPV4 {
-                        client_next_protocol = true;
+                        client_next_protocol = Some(proto);
+                    }
+                    #[cfg(feature = "ntpv5")]
+                    if proto == NTS_PROTOCOL_NTPV5 {
+                        client_next_protocol = Some(proto);
                     }
                 }
             }
@@ -168,14 +172,17 @@ async fn handle_nts_ke_connection(
     }
 
     // 2. Validate client request.
-    if !client_next_protocol {
-        let mut resp = Vec::new();
-        write_ke_record(&mut resp, true, NTS_KE_ERROR, &1u16.to_be_bytes());
-        write_ke_record(&mut resp, true, NTS_KE_END_OF_MESSAGE, &[]);
-        tls_stream.write_all(&resp).await?;
-        tls_stream.flush().await?;
-        return Ok(());
-    }
+    let negotiated_protocol = match client_next_protocol {
+        Some(proto) => proto,
+        None => {
+            let mut resp = Vec::new();
+            write_ke_record(&mut resp, true, NTS_KE_ERROR, &1u16.to_be_bytes());
+            write_ke_record(&mut resp, true, NTS_KE_END_OF_MESSAGE, &[]);
+            tls_stream.write_all(&resp).await?;
+            tls_stream.flush().await?;
+            return Ok(());
+        }
+    };
 
     // 3. Negotiate AEAD algorithm.
     let supported = [AEAD_AES_SIV_CMAC_256, AEAD_AES_SIV_CMAC_512];
@@ -225,11 +232,12 @@ async fn handle_nts_ke_connection(
     // 6. Build and send response.
     let mut resp = Vec::new();
 
+    // Next Protocol (critical) — echo back whichever protocol the client negotiated.
     write_ke_record(
         &mut resp,
         true,
         NTS_KE_NEXT_PROTOCOL,
-        &NTS_PROTOCOL_NTPV4.to_be_bytes(),
+        &negotiated_protocol.to_be_bytes(),
     );
     write_ke_record(
         &mut resp,

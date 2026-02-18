@@ -27,7 +27,7 @@ std = ["dep:byteorder", "dep:log"]
 alloc = []
 nts = ["std", "dep:aes-siv", "dep:rand"]
 roughtime = ["std", "dep:ring", "dep:rand"]
-ntpv5 = ["std"]
+ntpv5 = ["std", "dep:cmac", "dep:aes"]
 
 [dependencies]
 byteorder = { workspace = true, optional = true }
@@ -35,6 +35,8 @@ log = { workspace = true, optional = true }
 aes-siv = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 ring = { workspace = true, optional = true }
+aes = { workspace = true, optional = true }
+cmac = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
