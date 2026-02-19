@@ -62,12 +62,9 @@ impl SocketOptions {
             if bind_addr.is_ipv4() {
                 socket.set_tos_v4(tos)?;
             } else {
-                // set_tclass_v6 is not available on Windows; use set_tos on
-                // Windows which sets the IPv6 Traffic Class on dual-stack sockets.
+                // Windows does not support IPV6_TCLASS; silently skip DSCP for IPv6 there.
                 #[cfg(not(target_os = "windows"))]
                 socket.set_tclass_v6(tos)?;
-                #[cfg(target_os = "windows")]
-                socket.set_tos(tos)?;
             }
         }
 
