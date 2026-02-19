@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1771456085519,
+  "lastUpdate": 1771474471033,
   "repoUrl": "https://github.com/192d-Wing/ntp_usg",
   "entries": {
     "Selection Algorithm Benchmarks": [
@@ -1943,6 +1943,114 @@ window.BENCHMARK_DATA = {
             "name": "full_selection_pipeline/20",
             "value": 2629,
             "range": "± 2164",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "1456055067",
+            "username": "1456055067"
+          },
+          "committer": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "1456055067",
+            "username": "1456055067"
+          },
+          "distinct": true,
+          "id": "61bc8c094910043070db35b775a54404d9fb891e",
+          "message": "refactor: deduplicate tokio/smol code, bump to v4.7.0\n\nExtract shared logic from 4 pairs of near-identical tokio/smol files\ninto common modules, eliminating ~1,300 lines of duplication:\n\n- Server builder → define_server_builder! macro in server_common/builder.rs\n- NTS-KE server → nts_ke_server_common.rs\n- Client builder → define_client_builder! macro in client_common.rs\n- NTS client → nts_ke_exchange.rs",
+          "timestamp": "2026-02-18T22:10:12-06:00",
+          "tree_id": "5e05a017578fc73d48df66a5fb6cd4650a2a400b",
+          "url": "https://github.com/192d-Wing/ntp_usg/commit/61bc8c094910043070db35b775a54404d9fb891e"
+        },
+        "date": 1771474470247,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "select_truechimers/3",
+            "value": 61,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/5",
+            "value": 160,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/10",
+            "value": 347,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/20",
+            "value": 793,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/3",
+            "value": 21,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/5",
+            "value": 107,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/10",
+            "value": 489,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/15",
+            "value": 1283,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/3",
+            "value": 30,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/5",
+            "value": 36,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/10",
+            "value": 52,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/5",
+            "value": 334,
+            "range": "± 282",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/10",
+            "value": 999,
+            "range": "± 756",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/20",
+            "value": 2729,
+            "range": "± 1951",
             "unit": "ns/iter"
           }
         ]
