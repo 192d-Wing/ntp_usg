@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.10.1] - 2026-02-19
+
+### Fixed
+
+- **Windows ARM**: Use `set_tos()` fallback when `set_tclass_v6()` is unavailable on Windows for IPv6 DSCP socket options.
+- **Fuzz target**: Removed access to private `num_tags` field in roughtime fuzz target.
+- **Miri no_std**: Gated proto test modules (`types.rs`, `bytes.rs`, `io.rs`) on `feature = "std"` to avoid `Vec`/`format!` in no_std Miri runs.
+- **cargo deny**: Added `OpenSSL`, `MPL-2.0`, and `CDLA-Permissive-2.0` to allowed licenses for `aws-lc-sys`, `serialport`, and `webpki-roots` dependencies.
+
 ## [4.10.0] - 2026-02-19
 
 ### Added
@@ -823,6 +832,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[4.10.1]: https://github.com/192d-Wing/ntp_usg/compare/v4.10.0...v4.10.1
 [4.10.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.9.0...v4.10.0
 [4.9.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.8.0...v4.9.0
 [4.8.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.7.0...v4.8.0
