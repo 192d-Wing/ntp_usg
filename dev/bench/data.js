@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1771483050077,
+  "lastUpdate": 1771487152924,
   "repoUrl": "https://github.com/192d-Wing/ntp_usg",
   "entries": {
     "Selection Algorithm Benchmarks": [
@@ -2159,6 +2159,114 @@ window.BENCHMARK_DATA = {
             "name": "full_selection_pipeline/20",
             "value": 2766,
             "range": "± 2238",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "1456055067",
+            "username": "1456055067"
+          },
+          "committer": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "1456055067",
+            "username": "1456055067"
+          },
+          "distinct": true,
+          "id": "b1f0c52a56c3fb4b0c65d50a89d2537cbb12a562",
+          "message": "feat: async tracing spans, custom error types, README refresh for v4.9.0\n\nAdd Instrument-based async tracing spans to 10 functions across client\nand server. Introduce NtpError and NtpServerError typed enums with\nio::Error downcast support, migrating ~85 raw io::Error::new() sites.\nUpdate daemon.rs with tracing-subscriber example. Refresh README with\ncurrent versions, features, and observability docs.",
+          "timestamp": "2026-02-19T01:40:30-06:00",
+          "tree_id": "2a5eb812a999aa63dfe13a5110a0d87c421470ad",
+          "url": "https://github.com/192d-Wing/ntp_usg/commit/b1f0c52a56c3fb4b0c65d50a89d2537cbb12a562"
+        },
+        "date": 1771487152120,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "select_truechimers/3",
+            "value": 62,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/5",
+            "value": 137,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/10",
+            "value": 355,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/20",
+            "value": 790,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/3",
+            "value": 22,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/5",
+            "value": 107,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/10",
+            "value": 488,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/15",
+            "value": 1279,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/3",
+            "value": 30,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/5",
+            "value": 37,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/10",
+            "value": 52,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/5",
+            "value": 339,
+            "range": "± 340",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/10",
+            "value": 970,
+            "range": "± 819",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/20",
+            "value": 2768,
+            "range": "± 1021",
             "unit": "ns/iter"
           }
         ]
