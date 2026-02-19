@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-02-18
+
+### Changed
+
+#### Cryptography
+
+- **Prefer AES-SIV-CMAC-512 (256-bit AES)**: Client now proposes CMAC-512 first with CMAC-256 fallback. Server prefers CMAC-512 when client supports it. Server cookie encryption upgraded from CMAC-256 (32-byte master key) to CMAC-512 (64-byte master key). Both algorithms remain supported for interoperability.
+
+### Added
+
+#### Documentation
+
+- **`docs/CRYPTO.md`**: Cryptographic architecture document covering all algorithms, libraries, and FIPS 140-3 certification status. Documents the FIPS gap in NTS AEAD (`aes-siv` crate) and NTPv5 MAC (`cmac`/`aes` crates), and confirms TLS layer uses FIPS-validated `aws-lc-rs`.
+
 ## [4.4.0] - 2026-02-18
 
 ### Added
@@ -700,6 +714,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[4.5.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.4.0...v4.5.0
 [4.4.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.1.0...v4.2.0

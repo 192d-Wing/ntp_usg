@@ -17,7 +17,7 @@
 //! [key_id: 4 bytes][nonce: 16 bytes][ciphertext: variable]
 //! ```
 //!
-//! The ciphertext is AES-SIV-CMAC-256 encrypted with the server's master key.
+//! The ciphertext is AES-SIV-CMAC-512 encrypted with the server's master key.
 //! The plaintext contains the negotiated AEAD algorithm ID and the C2S/S2C keys.
 
 use std::io;
@@ -27,7 +27,7 @@ use crate::extension::{
     self, ExtensionField, NtsAuthenticator, NtsCookie, UNIQUE_IDENTIFIER, UniqueIdentifier,
 };
 use crate::nts_common::{
-    self, AEAD_AES_SIV_CMAC_256, aead_decrypt, aead_encrypt, aead_key_length,
+    self, AEAD_AES_SIV_CMAC_512, aead_decrypt, aead_encrypt, aead_key_length,
     find_authenticator_offset,
 };
 use crate::protocol::{self, ConstPackedSizeBytes, WriteBytes};
@@ -102,8 +102,8 @@ fn deserialize_cookie_plaintext(plaintext: &[u8]) -> io::Result<CookieContents> 
 pub struct MasterKey {
     /// Unique key identifier, embedded in cookie headers.
     pub key_id: u32,
-    /// 32-byte AES-SIV-CMAC-256 key material.
-    key: [u8; 32],
+    /// 64-byte AES-SIV-CMAC-512 key material (256-bit AES).
+    key: [u8; 64],
     /// When this key was created.
     created: Instant,
 }
@@ -111,7 +111,7 @@ pub struct MasterKey {
 impl MasterKey {
     /// Generate a new master key with random key material.
     pub fn generate(key_id: u32) -> Self {
-        let mut key = [0u8; 32];
+        let mut key = [0u8; 64];
         rand::fill(&mut key);
         MasterKey {
             key_id,
@@ -184,9 +184,9 @@ impl MasterKeyStore {
         // AAD = key_id bytes.
         let aad = self.current.key_id.to_be_bytes();
 
-        // AES-SIV encrypt using the current master key.
+        // AES-SIV encrypt using the current master key (CMAC-512 / 256-bit AES).
         let (nonce, ciphertext) =
-            aead_encrypt(AEAD_AES_SIV_CMAC_256, &self.current.key, &aad, &plaintext)?;
+            aead_encrypt(AEAD_AES_SIV_CMAC_512, &self.current.key, &aad, &plaintext)?;
 
         // Assemble cookie: key_id || nonce || ciphertext.
         let mut cookie = Vec::with_capacity(4 + nonce.len() + ciphertext.len());
@@ -228,7 +228,7 @@ impl MasterKeyStore {
         };
 
         // Decrypt.
-        let plaintext = match aead_decrypt(AEAD_AES_SIV_CMAC_256, &key.key, aad, nonce, ciphertext)
+        let plaintext = match aead_decrypt(AEAD_AES_SIV_CMAC_512, &key.key, aad, nonce, ciphertext)
         {
             Ok(pt) => pt,
             Err(_) => return Ok(None), // Decryption failed.
@@ -414,7 +414,7 @@ pub fn build_nts_response(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::nts_common::AEAD_AES_SIV_CMAC_512;
+    use crate::nts_common::AEAD_AES_SIV_CMAC_256;
 
     // ── Cookie roundtrip ──────────────────────────────────────────
 

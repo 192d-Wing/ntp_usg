@@ -4,7 +4,7 @@
 //! Network Time Security (NTS) client implementation (RFC 8915).
 //!
 //! NTS provides authenticated NTP using TLS 1.3 for key establishment and
-//! AEAD (AES-SIV-CMAC-256) for per-packet authentication.
+//! AEAD (AES-SIV-CMAC-512 preferred, 256 fallback) for per-packet authentication.
 //!
 //! # Protocol Overview
 //!
@@ -121,7 +121,7 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
 
     // Build NTS-KE request:
     // 1. Next Protocol: NTPv4 (critical)
-    // 2. AEAD Algorithm: AES-SIV-CMAC-256 (critical)
+    // 2. AEAD Algorithms: prefer CMAC-512 (256-bit AES), also accept CMAC-256 (critical)
     // 3. End of Message (critical)
     let mut request_buf = Vec::new();
     write_ke_record(
@@ -129,6 +129,12 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
         true,
         NTS_KE_NEXT_PROTOCOL,
         &NTS_PROTOCOL_NTPV4.to_be_bytes(),
+    );
+    write_ke_record(
+        &mut request_buf,
+        true,
+        NTS_KE_AEAD_ALGORITHM,
+        &AEAD_AES_SIV_CMAC_512.to_be_bytes(),
     );
     write_ke_record(
         &mut request_buf,
@@ -143,7 +149,7 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
 
     // Parse NTS-KE response.
     let mut next_protocol: Option<u16> = None;
-    let mut aead_algorithm = AEAD_AES_SIV_CMAC_256;
+    let mut aead_algorithm = AEAD_AES_SIV_CMAC_512;
     let mut cookies = Vec::new();
     let mut ntp_server = hostname.to_string();
     let mut ntp_port: u16 = 123;

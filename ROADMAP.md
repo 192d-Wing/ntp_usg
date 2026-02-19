@@ -464,6 +464,20 @@ Focused on wire serialization test coverage, dependency deduplication, and code 
 
 ---
 
+## Version 4.5.0 - Crypto Hardening ✅
+
+**Released**: 2026-02-18
+
+Strengthened NTS cryptography to prefer 256-bit AES and documented FIPS certification status.
+
+### Cryptography
+
+- ✅ **256-bit AES preference**: Client and server now prefer AEAD_AES_SIV_CMAC_512 (256-bit AES) over CMAC_256 (128-bit AES) in all NTS negotiation. Server cookie master key upgraded from 32 to 64 bytes.
+- ✅ **FIPS documentation**: New `docs/CRYPTO.md` documenting all cryptographic algorithms, libraries, and FIPS 140-3 certification status across every layer (TLS, NTS AEAD, NTPv5 MAC, Roughtime).
+- ✅ **aws-lc-rs confirmed default**: Verified that `nts` and `nts-smol` features auto-enable `pq-nts`, which activates `aws-lc-rs` (FIPS 140-3 validated) as the TLS crypto backend.
+
+---
+
 ## Contributing
 
 We welcome contributions! If you'd like to work on any of these roadmap items:
@@ -484,7 +498,7 @@ Have ideas for the roadmap? Open an issue with the `enhancement` label or start 
 ---
 
 **Last Updated**: 2026-02-18
-**Current Version**: 4.4.0
+**Current Version**: 4.5.0
 
 ## Version 3.2.0 Progress Summary
 

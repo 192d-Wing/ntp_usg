@@ -212,13 +212,13 @@ async fn handle_nts_ke_connection(
         }
     };
 
-    // 3. Negotiate AEAD algorithm (prefer CMAC-256, also support CMAC-512).
-    let supported = [AEAD_AES_SIV_CMAC_256, AEAD_AES_SIV_CMAC_512];
+    // 3. Negotiate AEAD algorithm (prefer CMAC-512 / 256-bit AES, fall back to CMAC-256).
+    let supported = [AEAD_AES_SIV_CMAC_512, AEAD_AES_SIV_CMAC_256];
     let aead_algorithm = supported
         .iter()
         .find(|a| client_aead_algorithms.contains(a))
         .copied()
-        .unwrap_or(AEAD_AES_SIV_CMAC_256);
+        .unwrap_or(AEAD_AES_SIV_CMAC_512);
 
     // 4. Export TLS keying material (RFC 8915 Section 4.2).
     let key_len = aead_key_length(aead_algorithm)?;
