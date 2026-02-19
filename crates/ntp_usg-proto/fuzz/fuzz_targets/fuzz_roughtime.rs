@@ -6,7 +6,6 @@ fuzz_target!(|data: &[u8]| {
     // Parse Roughtime tag-value maps from arbitrary bytes — must not panic or cause UB.
     if let Ok(map) = TagValueMap::parse(data) {
         // Exercise accessor methods on successfully parsed maps.
-        let _ = map.num_tags();
         // Try common Roughtime tags.
         let _ = map.get(b"CERT");
         let _ = map.get(b"SIG\0");

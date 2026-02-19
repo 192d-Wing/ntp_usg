@@ -353,7 +353,7 @@ impl ReadFromBytes for PacketV5 {
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
     use std::io::Cursor;
