@@ -11,6 +11,7 @@ use std::io;
 
 use tracing::debug;
 
+use crate::error::{NtpError, NtsError};
 use crate::nts_common::*;
 
 /// Parse an NTS-KE server address into (hostname, port).
@@ -85,20 +86,19 @@ pub(crate) fn process_nts_ke_records(
             }
             NTS_KE_NEXT_PROTOCOL => {
                 if record.body.len() < 2 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "NTS-KE: next protocol record too short",
-                    ));
+                    return Err(NtpError::Nts(NtsError::RecordTooShort {
+                        record_type: "Next Protocol",
+                    })
+                    .into());
                 }
                 let proto = read_be_u16(&record.body[..2]);
                 let supported = proto == NTS_PROTOCOL_NTPV4;
                 #[cfg(feature = "ntpv5")]
                 let supported = supported || proto == NTS_PROTOCOL_NTPV5;
                 if !supported {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("NTS-KE: unsupported protocol: {}", proto),
-                    ));
+                    return Err(
+                        NtpError::Nts(NtsError::UnsupportedProtocol { protocol: proto }).into(),
+                    );
                 }
                 next_protocol = Some(proto);
                 debug!(
@@ -108,10 +108,10 @@ pub(crate) fn process_nts_ke_records(
             }
             NTS_KE_AEAD_ALGORITHM => {
                 if record.body.len() < 2 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "NTS-KE: AEAD algorithm record too short",
-                    ));
+                    return Err(NtpError::Nts(NtsError::RecordTooShort {
+                        record_type: "AEAD Algorithm",
+                    })
+                    .into());
                 }
                 aead_algorithm = read_be_u16(&record.body[..2]);
                 debug!(aead_algorithm, "NTS-KE: AEAD algorithm negotiated");
@@ -122,10 +122,7 @@ pub(crate) fn process_nts_ke_records(
                 } else {
                     0
                 };
-                return Err(io::Error::new(
-                    io::ErrorKind::ConnectionRefused,
-                    format!("NTS-KE server error: code {}", code),
-                ));
+                return Err(NtpError::Nts(NtsError::ServerError { code }).into());
             }
             NTS_KE_WARNING => {
                 let code = if record.body.len() >= 2 {
@@ -140,30 +137,27 @@ pub(crate) fn process_nts_ke_records(
                 cookies.push(record.body.clone());
             }
             NTS_KE_SERVER => {
-                ntp_server = String::from_utf8(record.body.clone()).map_err(|_| {
-                    io::Error::new(io::ErrorKind::InvalidData, "NTS-KE: invalid server name")
+                ntp_server = String::from_utf8(record.body.clone()).map_err(|_| -> io::Error {
+                    NtpError::Nts(NtsError::Other("invalid server name".into())).into()
                 })?;
                 debug!("NTS-KE: NTP server = {}", ntp_server);
             }
             NTS_KE_PORT => {
                 if record.body.len() < 2 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "NTS-KE: port record too short",
-                    ));
+                    return Err(NtpError::Nts(NtsError::RecordTooShort {
+                        record_type: "Port",
+                    })
+                    .into());
                 }
                 ntp_port = read_be_u16(&record.body[..2]);
                 debug!("NTS-KE: NTP port = {}", ntp_port);
             }
             _ => {
                 if record.critical {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!(
-                            "NTS-KE: unrecognized critical record type {}",
-                            record.record_type
-                        ),
-                    ));
+                    return Err(NtpError::Nts(NtsError::UnrecognizedCriticalRecord {
+                        record_type: record.record_type,
+                    })
+                    .into());
                 }
                 debug!(
                     "NTS-KE: ignoring non-critical record type {}",
@@ -173,18 +167,15 @@ pub(crate) fn process_nts_ke_records(
         }
     }
 
-    let next_protocol = next_protocol.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTS-KE: server did not send Next Protocol record",
-        )
+    let next_protocol = next_protocol.ok_or_else(|| -> io::Error {
+        NtpError::Nts(NtsError::MissingRecord {
+            record: "Next Protocol",
+        })
+        .into()
     })?;
 
     if cookies.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTS-KE: server did not provide any cookies",
-        ));
+        return Err(NtpError::Nts(NtsError::NoCookies).into());
     }
 
     // Export keys from TLS session (RFC 8915 Section 4.2).
@@ -197,7 +188,12 @@ pub(crate) fn process_nts_ke_records(
             NTS_EXPORTER_LABEL.as_bytes(),
             Some(&[0x00, 0x00]),
         )
-        .map_err(|e| io::Error::other(format!("TLS key export failed: {}", e)))?;
+        .map_err(|e| -> io::Error {
+            NtpError::Nts(NtsError::KeyExportFailed {
+                detail: e.to_string(),
+            })
+            .into()
+        })?;
 
     let mut s2c_key = vec![0u8; key_len];
     tls_conn
@@ -206,7 +202,12 @@ pub(crate) fn process_nts_ke_records(
             NTS_EXPORTER_LABEL.as_bytes(),
             Some(&[0x00, 0x01]),
         )
-        .map_err(|e| io::Error::other(format!("TLS key export failed: {}", e)))?;
+        .map_err(|e| -> io::Error {
+            NtpError::Nts(NtsError::KeyExportFailed {
+                detail: e.to_string(),
+            })
+            .into()
+        })?;
 
     debug!(
         "NTS-KE complete: {} cookies, AEAD={}, server={}:{}",

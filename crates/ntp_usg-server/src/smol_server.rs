@@ -29,6 +29,7 @@ use std::io;
 use std::sync::{Arc, RwLock};
 use tracing::debug;
 
+use crate::error::{ConfigError, NtpServerError};
 use crate::server_common::{
     ClientTable, ConfigHandle, HandleResult, ServerMetrics, ServerSystemState, handle_request,
 };
@@ -47,11 +48,12 @@ impl NtpServerBuilder {
 
         #[cfg(feature = "socket-opts")]
         let sock = {
-            let addr: std::net::SocketAddr = cfg.listen_addr.parse().map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!("socket-opts requires IP:port listen address: {e}"),
-                )
+            let addr: std::net::SocketAddr = cfg.listen_addr.parse().map_err(|e| -> io::Error {
+                NtpServerError::Config(ConfigError::InvalidListenAddress {
+                    address: cfg.listen_addr.clone(),
+                    detail: format!("socket-opts requires IP:port: {e}"),
+                })
+                .into()
             })?;
             let std_sock = cfg.socket_opts.bind_udp(addr)?;
             smol::Async::new(std_sock)?.into()

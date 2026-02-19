@@ -50,7 +50,15 @@ fn main() {
 #![warn(missing_docs)]
 
 // Re-export protocol types from ntp_proto for convenience.
-pub use ntp_proto::{error, extension, protocol, unix_time};
+pub use ntp_proto::{extension, protocol, unix_time};
+
+/// Custom error types for the NTP client.
+///
+/// All public APIs continue to return `io::Result<T>` for backward compatibility.
+/// Internally, errors are constructed as `error::NtpError` variants and converted
+/// automatically. Users who want programmatic error matching can downcast via
+/// `io::Error::get_ref()`.
+pub mod error;
 
 /// Shared NTS logic re-exported from `ntp_proto`.
 #[cfg(any(feature = "nts", feature = "nts-smol"))]

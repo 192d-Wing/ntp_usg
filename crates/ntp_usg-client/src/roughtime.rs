@@ -35,6 +35,8 @@ use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::time::Duration;
 use tracing::debug;
 
+use crate::error::{ConfigError, NtpError, TimeoutError};
+
 pub use ntp_proto::roughtime::{
     RoughtimeResult, build_chained_request, build_request, build_request_with_nonce,
     verify_response,
@@ -60,17 +62,17 @@ const RECV_BUF_SIZE: usize = 4096;
 /// ```
 pub fn decode_public_key(base64_key: &str) -> io::Result<[u8; 32]> {
     // Simple base64 decoder (no external dependency needed for 32 bytes).
-    let bytes = base64_decode(base64_key).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("invalid base64 public key: {e}"),
-        )
+    let bytes = base64_decode(base64_key).map_err(|e| -> io::Error {
+        NtpError::Config(ConfigError::InvalidServerName {
+            detail: format!("invalid base64 public key: {e}"),
+        })
+        .into()
     })?;
     if bytes.len() != 32 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("public key must be 32 bytes, got {}", bytes.len()),
-        ));
+        return Err(NtpError::Config(ConfigError::InvalidServerName {
+            detail: format!("public key must be 32 bytes, got {}", bytes.len()),
+        })
+        .into());
     }
     let mut pk = [0u8; 32];
     pk.copy_from_slice(&bytes);
@@ -110,10 +112,10 @@ pub fn request_with_timeout<A: ToSocketAddrs>(
 ) -> io::Result<RoughtimeResult> {
     let resolved_addrs: Vec<SocketAddr> = prefer_addresses(addr.to_socket_addrs()?.collect());
     if resolved_addrs.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "address resolved to no socket addresses",
-        ));
+        return Err(NtpError::Config(ConfigError::NoAddresses {
+            address: String::new(),
+        })
+        .into());
     }
     let target_addr = resolved_addrs[0];
 
@@ -163,7 +165,7 @@ pub async fn async_request_with_timeout<A: tokio::net::ToSocketAddrs>(
 ) -> io::Result<RoughtimeResult> {
     tokio::time::timeout(timeout, async_request_inner(addr, public_key))
         .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "Roughtime request timed out"))?
+        .map_err(|_| -> io::Error { NtpError::Timeout(TimeoutError::Roughtime).into() })?
 }
 
 async fn async_request_inner<A: tokio::net::ToSocketAddrs>(
@@ -173,10 +175,10 @@ async fn async_request_inner<A: tokio::net::ToSocketAddrs>(
     let resolved_addrs: Vec<SocketAddr> =
         prefer_addresses(tokio::net::lookup_host(addr).await?.collect());
     if resolved_addrs.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "address resolved to no socket addresses",
-        ));
+        return Err(NtpError::Config(ConfigError::NoAddresses {
+            address: String::new(),
+        })
+        .into());
     }
     let target_addr = resolved_addrs[0];
 

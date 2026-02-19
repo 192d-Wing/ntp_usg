@@ -27,7 +27,10 @@
 #![warn(missing_docs)]
 
 // Re-export protocol types from ntp_proto for convenience.
-pub use ntp_proto::{error, extension, protocol, unix_time};
+pub use ntp_proto::{extension, protocol, unix_time};
+
+/// Custom error types for the NTP server.
+pub mod error;
 
 /// Shared NTS logic re-exported from `ntp_proto`.
 #[cfg(any(feature = "nts", feature = "nts-smol"))]

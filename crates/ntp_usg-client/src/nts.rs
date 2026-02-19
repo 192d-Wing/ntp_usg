@@ -39,8 +39,9 @@ use std::time::Duration;
 use rustls::pki_types::ServerName;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio_rustls::TlsConnector;
-use tracing::debug;
+use tracing::{Instrument, debug};
 
+use crate::error::{ConfigError, NtpError, NtsError, ProtocolError, TimeoutError};
 pub use crate::nts_common::NtsKeResult;
 use crate::nts_common::*;
 use crate::nts_ke_exchange;
@@ -90,50 +91,55 @@ async fn read_ke_record(
 /// # }
 /// ```
 pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
-    use tokio::io::AsyncWriteExt;
-
     let (hostname, port) = nts_ke_exchange::parse_nts_ke_server_addr(server);
-    let addr = format!("{}:{}", hostname, port);
-    debug!("NTS-KE connecting to {}", addr);
+    let span = tracing::debug_span!("nts_ke", server = %server, hostname = %hostname);
+    async {
+        use tokio::io::AsyncWriteExt;
 
-    // Configure TLS 1.3 client with PQ-NTS or classical crypto provider.
-    let tls_config = crate::tls_config::nts_client_config();
-    let connector = TlsConnector::from(Arc::new(tls_config));
+        let addr = format!("{}:{}", hostname, port);
+        debug!("NTS-KE connecting to {}", addr);
 
-    // Connect TCP + TLS.
-    let tcp_stream = TcpStream::connect(&addr).await?;
-    let server_name = ServerName::try_from(hostname.to_string()).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("invalid server name: {}", e),
-        )
-    })?;
-    let mut tls_stream = connector.connect(server_name, tcp_stream).await?;
+        // Configure TLS 1.3 client with PQ-NTS or classical crypto provider.
+        let tls_config = crate::tls_config::nts_client_config();
+        let connector = TlsConnector::from(Arc::new(tls_config));
 
-    // Send NTS-KE request.
-    let request_buf = nts_ke_exchange::build_nts_ke_request();
-    tls_stream.write_all(&request_buf).await?;
-    tls_stream.flush().await?;
+        // Connect TCP + TLS.
+        let tcp_stream = TcpStream::connect(&addr).await?;
+        let server_name = ServerName::try_from(hostname.to_string()).map_err(|e| -> io::Error {
+            NtpError::Config(ConfigError::InvalidServerName {
+                detail: e.to_string(),
+            })
+            .into()
+        })?;
+        let mut tls_stream = connector.connect(server_name, tcp_stream).await?;
 
-    // Read all NTS-KE response records until End of Message.
-    let mut records = Vec::new();
-    loop {
-        let record = read_ke_record(&mut tls_stream).await?;
-        let is_eom = record.record_type == NTS_KE_END_OF_MESSAGE;
-        records.push(record);
-        if is_eom {
-            break;
+        // Send NTS-KE request.
+        let request_buf = nts_ke_exchange::build_nts_ke_request();
+        tls_stream.write_all(&request_buf).await?;
+        tls_stream.flush().await?;
+
+        // Read all NTS-KE response records until End of Message.
+        let mut records = Vec::new();
+        loop {
+            let record = read_ke_record(&mut tls_stream).await?;
+            let is_eom = record.record_type == NTS_KE_END_OF_MESSAGE;
+            records.push(record);
+            if is_eom {
+                break;
+            }
         }
+
+        // Process records (shared logic: negotiate, export keys).
+        let (_, tls_conn) = tls_stream.get_ref();
+        let result = nts_ke_exchange::process_nts_ke_records(&records, tls_conn, hostname)?;
+
+        // Gracefully close TLS.
+        let _ = tls_stream.shutdown().await;
+
+        Ok(result)
     }
-
-    // Process records (shared logic: negotiate, export keys).
-    let (_, tls_conn) = tls_stream.get_ref();
-    let result = nts_ke_exchange::process_nts_ke_records(&records, tls_conn, hostname)?;
-
-    // Gracefully close TLS.
-    let _ = tls_stream.shutdown().await;
-
-    Ok(result)
+    .instrument(span)
+    .await
 }
 
 /// An NTS session for sending authenticated NTP requests.
@@ -176,10 +182,7 @@ impl NtsSession {
         let addr_str = format!("{}:{}", ke.ntp_server, ke.ntp_port);
         let resolved_addrs: Vec<SocketAddr> = tokio::net::lookup_host(&addr_str).await?.collect();
         if resolved_addrs.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "NTP server address resolved to no addresses",
-            ));
+            return Err(NtpError::Config(ConfigError::NoAddresses { address: addr_str }).into());
         }
         let ntp_addr = resolved_addrs[0];
 
@@ -213,7 +216,7 @@ impl NtsSession {
     pub async fn request_with_timeout(&mut self, timeout: Duration) -> io::Result<NtpResult> {
         tokio::time::timeout(timeout, self.request_inner())
             .await
-            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTS request timed out"))?
+            .map_err(|_| -> io::Error { NtpError::Timeout(TimeoutError::NtsKe).into() })?
     }
 
     /// Returns the AEAD algorithm negotiated during key establishment.
@@ -231,7 +234,7 @@ impl NtsSession {
         let cookie = self
             .cookies
             .pop()
-            .ok_or_else(|| io::Error::other("no NTS cookies remaining"))?;
+            .ok_or_else(|| -> io::Error { NtpError::Nts(NtsError::NoCookies).into() })?;
 
         // Build the NTS-authenticated request packet.
         let (send_buf, t1, uid_data) =
@@ -251,10 +254,7 @@ impl NtsSession {
 
         // Validate origin timestamp matches our request.
         if response.origin_timestamp != t1 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "NTS: origin timestamp mismatch",
-            ));
+            return Err(NtpError::Protocol(ProtocolError::OriginTimestampMismatch).into());
         }
 
         // Validate NTS extension fields and extract new cookies.

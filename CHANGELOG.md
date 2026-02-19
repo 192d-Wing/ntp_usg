@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.9.0] - 2026-02-19
+
+### Added
+
+#### Observability
+
+- **Async tracing spans via `Instrument`**: Wrapped 10 async functions across 6 files with `tracing::Instrument` spans. Client `run()` gets an `info_span!("ntp_client")` with peer count and poll interval fields; `poll_peer()`, `poll_peer_nts()`, `poll_peer_v5()` get `debug_span!` with peer address; `nts_ke()` gets hostname/port fields. NTS-KE server connections get per-connection spans with peer address. Span hierarchy enables structured trace filtering (e.g., `RUST_LOG=ntp_client=debug`).
+- **Tracing subscriber example**: Updated `daemon.rs` to demonstrate `tracing-subscriber` with `EnvFilter` + `fmt` layer, structured fields (offset_ms, delay_ms, jitter_ms), and `RUST_LOG` environment variable usage. Other examples retain `env_logger` to demonstrate the backward-compatible `log` bridge path.
+
+#### Error Handling
+
+- **Custom error types (client)**: New `NtpError` enum with `Protocol`, `Timeout`, `Config`, `Nts`, `KissOfDeath`, and `Io` variants. Public API remains `io::Result<T>` — users can downcast via `io::Error::get_ref().downcast_ref::<NtpError>()` for programmatic error matching. Migrated ~60 internal `io::Error::new()` call sites across `request.rs`, `nts_ke_exchange.rs`, `client.rs`, `smol_client.rs`, `nts.rs`, `smol_nts.rs`, `async_ntp.rs`, `smol_ntp.rs`, `client_common.rs`, `broadcast_client.rs`, and `roughtime.rs`.
+- **Custom error types (server)**: New `NtpServerError` enum with `Protocol`, `Nts`, `Config`, and `Io` variants. Same downcast pattern as client. Migrated ~25 internal `io::Error::new()` call sites across `validation.rs`, `ntpv5.rs`, `nts_server_common.rs`, `nts_ke_server_common.rs`, `server.rs`, `smol_server.rs`, and `tls_config.rs`.
+
+### Changed
+
+#### Documentation
+
+- **README refresh**: Updated version references from 3.1 → 4.9 throughout. Added WASM crate to crate table (now 4 crates). Expanded feature flag tables with 11 new client features and 6 new server features. Added Observability section demonstrating `tracing-subscriber` vs `env_logger`. Updated roadmap with completed items (reference clocks, hardware timestamping, NTPv5, Roughtime, post-quantum NTS, WASM, tracing, custom error types). Updated test count from 290+ to 750+.
+
 ## [4.8.0] - 2026-02-18
 
 ### Added
@@ -767,6 +787,8 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[4.9.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.8.0...v4.9.0
+[4.8.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.7.0...v4.8.0
 [4.7.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.6.0...v4.7.0
 [4.6.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.4.0...v4.5.0

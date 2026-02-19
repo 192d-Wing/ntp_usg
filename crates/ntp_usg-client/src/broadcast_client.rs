@@ -26,6 +26,7 @@
 //! where T3 is the broadcast transmit timestamp and T4 is the local receive
 //! time.
 
+use crate::error::{NtpError, ProtocolError};
 use crate::protocol;
 use crate::unix_time;
 use std::io;
@@ -56,36 +57,26 @@ pub fn parse_broadcast_packet(recv_buf: &[u8], recv_len: usize) -> io::Result<Br
     let t4: protocol::TimestampFormat = t4_instant.into();
 
     if recv_len < protocol::Packet::PACKED_SIZE_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "broadcast packet too short",
-        ));
+        return Err(
+            NtpError::Protocol(ProtocolError::ResponseTooShort { received: recv_len }).into(),
+        );
     }
 
     let packet: protocol::Packet =
         (&recv_buf[..protocol::Packet::PACKED_SIZE_BYTES]).read_bytes()?;
 
     if packet.mode != protocol::Mode::Broadcast {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("expected broadcast mode (5), got {:?}", packet.mode),
-        ));
+        return Err(NtpError::Protocol(ProtocolError::UnexpectedMode).into());
     }
 
     if packet.transmit_timestamp.seconds == 0 && packet.transmit_timestamp.fraction == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "broadcast transmit timestamp is zero",
-        ));
+        return Err(NtpError::Protocol(ProtocolError::ZeroTransmitTimestamp).into());
     }
 
     if packet.leap_indicator == protocol::LeapIndicator::Unknown
         && packet.stratum != protocol::Stratum::UNSPECIFIED
     {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "broadcast server reports unsynchronized clock",
-        ));
+        return Err(NtpError::Protocol(ProtocolError::UnsynchronizedServer).into());
     }
 
     Ok(BroadcastPacket {
@@ -199,7 +190,7 @@ mod tests {
         (&mut buf[..]).write_bytes(pkt).unwrap();
         let result = parse_broadcast_packet(&buf, 48);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("broadcast mode"));
+        assert!(result.unwrap_err().to_string().contains("mode"));
     }
 
     #[test]

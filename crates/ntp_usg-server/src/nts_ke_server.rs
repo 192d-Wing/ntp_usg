@@ -35,7 +35,7 @@ use std::sync::{Arc, RwLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
-use tracing::debug;
+use tracing::{Instrument, debug};
 
 use crate::nts_common::*;
 pub use crate::nts_ke_server_common::NtsKeServerConfig;
@@ -85,26 +85,29 @@ impl NtsKeServer {
             let ntp_port = self.ntp_port;
             let cookie_count = self.cookie_count;
 
-            tokio::spawn(async move {
-                match acceptor.accept(tcp_stream).await {
-                    Ok(tls_stream) => {
-                        if let Err(e) = handle_nts_ke_connection(
-                            tls_stream,
-                            &key_store,
-                            ntp_server.as_deref(),
-                            ntp_port,
-                            cookie_count,
-                        )
-                        .await
-                        {
-                            debug!(peer = %peer_addr, error = %e, "NTS-KE connection error");
+            tokio::spawn(
+                async move {
+                    match acceptor.accept(tcp_stream).await {
+                        Ok(tls_stream) => {
+                            if let Err(e) = handle_nts_ke_connection(
+                                tls_stream,
+                                &key_store,
+                                ntp_server.as_deref(),
+                                ntp_port,
+                                cookie_count,
+                            )
+                            .await
+                            {
+                                debug!(peer = %peer_addr, error = %e, "NTS-KE connection error");
+                            }
+                        }
+                        Err(e) => {
+                            debug!("TLS accept error from {}: {}", peer_addr, e);
                         }
                     }
-                    Err(e) => {
-                        debug!("TLS accept error from {}: {}", peer_addr, e);
-                    }
                 }
-            });
+                .instrument(tracing::debug_span!("nts_ke_connection", peer_addr = %peer_addr)),
+            );
         }
     }
 }

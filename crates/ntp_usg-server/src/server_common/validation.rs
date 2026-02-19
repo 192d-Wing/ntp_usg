@@ -1,5 +1,6 @@
 use std::io;
 
+use crate::error::{NtpServerError, ProtocolError};
 use crate::protocol::{self, ConstPackedSizeBytes, ReadBytes};
 
 /// Validate an incoming NTP client request packet.
@@ -16,10 +17,10 @@ pub(crate) fn validate_client_request(
     recv_len: usize,
 ) -> io::Result<protocol::Packet> {
     if recv_len < protocol::Packet::PACKED_SIZE_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTP request too short",
-        ));
+        return Err(NtpServerError::Protocol(ProtocolError::RequestTooShort {
+            received: recv_len,
+        })
+        .into());
     }
 
     let request: protocol::Packet =
@@ -32,27 +33,22 @@ pub(crate) fn validate_client_request(
         request.mode == protocol::Mode::Client || request.mode == protocol::Mode::SymmetricActive;
 
     if !valid_mode {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "unexpected request mode: expected Client, got {:?}",
-                request.mode
-            ),
-        ));
+        return Err(NtpServerError::Protocol(ProtocolError::Other(format!(
+            "unexpected request mode: expected Client, got {:?}",
+            request.mode
+        )))
+        .into());
     }
 
     if !request.version.is_known() || request.version < protocol::Version::V3 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "unsupported NTP version",
-        ));
+        return Err(NtpServerError::Protocol(ProtocolError::Other(
+            "unsupported NTP version".to_string(),
+        ))
+        .into());
     }
 
     if request.transmit_timestamp.seconds == 0 && request.transmit_timestamp.fraction == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "client transmit timestamp is zero",
-        ));
+        return Err(NtpServerError::Protocol(ProtocolError::ZeroTransmitTimestamp).into());
     }
 
     Ok(request)

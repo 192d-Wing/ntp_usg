@@ -7,6 +7,7 @@
 use std::io;
 use std::sync::Arc;
 
+use crate::error::{ConfigError, NtpServerError};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 
 /// Build the TLS crypto provider for the current feature configuration.
@@ -31,5 +32,10 @@ pub(crate) fn nts_server_config(
         .expect("TLS 1.3 configuration valid")
         .with_no_client_auth()
         .with_single_cert(cert_chain, private_key)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("TLS config error: {e}")))
+        .map_err(|e| -> io::Error {
+            NtpServerError::Config(ConfigError::InvalidTlsCredentials {
+                detail: format!("TLS config error: {e}"),
+            })
+            .into()
+        })
 }

@@ -38,10 +38,11 @@ use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::UdpSocket;
-use tracing::{debug, warn};
+use tracing::{Instrument, debug, warn};
 
 pub use crate::client_common::NtpSyncState;
 use crate::client_common::{PeerState, PollResult, check_kod, select_and_build_state};
+use crate::error::{ConfigError, NtpError, TimeoutError};
 use crate::request::{bind_addr_for, build_request_packet, parse_and_validate_response};
 
 #[cfg(feature = "nts")]
@@ -94,10 +95,7 @@ impl NtpClientBuilder {
         let cfg = self.into_config();
 
         if cfg.servers.is_empty() && !has_nts {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "at least one server address is required",
-            ));
+            return Err(NtpError::Config(ConfigError::NoServers).into());
         }
 
         let mut peers = Vec::new();
@@ -116,10 +114,10 @@ impl NtpClientBuilder {
                 let peer = PeerState::new(addr, cfg.initial_poll);
                 peers.push(peer);
             } else {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!("address resolved to no socket addresses: {server}"),
-                ));
+                return Err(NtpError::Config(ConfigError::NoAddresses {
+                    address: server.clone(),
+                })
+                .into());
             }
         }
 
@@ -139,13 +137,10 @@ impl NtpClientBuilder {
                     nts_server.clone(),
                 ));
             } else {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!(
-                        "NTS NTP server resolved to no socket addresses: {}",
-                        nts_server
-                    ),
-                ));
+                return Err(NtpError::Config(ConfigError::NoAddresses {
+                    address: nts_server.clone(),
+                })
+                .into());
             }
         }
 
@@ -208,6 +203,13 @@ impl NtpClient {
     /// The best peer's offset is published to the watch channel after
     /// each successful response.
     pub async fn run(mut self) {
+        let span = tracing::info_span!(
+            "ntp_client",
+            peer_count = self.peers.len(),
+            min_poll = self.min_poll,
+            max_poll = self.max_poll,
+        );
+        async move {
         debug!("NTP client starting with {} peers", self.peers.len());
         // Initialize all peers to poll immediately.
         let mut next_poll: Vec<tokio::time::Instant> = self
@@ -351,6 +353,9 @@ impl NtpClient {
             // Schedule next poll for this peer.
             next_poll[idx] = tokio::time::Instant::now() + self.peers[idx].poll_interval();
         }
+        }
+        .instrument(span)
+        .await
     }
 
     /// Poll a single peer and return the result.
@@ -358,63 +363,69 @@ impl NtpClient {
         peer: &mut PeerState,
         socket_opts: &crate::socket_opts::SocketOptions,
     ) -> io::Result<PollResult> {
-        // Dispatch to NTS poll path if this peer has NTS state.
-        #[cfg(feature = "nts")]
-        if peer.nts_state.is_some() {
-            let mut nts = peer.nts_state.take().unwrap();
-            let result = Self::poll_peer_nts(peer, &mut nts, socket_opts).await;
-            peer.nts_state = Some(nts);
-            return result;
+        let span = tracing::debug_span!("poll_peer", peer_addr = %peer.addr);
+        async {
+            // Dispatch to NTS poll path if this peer has NTS state.
+            #[cfg(feature = "nts")]
+            if peer.nts_state.is_some() {
+                let mut nts = peer.nts_state.take().unwrap();
+                let result = Self::poll_peer_nts(peer, &mut nts, socket_opts).await;
+                peer.nts_state = Some(nts);
+                return result;
+            }
+
+            // Dispatch to NTPv5 poll path if this peer has V5 state.
+            #[cfg(feature = "ntpv5")]
+            if peer.v5_state.is_some() {
+                let mut v5 = peer.v5_state.take().unwrap();
+                let result = Self::poll_peer_v5(peer, &mut v5, socket_opts).await;
+                peer.v5_state = Some(v5);
+                return result;
+            }
+
+            #[cfg(feature = "socket-opts")]
+            let sock = {
+                let bind_addr = bind_addr_for(&peer.addr);
+                let std_sock = socket_opts.bind_udp(bind_addr)?;
+                UdpSocket::from_std(std_sock)?
+            };
+            #[cfg(not(feature = "socket-opts"))]
+            let sock = {
+                let _ = socket_opts;
+                UdpSocket::bind(bind_addr_for(&peer.addr)).await?
+            };
+
+            // Build request packet. Record T1.
+            let (send_buf, t1) = build_request_packet()?;
+            peer.current_t1 = Some(t1);
+
+            let timeout = Duration::from_secs(5);
+
+            // Send with timeout.
+            tokio::time::timeout(timeout, sock.send_to(&send_buf, peer.addr))
+                .await
+                .map_err(|_| io::Error::from(NtpError::Timeout(TimeoutError::Send)))??;
+
+            // Receive with timeout.
+            let mut recv_buf = [0u8; 1024];
+            let (recv_len, src_addr) = tokio::time::timeout(timeout, sock.recv_from(&mut recv_buf))
+                .await
+                .map_err(|_| io::Error::from(NtpError::Timeout(TimeoutError::Recv)))??;
+
+            // Parse and validate (without origin timestamp check).
+            let parse_result =
+                parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
+
+            match parse_result {
+                Err(e) => match check_kod(&e) {
+                    Some(poll_result) => Ok(poll_result),
+                    None => Err(e),
+                },
+                Ok((response, t4)) => peer.process_response(&response, t4, t1),
+            }
         }
-
-        // Dispatch to NTPv5 poll path if this peer has V5 state.
-        #[cfg(feature = "ntpv5")]
-        if peer.v5_state.is_some() {
-            let mut v5 = peer.v5_state.take().unwrap();
-            let result = Self::poll_peer_v5(peer, &mut v5, socket_opts).await;
-            peer.v5_state = Some(v5);
-            return result;
-        }
-
-        #[cfg(feature = "socket-opts")]
-        let sock = {
-            let bind_addr = bind_addr_for(&peer.addr);
-            let std_sock = socket_opts.bind_udp(bind_addr)?;
-            UdpSocket::from_std(std_sock)?
-        };
-        #[cfg(not(feature = "socket-opts"))]
-        let sock = {
-            let _ = socket_opts;
-            UdpSocket::bind(bind_addr_for(&peer.addr)).await?
-        };
-
-        // Build request packet. Record T1.
-        let (send_buf, t1) = build_request_packet()?;
-        peer.current_t1 = Some(t1);
-
-        let timeout = Duration::from_secs(5);
-
-        // Send with timeout.
-        tokio::time::timeout(timeout, sock.send_to(&send_buf, peer.addr))
-            .await
-            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP send timed out"))??;
-
-        // Receive with timeout.
-        let mut recv_buf = [0u8; 1024];
-        let (recv_len, src_addr) = tokio::time::timeout(timeout, sock.recv_from(&mut recv_buf))
-            .await
-            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out"))??;
-
-        // Parse and validate (without origin timestamp check).
-        let parse_result = parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
-
-        match parse_result {
-            Err(e) => match check_kod(&e) {
-                Some(poll_result) => Ok(poll_result),
-                None => Err(e),
-            },
-            Ok((response, t4)) => peer.process_response(&response, t4, t1),
-        }
+        .instrument(span)
+        .await
     }
 
     /// Poll a single NTS-authenticated peer and return the result.
@@ -424,90 +435,98 @@ impl NtpClient {
         nts_state: &mut NtsPeerState,
         socket_opts: &crate::socket_opts::SocketOptions,
     ) -> io::Result<PollResult> {
-        // Replenish cookies if running low.
-        if nts_state.cookies.len() <= nts_common::COOKIE_REKEY_THRESHOLD {
-            debug!(
-                "peer {}: {} cookies remaining, attempting NTS-KE re-key",
-                peer.addr,
-                nts_state.cookies.len()
-            );
-            match nts::nts_ke(&nts_state.nts_ke_server).await {
-                Ok(ke) => {
-                    nts_state.c2s_key = ke.c2s_key;
-                    nts_state.s2c_key = ke.s2c_key;
-                    nts_state.cookies = ke.cookies;
-                    nts_state.aead_algorithm = ke.aead_algorithm;
-                    nts_state.cookie_len = nts_state.cookies.first().map_or(0, |c| c.len());
-                    debug!(
-                        "peer {}: NTS-KE re-key successful, {} cookies",
-                        peer.addr,
-                        nts_state.cookies.len()
-                    );
+        let span = tracing::debug_span!("poll_peer_nts", peer_addr = %peer.addr, nts_ke_server = %nts_state.nts_ke_server);
+        async {
+            // Replenish cookies if running low.
+            if nts_state.cookies.len() <= nts_common::COOKIE_REKEY_THRESHOLD {
+                debug!(
+                    "peer {}: {} cookies remaining, attempting NTS-KE re-key",
+                    peer.addr,
+                    nts_state.cookies.len()
+                );
+                match nts::nts_ke(&nts_state.nts_ke_server).await {
+                    Ok(ke) => {
+                        nts_state.c2s_key = ke.c2s_key;
+                        nts_state.s2c_key = ke.s2c_key;
+                        nts_state.cookies = ke.cookies;
+                        nts_state.aead_algorithm = ke.aead_algorithm;
+                        nts_state.cookie_len = nts_state.cookies.first().map_or(0, |c| c.len());
+                        debug!(
+                            "peer {}: NTS-KE re-key successful, {} cookies",
+                            peer.addr,
+                            nts_state.cookies.len()
+                        );
+                    }
+                    Err(e) => {
+                        warn!("peer {}: NTS-KE re-key failed: {}", peer.addr, e);
+                        // Continue with remaining cookies; will error at zero.
+                    }
                 }
-                Err(e) => {
-                    warn!("peer {}: NTS-KE re-key failed: {}", peer.addr, e);
-                    // Continue with remaining cookies; will error at zero.
+            }
+
+            // Pop a cookie.
+            let cookie = nts_state.cookies.pop().ok_or_else(|| -> io::Error {
+                NtpError::Nts(crate::error::NtsError::NoCookies).into()
+            })?;
+
+            // Build NTS-authenticated request packet.
+            let (send_buf, t1, uid_data) = nts_common::build_nts_request(
+                &nts_state.c2s_key,
+                nts_state.aead_algorithm,
+                cookie,
+            )?;
+            peer.current_t1 = Some(t1);
+
+            #[cfg(feature = "socket-opts")]
+            let sock = {
+                let bind_addr = bind_addr_for(&peer.addr);
+                let std_sock = socket_opts.bind_udp(bind_addr)?;
+                UdpSocket::from_std(std_sock)?
+            };
+            #[cfg(not(feature = "socket-opts"))]
+            let sock = {
+                let _ = socket_opts;
+                UdpSocket::bind(bind_addr_for(&peer.addr)).await?
+            };
+            let timeout = Duration::from_secs(5);
+
+            // Send with timeout.
+            tokio::time::timeout(timeout, sock.send_to(&send_buf, peer.addr))
+                .await
+                .map_err(|_| io::Error::from(NtpError::Timeout(TimeoutError::Send)))??;
+
+            // Receive with timeout (larger buffer for NTS extension fields).
+            let mut recv_buf = [0u8; 2048];
+            let (recv_len, src_addr) = tokio::time::timeout(timeout, sock.recv_from(&mut recv_buf))
+                .await
+                .map_err(|_| io::Error::from(NtpError::Timeout(TimeoutError::Recv)))??;
+
+            // Parse and validate the NTP header.
+            let parse_result =
+                parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
+
+            match parse_result {
+                Err(e) => match check_kod(&e) {
+                    Some(poll_result) => Ok(poll_result),
+                    None => Err(e),
+                },
+                Ok((response, t4)) => {
+                    // Validate NTS extension fields and extract new cookies.
+                    let new_cookies = nts_common::validate_nts_response(
+                        &nts_state.s2c_key,
+                        nts_state.aead_algorithm,
+                        &uid_data,
+                        &recv_buf,
+                        recv_len,
+                    )?;
+                    nts_state.cookies.extend(new_cookies);
+
+                    peer.process_response(&response, t4, t1)
                 }
             }
         }
-
-        // Pop a cookie.
-        let cookie = nts_state
-            .cookies
-            .pop()
-            .ok_or_else(|| io::Error::other("no NTS cookies remaining"))?;
-
-        // Build NTS-authenticated request packet.
-        let (send_buf, t1, uid_data) =
-            nts_common::build_nts_request(&nts_state.c2s_key, nts_state.aead_algorithm, cookie)?;
-        peer.current_t1 = Some(t1);
-
-        #[cfg(feature = "socket-opts")]
-        let sock = {
-            let bind_addr = bind_addr_for(&peer.addr);
-            let std_sock = socket_opts.bind_udp(bind_addr)?;
-            UdpSocket::from_std(std_sock)?
-        };
-        #[cfg(not(feature = "socket-opts"))]
-        let sock = {
-            let _ = socket_opts;
-            UdpSocket::bind(bind_addr_for(&peer.addr)).await?
-        };
-        let timeout = Duration::from_secs(5);
-
-        // Send with timeout.
-        tokio::time::timeout(timeout, sock.send_to(&send_buf, peer.addr))
-            .await
-            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP send timed out"))??;
-
-        // Receive with timeout (larger buffer for NTS extension fields).
-        let mut recv_buf = [0u8; 2048];
-        let (recv_len, src_addr) = tokio::time::timeout(timeout, sock.recv_from(&mut recv_buf))
-            .await
-            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out"))??;
-
-        // Parse and validate the NTP header.
-        let parse_result = parse_and_validate_response(&recv_buf, recv_len, src_addr, &[peer.addr]);
-
-        match parse_result {
-            Err(e) => match check_kod(&e) {
-                Some(poll_result) => Ok(poll_result),
-                None => Err(e),
-            },
-            Ok((response, t4)) => {
-                // Validate NTS extension fields and extract new cookies.
-                let new_cookies = nts_common::validate_nts_response(
-                    &nts_state.s2c_key,
-                    nts_state.aead_algorithm,
-                    &uid_data,
-                    &recv_buf,
-                    recv_len,
-                )?;
-                nts_state.cookies.extend(new_cookies);
-
-                peer.process_response(&response, t4, t1)
-            }
-        }
+        .instrument(span)
+        .await
     }
 
     /// Poll a single NTPv5 peer through the version negotiation state machine.
@@ -517,6 +536,8 @@ impl NtpClient {
         v5_state: &mut NtpV5PeerState,
         socket_opts: &crate::socket_opts::SocketOptions,
     ) -> io::Result<PollResult> {
+        let span = tracing::debug_span!("poll_peer_v5", peer_addr = %peer.addr);
+        async {
         use crate::request::{
             build_v4_negotiation_packet, build_v5_request_packet, parse_and_validate_v5_response,
             response_has_negotiation_magic,
@@ -547,14 +568,14 @@ impl NtpClient {
                 let timeout = Duration::from_secs(5);
                 tokio::time::timeout(timeout, sock.send_to(&send_buf, peer.addr))
                     .await
-                    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP send timed out"))??;
+                    .map_err(|_| io::Error::from(NtpError::Timeout(TimeoutError::Send)))??;
 
                 let mut recv_buf = [0u8; 1024];
                 let (recv_len, src_addr) =
                     tokio::time::timeout(timeout, sock.recv_from(&mut recv_buf))
                         .await
                         .map_err(|_| {
-                            io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out")
+                            io::Error::from(NtpError::Timeout(TimeoutError::Recv))
                         })??;
 
                 let parse_result =
@@ -645,14 +666,14 @@ impl NtpClient {
                 let timeout = Duration::from_secs(5);
                 tokio::time::timeout(timeout, sock.send_to(&send_buf, peer.addr))
                     .await
-                    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP send timed out"))??;
+                    .map_err(|_| io::Error::from(NtpError::Timeout(TimeoutError::Send)))??;
 
                 let mut recv_buf = [0u8; 2048];
                 let (recv_len, src_addr) =
                     tokio::time::timeout(timeout, sock.recv_from(&mut recv_buf))
                         .await
                         .map_err(|_| {
-                            io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out")
+                            io::Error::from(NtpError::Timeout(TimeoutError::Recv))
                         })??;
 
                 let (response, t4, ext_fields) = parse_and_validate_v5_response(
@@ -702,14 +723,14 @@ impl NtpClient {
                 let timeout = Duration::from_secs(5);
                 tokio::time::timeout(timeout, sock.send_to(&send_buf, peer.addr))
                     .await
-                    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP send timed out"))??;
+                    .map_err(|_| io::Error::from(NtpError::Timeout(TimeoutError::Send)))??;
 
                 let mut recv_buf = [0u8; 1024];
                 let (recv_len, src_addr) =
                     tokio::time::timeout(timeout, sock.recv_from(&mut recv_buf))
                         .await
                         .map_err(|_| {
-                            io::Error::new(io::ErrorKind::TimedOut, "NTP recv timed out")
+                            io::Error::from(NtpError::Timeout(TimeoutError::Recv))
                         })??;
 
                 let parse_result =
@@ -735,6 +756,9 @@ impl NtpClient {
                 }
             }
         }
+        }
+        .instrument(span)
+        .await
     }
 
     /// Select the best peer(s) using the RFC 5905 Section 11.2 selection,

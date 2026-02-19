@@ -14,6 +14,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use tracing::debug;
 
+use crate::error::{NtpError, ProtocolError};
 use crate::filter::{ClockSample, SampleFilter};
 use crate::request::compute_offset_delay;
 use crate::selection::{self, PeerCandidate};
@@ -353,10 +354,7 @@ impl PeerState {
 
         // V5 anti-replay: client_cookie in the response must match what we sent.
         if response.client_cookie != expected_client_cookie {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "NTPv5 client cookie mismatch",
-            ));
+            return Err(NtpError::Protocol(ProtocolError::ClientCookieMismatch).into());
         }
 
         let interleaved = response.flags.is_interleaved();
@@ -394,8 +392,11 @@ impl PeerState {
 
         // Basic mode computation.
         // V5 doesn't put T1 on the wire; we use the T1 we recorded locally.
-        let t1_ts = self.current_t1.ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidData, "no T1 recorded for V5 exchange")
+        let t1_ts = self.current_t1.ok_or_else(|| -> io::Error {
+            NtpError::Protocol(ProtocolError::Other(
+                "no T1 recorded for V5 exchange".into(),
+            ))
+            .into()
         })?;
 
         let t4_instant = unix_time::Instant::from(t4);
@@ -437,9 +438,16 @@ impl PeerState {
 /// Check if an I/O error contains a Kiss-o'-Death code and return the
 /// appropriate [`PollResult`].
 pub(crate) fn check_kod(e: &io::Error) -> Option<PollResult> {
-    let kod = e
-        .get_ref()
-        .and_then(|inner| inner.downcast_ref::<KissOfDeathError>())?;
+    let inner = e.get_ref()?;
+    // Try NtpError downcast first (new typed error path).
+    if let Some(NtpError::KissOfDeath(kod)) = inner.downcast_ref::<NtpError>() {
+        return Some(match kod.code {
+            protocol::KissOfDeath::Rate => PollResult::RateKissCode,
+            protocol::KissOfDeath::Deny | protocol::KissOfDeath::Rstr => PollResult::DenyKissCode,
+        });
+    }
+    // Legacy KissOfDeathError downcast for backward compatibility.
+    let kod = inner.downcast_ref::<KissOfDeathError>()?;
     Some(match kod.code {
         protocol::KissOfDeath::Rate => PollResult::RateKissCode,
         protocol::KissOfDeath::Deny | protocol::KissOfDeath::Rstr => PollResult::DenyKissCode,
@@ -499,16 +507,10 @@ pub(crate) fn classify_and_compute(
                 true,
             ))
         } else {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "origin timestamp mismatch: neither basic nor interleaved",
-            ))
+            Err(NtpError::Protocol(ProtocolError::OriginTimestampMismatch).into())
         }
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "origin timestamp mismatch: response does not match our request",
-        ))
+        Err(NtpError::Protocol(ProtocolError::OriginTimestampMismatch).into())
     }
 }
 
@@ -1165,7 +1167,7 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("neither basic nor interleaved")
+                .contains("origin timestamp mismatch")
         );
     }
 

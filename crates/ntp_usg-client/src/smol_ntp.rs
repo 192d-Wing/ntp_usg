@@ -34,6 +34,7 @@ use std::time::Duration;
 use tracing::debug;
 
 use crate::NtpResult;
+use crate::error::{ConfigError, NtpError, TimeoutError};
 use crate::request::{bind_addr_for, build_request_packet, validate_response};
 
 /// Send an async request to an NTP server with a hardcoded 5 second timeout.
@@ -84,10 +85,7 @@ pub async fn request(addr: &str) -> io::Result<NtpResult> {
 pub async fn request_with_timeout(addr: &str, timeout: Duration) -> io::Result<NtpResult> {
     futures_lite::future::or(request_inner(addr), async {
         smol::Timer::after(timeout).await;
-        Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            "NTP request timed out",
-        ))
+        Err(NtpError::Timeout(TimeoutError::Request).into())
     })
     .await
 }
@@ -98,10 +96,10 @@ async fn request_inner(addr: &str) -> io::Result<NtpResult> {
     let resolved_addrs: Vec<SocketAddr> =
         crate::request::prefer_addresses(smol::net::resolve(addr).await?);
     if resolved_addrs.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "address resolved to no socket addresses",
-        ));
+        return Err(NtpError::Config(ConfigError::NoAddresses {
+            address: addr.to_string(),
+        })
+        .into());
     }
     let target_addr = resolved_addrs[0];
 

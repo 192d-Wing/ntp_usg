@@ -29,6 +29,7 @@ use tokio::net::{ToSocketAddrs, UdpSocket};
 use tracing::debug;
 
 use crate::NtpResult;
+use crate::error::{ConfigError, NtpError, TimeoutError};
 use crate::request::{bind_addr_for, build_request_packet, validate_response};
 
 /// Send an async request to an NTP server with a hardcoded 5 second timeout.
@@ -81,7 +82,7 @@ pub async fn request_with_timeout<A: ToSocketAddrs>(
 ) -> io::Result<NtpResult> {
     tokio::time::timeout(timeout, request_inner(addr))
         .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTP request timed out"))?
+        .map_err(|_| -> io::Error { NtpError::Timeout(TimeoutError::Request).into() })?
 }
 
 /// Inner async implementation without timeout wrapping.
@@ -90,10 +91,10 @@ async fn request_inner<A: ToSocketAddrs>(addr: A) -> io::Result<NtpResult> {
     let resolved_addrs: Vec<SocketAddr> =
         crate::request::prefer_addresses(tokio::net::lookup_host(addr).await?.collect());
     if resolved_addrs.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "address resolved to no socket addresses",
-        ));
+        return Err(NtpError::Config(ConfigError::NoAddresses {
+            address: String::new(),
+        })
+        .into());
     }
     let target_addr = resolved_addrs[0];
 

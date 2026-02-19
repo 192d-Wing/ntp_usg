@@ -23,6 +23,7 @@
 use std::io;
 use std::time::{Duration, Instant};
 
+use crate::error::{NtpServerError, NtsError, ProtocolError};
 use crate::extension::{
     self, ExtensionField, NtsAuthenticator, NtsCookie, UNIQUE_IDENTIFIER, UniqueIdentifier,
 };
@@ -63,23 +64,20 @@ fn serialize_cookie_plaintext(contents: &CookieContents) -> Vec<u8> {
 /// Deserialize cookie contents from plaintext bytes.
 fn deserialize_cookie_plaintext(plaintext: &[u8]) -> io::Result<CookieContents> {
     if plaintext.len() < 2 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "cookie plaintext too short",
-        ));
+        return Err(
+            NtpServerError::Nts(NtsError::Other("cookie plaintext too short".to_string())).into(),
+        );
     }
     let aead_algorithm = u16::from_be_bytes([plaintext[0], plaintext[1]]);
     let key_len = aead_key_length(aead_algorithm)?;
     let expected = 2 + 2 * key_len;
     if plaintext.len() != expected {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "cookie plaintext length mismatch: expected {}, got {}",
-                expected,
-                plaintext.len()
-            ),
-        ));
+        return Err(NtpServerError::Nts(NtsError::Other(format!(
+            "cookie plaintext length mismatch: expected {}, got {}",
+            expected,
+            plaintext.len()
+        )))
+        .into());
     }
     let c2s_key = plaintext[2..2 + key_len].to_vec();
     let s2c_key = plaintext[2 + key_len..].to_vec();
@@ -272,10 +270,7 @@ pub fn process_nts_extensions(
 ) -> io::Result<NtsRequestContext> {
     // 1. Parse extension fields after the 48-byte header.
     if request_len <= protocol::Packet::PACKED_SIZE_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTS server: request has no extension fields",
-        ));
+        return Err(NtpServerError::Protocol(ProtocolError::NoExtensionFields).into());
     }
     let ext_data = &request_buf[protocol::Packet::PACKED_SIZE_BYTES..request_len];
     let ext_fields = extension::parse_extension_fields(ext_data)?;
@@ -284,11 +279,11 @@ pub fn process_nts_extensions(
     let uid_ef = ext_fields
         .iter()
         .find(|ef| ef.field_type == UNIQUE_IDENTIFIER)
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "NTS server: missing Unique Identifier",
-            )
+        .ok_or_else(|| -> io::Error {
+            NtpServerError::Nts(NtsError::MissingExtension {
+                field: "Unique Identifier",
+            })
+            .into()
         })?;
     let uid_data = uid_ef.value.clone();
 
@@ -296,33 +291,33 @@ pub fn process_nts_extensions(
     let cookie_ef = ext_fields
         .iter()
         .find(|ef| ef.field_type == extension::NTS_COOKIE)
-        .ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidData, "NTS server: missing NTS Cookie")
+        .ok_or_else(|| -> io::Error {
+            NtpServerError::Nts(NtsError::MissingExtension {
+                field: "NTS Cookie",
+            })
+            .into()
         })?;
 
     // 4. Decrypt the cookie to recover session keys.
-    let cookie_contents = key_store.decrypt_cookie(&cookie_ef.value)?.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTS server: failed to decrypt cookie (expired or invalid)",
-        )
-    })?;
+    let cookie_contents =
+        key_store
+            .decrypt_cookie(&cookie_ef.value)?
+            .ok_or_else(|| -> io::Error {
+                NtpServerError::Nts(NtsError::CookieDecryptionFailed).into()
+            })?;
 
     // 5. Extract the NTS Authenticator.
     let auth_ef = ext_fields
         .iter()
         .find(|ef| ef.field_type == extension::NTS_AUTHENTICATOR)
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "NTS server: missing NTS Authenticator",
-            )
+        .ok_or_else(|| -> io::Error {
+            NtpServerError::Nts(NtsError::MissingExtension {
+                field: "NTS Authenticator",
+            })
+            .into()
         })?;
-    let auth = NtsAuthenticator::from_extension_field(auth_ef)?.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTS server: failed to parse NTS Authenticator",
-        )
+    let auth = NtsAuthenticator::from_extension_field(auth_ef)?.ok_or_else(|| -> io::Error {
+        NtpServerError::Nts(NtsError::AuthenticatorParseFailed).into()
     })?;
 
     // 6. Build AAD for verification: NTP header + extensions before authenticator.

@@ -10,6 +10,7 @@
 use std::io;
 use std::net::IpAddr;
 
+use crate::error::{NtpServerError, ProtocolError};
 use tracing::debug;
 
 use ntp_proto::extension::{ExtensionField, parse_extension_fields, write_extension_fields_buf};
@@ -38,34 +39,35 @@ pub(crate) fn validate_v5_client_request(
     recv_len: usize,
 ) -> io::Result<(PacketV5, Vec<ExtensionField>)> {
     if recv_len < PacketV5::PACKED_SIZE_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTPv5 request too short",
-        ));
+        return Err(NtpServerError::Protocol(ProtocolError::RequestTooShort {
+            received: recv_len,
+        })
+        .into());
     }
 
-    let (request, _) = PacketV5::from_bytes(&recv_buf[..recv_len])
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("V5 parse error: {e}")))?;
+    let (request, _) = PacketV5::from_bytes(&recv_buf[..recv_len]).map_err(|e| -> io::Error {
+        NtpServerError::Protocol(ProtocolError::Other(format!("V5 parse error: {e}"))).into()
+    })?;
 
     if request.version != Version::V5 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "expected NTPv5"));
+        return Err(
+            NtpServerError::Protocol(ProtocolError::Other("expected NTPv5".to_string())).into(),
+        );
     }
 
     if request.mode != Mode::Client {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "unexpected V5 mode: expected Client, got {:?}",
-                request.mode
-            ),
-        ));
+        return Err(NtpServerError::Protocol(ProtocolError::Other(format!(
+            "unexpected V5 mode: expected Client, got {:?}",
+            request.mode
+        )))
+        .into());
     }
 
     if request.client_cookie == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "V5 client cookie is zero",
-        ));
+        return Err(NtpServerError::Protocol(ProtocolError::Other(
+            "V5 client cookie is zero".to_string(),
+        ))
+        .into());
     }
 
     // Parse extension fields after the 48-byte header.
@@ -79,10 +81,10 @@ pub(crate) fn validate_v5_client_request(
     });
 
     if !has_draft_id {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "missing or incompatible Draft Identification extension",
-        ));
+        return Err(NtpServerError::Protocol(ProtocolError::Other(
+            "missing or incompatible Draft Identification extension".to_string(),
+        ))
+        .into());
     }
 
     Ok((request, extensions))

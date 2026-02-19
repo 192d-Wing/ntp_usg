@@ -7,6 +7,7 @@
 
 use tracing::debug;
 
+use crate::error::{ConfigError, NtpError, ProtocolError};
 use crate::protocol::{self, ConstPackedSizeBytes, ReadBytes, WriteBytes};
 use crate::unix_time;
 use std::io;
@@ -198,18 +199,14 @@ pub(crate) fn parse_and_validate_response(
 
     // Verify the response came from one of the resolved addresses (IP only, port may differ).
     if !resolved_addrs.iter().any(|a| a.ip() == src_addr.ip()) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "response from unexpected source address",
-        ));
+        return Err(NtpError::Protocol(ProtocolError::UnexpectedSource).into());
     }
 
     // Verify minimum packet size.
     if recv_len < protocol::Packet::PACKED_SIZE_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTP response too short",
-        ));
+        return Err(
+            NtpError::Protocol(ProtocolError::ResponseTooShort { received: recv_len }).into(),
+        );
     }
 
     // Parse the first 48 bytes as an NTP packet (ignoring extension fields/MAC).
@@ -224,36 +221,24 @@ pub(crate) fn parse_and_validate_response(
         || response.mode == protocol::Mode::SymmetricPassive;
 
     if !valid_mode {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "unexpected response mode (expected Server)",
-        ));
+        return Err(NtpError::Protocol(ProtocolError::UnexpectedMode).into());
     }
 
     // Enforce Kiss-o'-Death codes (RFC 5905 Section 7.4).
     if let protocol::ReferenceIdentifier::KissOfDeath(kod) = response.reference_id {
-        return Err(io::Error::new(
-            io::ErrorKind::ConnectionRefused,
-            KissOfDeathError { code: kod },
-        ));
+        return Err(NtpError::KissOfDeath(KissOfDeathError { code: kod }).into());
     }
 
     // Validate that the server's transmit timestamp is non-zero.
     if response.transmit_timestamp.seconds == 0 && response.transmit_timestamp.fraction == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "server transmit timestamp is zero",
-        ));
+        return Err(NtpError::Protocol(ProtocolError::ZeroTransmitTimestamp).into());
     }
 
     // Reject unsynchronized servers (LI=Unknown with non-zero stratum).
     if response.leap_indicator == protocol::LeapIndicator::Unknown
         && response.stratum != protocol::Stratum::UNSPECIFIED
     {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "server reports unsynchronized clock",
-        ));
+        return Err(NtpError::Protocol(ProtocolError::UnsynchronizedServer).into());
     }
 
     Ok((response, t4))
@@ -275,10 +260,7 @@ pub(crate) fn validate_response(
 
     // Validate origin timestamp matches what we sent (anti-replay, RFC 5905 Section 8).
     if response.origin_timestamp != *t1 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "origin timestamp mismatch: response does not match our request",
-        ));
+        return Err(NtpError::Protocol(ProtocolError::OriginTimestampMismatch).into());
     }
 
     // Convert all four timestamps to Instant for era-aware offset/delay computation.
@@ -459,18 +441,14 @@ pub(crate) fn parse_and_validate_v5_response(
 
     // Verify source address.
     if !resolved_addrs.iter().any(|a| a.ip() == src_addr.ip()) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "response from unexpected source address",
-        ));
+        return Err(NtpError::Protocol(ProtocolError::UnexpectedSource).into());
     }
 
     // Verify minimum size (48 bytes).
     if recv_len < PacketV5::PACKED_SIZE_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTPv5 response too short",
-        ));
+        return Err(
+            NtpError::Protocol(ProtocolError::ResponseTooShort { received: recv_len }).into(),
+        );
     }
 
     // Parse the 48-byte V5 header.
@@ -478,50 +456,37 @@ pub(crate) fn parse_and_validate_v5_response(
 
     // Validate VN=5.
     if response.version != protocol::Version::V5 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "expected NTPv5 response",
-        ));
+        return Err(
+            NtpError::Protocol(ProtocolError::Other("expected NTPv5 response".into())).into(),
+        );
     }
 
     // Validate Mode=Server.
     if response.mode != protocol::Mode::Server {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "unexpected NTPv5 response mode (expected Server)",
-        ));
+        return Err(NtpError::Protocol(ProtocolError::UnexpectedMode).into());
     }
 
     // Validate Synchronized flag.
     if !response.flags.is_synchronized() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTPv5 server reports unsynchronized",
-        ));
+        return Err(NtpError::Protocol(ProtocolError::UnsynchronizedServer).into());
     }
 
     // Check Authentication NAK.
     if response.flags.is_auth_nak() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTPv5 server sent Authentication NAK",
-        ));
+        return Err(NtpError::Protocol(ProtocolError::Other(
+            "NTPv5 server sent Authentication NAK".into(),
+        ))
+        .into());
     }
 
     // Validate transmit timestamp non-zero.
     if response.transmit_timestamp.seconds == 0 && response.transmit_timestamp.fraction == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTPv5 server transmit timestamp is zero",
-        ));
+        return Err(NtpError::Protocol(ProtocolError::ZeroTransmitTimestamp).into());
     }
 
     // Validate client cookie matches.
     if response.client_cookie != expected_client_cookie {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTPv5 client cookie mismatch",
-        ));
+        return Err(NtpError::Protocol(ProtocolError::ClientCookieMismatch).into());
     }
 
     // Parse extension fields after the 48-byte header.
@@ -541,10 +506,7 @@ pub(crate) fn parse_and_validate_v5_response(
         }
     });
     if !has_draft_id {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTPv5 response missing or mismatched Draft Identification",
-        ));
+        return Err(NtpError::Protocol(ProtocolError::MissingDraftId).into());
     }
 
     Ok((response, t4, ext_fields))
@@ -641,10 +603,10 @@ pub fn request_with_timeout<A: ToSocketAddrs>(addr: A, timeout: Duration) -> io:
     // Resolve the target address eagerly so we can verify the response source.
     let resolved_addrs: Vec<SocketAddr> = prefer_addresses(addr.to_socket_addrs()?.collect());
     if resolved_addrs.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "address resolved to no socket addresses",
-        ));
+        return Err(NtpError::Config(ConfigError::NoAddresses {
+            address: String::new(),
+        })
+        .into());
     }
     let target_addr = resolved_addrs[0];
 
@@ -935,12 +897,14 @@ mod tests {
         let result = parse_and_validate_response(&buf, 48, src_addr(), &addrs);
         let err = result.unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::ConnectionRefused);
-        let kod = err
-            .get_ref()
-            .unwrap()
-            .downcast_ref::<KissOfDeathError>()
-            .unwrap();
-        assert!(matches!(kod.code, protocol::KissOfDeath::Deny));
+        // KoD errors are now wrapped in NtpError; downcast through NtpError.
+        let ntp_err = err.get_ref().unwrap().downcast_ref::<NtpError>().unwrap();
+        match ntp_err {
+            NtpError::KissOfDeath(kod) => {
+                assert!(matches!(kod.code, protocol::KissOfDeath::Deny));
+            }
+            _ => panic!("expected NtpError::KissOfDeath, got {ntp_err:?}"),
+        }
     }
 
     #[test]

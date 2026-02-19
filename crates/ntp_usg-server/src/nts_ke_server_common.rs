@@ -10,6 +10,7 @@
 use std::io;
 use std::sync::{Arc, RwLock};
 
+use crate::error::{ConfigError, NtpServerError, NtsError};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls_pki_types::pem::PemObject;
 use tracing::debug;
@@ -41,10 +42,19 @@ impl NtsKeServerConfig {
     pub fn from_pem(cert_pem: &[u8], key_pem: &[u8]) -> io::Result<Self> {
         let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_slice_iter(cert_pem)
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            .map_err(|e| -> io::Error {
+                NtpServerError::Config(ConfigError::InvalidTlsCredentials {
+                    detail: e.to_string(),
+                })
+                .into()
+            })?;
 
-        let key = PrivateKeyDer::from_pem_slice(key_pem)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let key = PrivateKeyDer::from_pem_slice(key_pem).map_err(|e| -> io::Error {
+            NtpServerError::Config(ConfigError::InvalidTlsCredentials {
+                detail: e.to_string(),
+            })
+            .into()
+        })?;
 
         Ok(NtsKeServerConfig {
             cert_chain: certs,
@@ -139,7 +149,12 @@ pub(crate) fn process_nts_ke_records(
             NTS_EXPORTER_LABEL.as_bytes(),
             Some(&[0x00, 0x00]),
         )
-        .map_err(|e| io::Error::other(format!("TLS key export failed: {}", e)))?;
+        .map_err(|e| -> io::Error {
+            NtpServerError::Nts(NtsError::KeyExportFailed {
+                detail: e.to_string(),
+            })
+            .into()
+        })?;
 
     let mut s2c_key = vec![0u8; key_len];
     tls_conn
@@ -148,7 +163,12 @@ pub(crate) fn process_nts_ke_records(
             NTS_EXPORTER_LABEL.as_bytes(),
             Some(&[0x00, 0x01]),
         )
-        .map_err(|e| io::Error::other(format!("TLS key export failed: {}", e)))?;
+        .map_err(|e| -> io::Error {
+            NtpServerError::Nts(NtsError::KeyExportFailed {
+                detail: e.to_string(),
+            })
+            .into()
+        })?;
 
     // 5. Generate cookies.
     let cookie_contents = CookieContents {
@@ -159,7 +179,7 @@ pub(crate) fn process_nts_ke_records(
     let cookies: Vec<Vec<u8>> = {
         let store = key_store
             .read()
-            .map_err(|_| io::Error::other("master key store lock poisoned"))?;
+            .map_err(|_| -> io::Error { NtpServerError::Nts(NtsError::KeyStorePoisoned).into() })?;
         (0..cookie_count)
             .map(|_| store.encrypt_cookie(&cookie_contents))
             .collect::<io::Result<Vec<_>>>()?

@@ -14,22 +14,29 @@
 [![GitHub Issues or Pull Requests](https://img.shields.io/github/issues-pr/192d-Wing/ntp_usg?style=for-the-badge&logo=github)](https://github.com/192d-Wing/ntp_usg/pulls)
 [![Codecov](https://img.shields.io/codecov/c/github/192d-Wing/ntp_usg?style=for-the-badge&logo=codecov)](https://codecov.io/github/192d-Wing/ntp_usg)
 
-A Network Time Protocol (NTP) library written in Rust, organized as a Cargo workspace with three crates:
+A Network Time Protocol (NTP) library written in Rust, organized as a Cargo workspace with four crates:
 
 | Crate | Lib name | Description |
 |-------|----------|-------------|
 | [`ntp_usg-proto`](crates/ntp_usg-proto) | `ntp_proto` | Protocol types, extension fields, and NTS cryptographic primitives |
 | [`ntp_usg-client`](crates/ntp_usg-client) | `ntp_client` | NTP client (sync, async tokio/smol, NTS, clock adjustment) |
 | [`ntp_usg-server`](crates/ntp_usg-server) | `ntp_server` | NTP server (tokio/smol, NTS-KE) |
+| [`ntp_usg-wasm`](crates/ntp_usg-wasm) | `ntp_wasm` | Browser/Node.js NTP client via WebAssembly |
 
 ## Features
 
-### 🎯 Version 3.1.0 - 100% RFC Compliance
+### 🎯 Version 4.9.0 - Production-Grade NTP
 
 - **RFC 5905 Full Compliance**: Selection, clustering, clock discipline (PLL/FLL), symmetric modes, and broadcast mode
 - **RFC 4330 SNTP API**: Simplified client API for one-off time queries
 - **RFC 7822 Extension Registry**: Generic dispatch system for extension field handlers
-- **Security**: Eliminated unmaintained rustls-pemfile dependency (RUSTSEC-2025-0134)
+- **NTPv5 Draft Support**: draft-ietf-ntp-ntpv5 client and server with Bloom filter reference IDs
+- **Roughtime Client**: Authenticated coarse time via Ed25519 signatures (draft-ietf-ntp-roughtime)
+- **Reference Clocks**: GPS and PPS drivers for Stratum 1 operation, hardware timestamping
+- **Post-Quantum NTS**: ML-KEM (X25519MLKEM768) key exchange via aws-lc-rs
+- **WASM Support**: Browser/Node.js NTP client via WebAssembly
+- **Structured Tracing**: `tracing` integration with backward-compatible `log` bridge
+- **Custom Error Types**: Typed error enums with `io::Error` downcast support
 
 ### Core Features
 
@@ -45,8 +52,9 @@ A Network Time Protocol (NTP) library written in Rust, organized as a Cargo work
 - 🧩 **`no_std` Support**: Core protocol parsing works without `std` or `alloc`
 - ⏱️ **Clock Adjustment**: Platform-native slew/step correction (Linux, macOS, Windows)
 - 📡 **NTP Server**: Full NTPv4 server with rate limiting, access control, and interleaved mode
+- 🔭 **Observability**: Structured `tracing` spans with backward-compatible `log` facade
 - 🦀 **Modern Rust**: Edition 2024 with MSRV 1.93
-- ✅ **Well Tested**: 290+ tests, CI/CD on Linux, macOS, and Windows
+- ✅ **Well Tested**: 750+ tests, CI/CD on Linux, macOS, and Windows
 
 ## Installation
 
@@ -55,13 +63,13 @@ Add the crate(s) you need to your `Cargo.toml`:
 ```toml
 [dependencies]
 # Protocol types only (also supports no_std)
-ntp_usg-proto = "3.1"
+ntp_usg-proto = "4.9"
 
 # NTP client
-ntp_usg-client = { version = "3.1", features = ["tokio"] }
+ntp_usg-client = { version = "4.9", features = ["tokio"] }
 
 # NTP server
-ntp_usg-server = { version = "3.1", features = ["tokio"] }
+ntp_usg-server = { version = "4.9", features = ["tokio"] }
 ```
 
 **Minimum Supported Rust Version (MSRV):** 1.93
@@ -85,7 +93,18 @@ ntp_usg-server = { version = "3.1", features = ["tokio"] }
 | `smol-runtime` | No | Async NTP client using smol |
 | `nts` | No | NTS authentication (Tokio + rustls) |
 | `nts-smol` | No | NTS authentication (smol + futures-rustls) |
+| `pq-nts` | No | Post-quantum NTS key exchange (ML-KEM via aws-lc-rs) |
 | `clock` | No | System clock slew/step adjustment (Linux, macOS, Windows) |
+| `discipline` | No | PLL/FLL clock discipline algorithm (implies `clock`) |
+| `symmetric` | No | Symmetric active/passive mode (RFC 5905 modes 1 & 2) |
+| `broadcast` | No | Broadcast client (mode 5, deprecated by RFC 8633) |
+| `refclock` | No | Reference clock abstraction layer (implies `tokio`) |
+| `gps` | No | GPS reference clock driver (implies `refclock`) |
+| `pps` | No | PPS reference clock driver (implies `refclock`) |
+| `hwts` | No | Hardware timestamping support (implies `refclock`) |
+| `roughtime` | No | Roughtime client (draft-ietf-ntp-roughtime, implies `tokio`) |
+| `ntpv5` | No | NTPv5 draft support (draft-ietf-ntp-ntpv5) |
+| `socket-opts` | No | DSCP and `IPV6_V6ONLY` socket options via `socket2` |
 
 #### ntp_usg-server
 
@@ -95,13 +114,19 @@ ntp_usg-server = { version = "3.1", features = ["tokio"] }
 | `smol-runtime` | No | NTP server using smol |
 | `nts` | No | NTS-KE server (Tokio + rustls) |
 | `nts-smol` | No | NTS-KE server (smol + futures-rustls) |
+| `pq-nts` | No | Post-quantum NTS key exchange (ML-KEM via aws-lc-rs) |
+| `symmetric` | No | Symmetric passive mode (RFC 5905 mode 2) |
+| `broadcast` | No | Broadcast mode (mode 5, deprecated by RFC 8633) |
+| `refclock` | No | Reference clock support for Stratum 1 (implies `tokio`) |
+| `ntpv5` | No | NTPv5 draft support (draft-ietf-ntp-ntpv5) |
+| `socket-opts` | No | DSCP, `IPV6_V6ONLY`, and multicast socket options |
 
 For `no_std` environments, use the proto crate with default features disabled:
 
 ```toml
 [dependencies]
-ntp_usg-proto = { version = "3.1", default-features = false }          # core parsing only
-ntp_usg-proto = { version = "3.1", default-features = false, features = ["alloc"] }  # + Vec-based types
+ntp_usg-proto = { version = "4.9", default-features = false }          # core parsing only
+ntp_usg-proto = { version = "4.9", default-features = false, features = ["alloc"] }  # + Vec-based types
 ```
 
 ## Usage
@@ -162,7 +187,7 @@ Enable the `tokio` feature:
 
 ```toml
 [dependencies]
-ntp_usg-client = { version = "3.1", features = ["tokio"] }
+ntp_usg-client = { version = "4.9", features = ["tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -208,7 +233,7 @@ Enable the `nts` feature for authenticated NTP:
 
 ```toml
 [dependencies]
-ntp_usg-client = { version = "3.1", features = ["nts"] }
+ntp_usg-client = { version = "4.9", features = ["nts"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -256,7 +281,7 @@ Enable the `smol-runtime` feature:
 
 ```toml
 [dependencies]
-ntp_usg-client = { version = "3.1", features = ["smol-runtime"] }
+ntp_usg-client = { version = "4.9", features = ["smol-runtime"] }
 smol = "2"
 ```
 
@@ -304,7 +329,7 @@ Enable the `clock` feature to correct the system clock based on NTP measurements
 
 ```toml
 [dependencies]
-ntp_usg-client = { version = "3.1", features = ["clock", "tokio"] }
+ntp_usg-client = { version = "4.9", features = ["clock", "tokio"] }
 ```
 
 ```rust
@@ -320,13 +345,29 @@ clock::step_clock(-1.5)?;
 let method = clock::apply_correction(offset)?;
 ```
 
+### Observability
+
+The library uses [`tracing`](https://docs.rs/tracing) for structured diagnostics. To see logs, initialize a subscriber:
+
+```rust
+// With tracing-subscriber (recommended for new projects):
+tracing_subscriber::fmt()
+    .with_env_filter("ntp_client=info")
+    .init();
+
+// Or with env_logger (backward-compatible via the log bridge):
+env_logger::init();
+```
+
+Set `RUST_LOG=ntp_client=debug` (or `ntp_server=debug`) for per-request diagnostics including peer addresses, poll intervals, and NTS session state.
+
 ### NTP Server
 
 Enable the `tokio` feature on the server crate:
 
 ```toml
 [dependencies]
-ntp_usg-server = { version = "3.1", features = ["tokio"] }
+ntp_usg-server = { version = "4.9", features = ["tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -352,7 +393,7 @@ See [crates/ntp_usg-client/examples/multiple_servers.rs](crates/ntp_usg-client/e
 
 ## Examples
 
-### Production Examples (v3.1.0+)
+### Production Examples (v4.9.0+)
 
 The following examples demonstrate production-ready deployments with comprehensive monitoring and error handling:
 
@@ -439,7 +480,15 @@ cargo run -p ntp_usg-server --example nts_server --features ntp_usg-server/nts -
 - [x] System clock adjustment (slew/step on Linux, macOS, Windows)
 - [x] NTP server with NTS-KE
 - [x] Workspace restructure (proto, client, server crates)
-- [ ] Reference clock interface (GPS, PPS)
+- [x] Reference clock interface (GPS, PPS)
+- [x] Hardware timestamping
+- [x] NTPv5 draft support
+- [x] Roughtime client
+- [x] Post-quantum NTS (ML-KEM)
+- [x] WASM support
+- [x] Structured tracing
+- [x] Custom error types
+- [ ] FIPS 140-3 validated NTS AEAD
 
 ## Contributing
 
