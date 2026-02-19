@@ -873,6 +873,93 @@ mod tests {
     #[tokio::test]
     async fn test_builder_rejects_empty_servers() {
         let result = NtpClient::builder().build().await;
-        assert!(result.is_err());
+        let err = match result {
+            Err(e) => e,
+            Ok(_) => panic!("expected error for empty servers"),
+        };
+        assert!(err.to_string().contains("at least one server"));
+    }
+
+    #[test]
+    fn test_builder_defaults() {
+        let builder = NtpClient::builder();
+        assert!(builder.servers.is_empty());
+        assert_eq!(builder.min_poll, protocol::MINPOLL);
+        assert_eq!(builder.max_poll, protocol::MAXPOLL);
+        assert!(builder.initial_poll.is_none());
+    }
+
+    #[test]
+    fn test_builder_min_poll_clamped_high() {
+        let builder = NtpClient::builder().min_poll(255);
+        assert_eq!(builder.min_poll, protocol::MAXPOLL);
+    }
+
+    #[test]
+    fn test_builder_min_poll_clamped_low() {
+        let builder = NtpClient::builder().min_poll(0);
+        assert_eq!(builder.min_poll, protocol::MINPOLL);
+    }
+
+    #[test]
+    fn test_builder_max_poll_clamped() {
+        let builder = NtpClient::builder().max_poll(255);
+        assert_eq!(builder.max_poll, protocol::MAXPOLL);
+    }
+
+    #[test]
+    fn test_builder_server_accumulates() {
+        let builder = NtpClient::builder()
+            .server("a.example.com:123")
+            .server("b.example.com:123");
+        assert_eq!(builder.servers.len(), 2);
+    }
+
+    #[test]
+    fn test_builder_initial_poll() {
+        let builder = NtpClient::builder().initial_poll(8);
+        assert_eq!(builder.initial_poll, Some(8));
+    }
+
+    #[tokio::test]
+    async fn test_builder_resolves_localhost() {
+        let result = NtpClient::builder()
+            .server("127.0.0.1:123")
+            .min_poll(4)
+            .max_poll(6)
+            .build()
+            .await;
+        let (client, _rx) = result.expect("build should succeed");
+        assert_eq!(client.peers.len(), 1);
+        assert_eq!(client.min_poll, 4);
+        assert_eq!(client.max_poll, 6);
+    }
+
+    #[tokio::test]
+    async fn test_builder_max_poll_floored_to_min() {
+        // If max_poll < min_poll, max_poll is raised to min_poll.
+        let (client, _rx) = NtpClient::builder()
+            .server("127.0.0.1:123")
+            .min_poll(8)
+            .max_poll(4) // Less than min_poll
+            .build()
+            .await
+            .expect("build should succeed");
+        assert_eq!(client.min_poll, 8);
+        assert_eq!(client.max_poll, 8);
+    }
+
+    #[tokio::test]
+    async fn test_builder_initial_poll_clamped_to_range() {
+        let (client, _rx) = NtpClient::builder()
+            .server("127.0.0.1:123")
+            .min_poll(6)
+            .max_poll(10)
+            .initial_poll(4) // Below min_poll
+            .build()
+            .await
+            .expect("build should succeed");
+        // initial_poll should be clamped to min_poll=6
+        assert_eq!(client.peers[0].poll_exponent, 6);
     }
 }

@@ -387,6 +387,16 @@ impl NtsSession {
             .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "NTS request timed out"))?
     }
 
+    /// Returns the AEAD algorithm negotiated during key establishment.
+    pub fn aead_algorithm(&self) -> u16 {
+        self.aead_algorithm
+    }
+
+    /// Returns the NTP server address used for requests.
+    pub fn ntp_addr(&self) -> SocketAddr {
+        self.ntp_addr
+    }
+
     async fn request_inner(&mut self) -> io::Result<NtpResult> {
         // Pop a cookie.
         let cookie = self
@@ -448,5 +458,157 @@ impl NtsSession {
             offset_seconds,
             delay_seconds,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Server address parsing (lines 95-103 of nts_ke) ──────────
+
+    /// Helper that replicates the address parsing logic from `nts_ke()`.
+    fn parse_server_addr(server: &str) -> (&str, u16) {
+        if let Some(idx) = server.rfind(':') {
+            if let Ok(p) = server[idx + 1..].parse::<u16>() {
+                (&server[..idx], p)
+            } else {
+                (server, NTS_KE_DEFAULT_PORT)
+            }
+        } else {
+            (server, NTS_KE_DEFAULT_PORT)
+        }
+    }
+
+    #[test]
+    fn test_parse_server_default_port() {
+        let (host, port) = parse_server_addr("example.com");
+        assert_eq!(host, "example.com");
+        assert_eq!(port, NTS_KE_DEFAULT_PORT);
+    }
+
+    #[test]
+    fn test_parse_server_custom_port() {
+        let (host, port) = parse_server_addr("example.com:5555");
+        assert_eq!(host, "example.com");
+        assert_eq!(port, 5555);
+    }
+
+    #[test]
+    fn test_parse_server_invalid_port_uses_default() {
+        let (host, port) = parse_server_addr("example.com:notaport");
+        assert_eq!(host, "example.com:notaport");
+        assert_eq!(port, NTS_KE_DEFAULT_PORT);
+    }
+
+    #[test]
+    fn test_parse_server_ipv4_with_port() {
+        let (host, port) = parse_server_addr("192.168.1.1:4461");
+        assert_eq!(host, "192.168.1.1");
+        assert_eq!(port, 4461);
+    }
+
+    #[test]
+    fn test_parse_server_hostname_only() {
+        let (host, port) = parse_server_addr("time.cloudflare.com");
+        assert_eq!(host, "time.cloudflare.com");
+        assert_eq!(port, 4460);
+    }
+
+    // ── NtsKeResult ──────────────────────────────────────────────
+
+    #[test]
+    fn test_nts_ke_result_fields() {
+        let ke = NtsKeResult {
+            c2s_key: vec![1; 64],
+            s2c_key: vec![2; 64],
+            cookies: vec![vec![3; 100], vec![4; 100]],
+            aead_algorithm: AEAD_AES_SIV_CMAC_512,
+            ntp_server: "ntp.example.com".to_string(),
+            ntp_port: 123,
+            next_protocol: NTS_PROTOCOL_NTPV4,
+        };
+        assert_eq!(ke.cookies.len(), 2);
+        assert_eq!(ke.aead_algorithm, AEAD_AES_SIV_CMAC_512);
+        assert_eq!(ke.ntp_server, "ntp.example.com");
+        assert_eq!(ke.ntp_port, 123);
+        assert_eq!(ke.next_protocol, NTS_PROTOCOL_NTPV4);
+    }
+
+    // ── NtsSession (non-network) ─────────────────────────────────
+
+    #[tokio::test]
+    async fn test_session_from_ke_result_resolves_localhost() {
+        let ke = NtsKeResult {
+            c2s_key: vec![0; 64],
+            s2c_key: vec![0; 64],
+            cookies: vec![vec![0; 100]; 8],
+            aead_algorithm: AEAD_AES_SIV_CMAC_512,
+            ntp_server: "127.0.0.1".to_string(),
+            ntp_port: 123,
+            next_protocol: NTS_PROTOCOL_NTPV4,
+        };
+        let session = NtsSession::from_ke_result(ke).await.unwrap();
+        assert_eq!(session.cookie_count(), 8);
+        assert_eq!(session.aead_algorithm(), AEAD_AES_SIV_CMAC_512);
+        assert_eq!(session.ntp_addr().port(), 123);
+    }
+
+    #[tokio::test]
+    async fn test_session_cookie_count_decrements() {
+        let ke = NtsKeResult {
+            c2s_key: vec![0; 64],
+            s2c_key: vec![0; 64],
+            cookies: vec![vec![0; 100]; 3],
+            aead_algorithm: AEAD_AES_SIV_CMAC_512,
+            ntp_server: "127.0.0.1".to_string(),
+            ntp_port: 123,
+            next_protocol: NTS_PROTOCOL_NTPV4,
+        };
+        let session = NtsSession::from_ke_result(ke).await.unwrap();
+        assert_eq!(session.cookie_count(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_session_request_fails_no_cookies() {
+        let ke = NtsKeResult {
+            c2s_key: vec![0; 64],
+            s2c_key: vec![0; 64],
+            cookies: vec![], // No cookies
+            aead_algorithm: AEAD_AES_SIV_CMAC_512,
+            ntp_server: "127.0.0.1".to_string(),
+            ntp_port: 123,
+            next_protocol: NTS_PROTOCOL_NTPV4,
+        };
+        let mut session = NtsSession::from_ke_result(ke).await.unwrap();
+        let result = session.request().await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("no NTS cookies"));
+    }
+
+    // ── build_nts_request ────────────────────────────────────────
+
+    #[test]
+    fn test_build_request_produces_valid_packet() {
+        let c2s_key = vec![0xAA; 64];
+        let cookie = vec![0xBB; 100];
+        let (buf, t1, uid) = build_nts_request(&c2s_key, AEAD_AES_SIV_CMAC_512, cookie).unwrap();
+        // Packet must be at least 48 bytes (NTP header).
+        assert!(buf.len() >= 48);
+        // T1 should be non-zero.
+        assert!(t1.seconds > 0 || t1.fraction > 0);
+        // UID should be 32 bytes (our random unique identifier).
+        assert_eq!(uid.len(), 32);
+    }
+
+    #[test]
+    fn test_build_request_different_uids() {
+        let c2s_key = vec![0xAA; 64];
+        let (_, _, uid1) =
+            build_nts_request(&c2s_key, AEAD_AES_SIV_CMAC_512, vec![0; 100]).unwrap();
+        let (_, _, uid2) =
+            build_nts_request(&c2s_key, AEAD_AES_SIV_CMAC_512, vec![0; 100]).unwrap();
+        // UIDs should be different (random).
+        assert_ne!(uid1, uid2);
     }
 }

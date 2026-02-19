@@ -478,6 +478,25 @@ Strengthened NTS cryptography to prefer 256-bit AES and documented FIPS certific
 
 ---
 
+## Version 4.6.0 - Test Coverage & Code Quality ✅
+
+**Released**: 2026-02-18
+
+Expanded unit test coverage to previously untested modules and hardened production code.
+
+### Test Coverage
+
+- ✅ **12 unit tests for `nts.rs`**: NTS-KE address parsing, session construction, cookie management, request building
+- ✅ **10 unit tests for `client.rs`**: Builder API — defaults, poll clamping, server accumulation, DNS resolution
+- ✅ **10 unit tests for `client_common.rs`**: `short_format_to_secs` conversions, peer selection scenarios
+- ✅ **19 unit tests for `server.rs`**: Builder API — all configuration methods, socket binding, system state access
+
+### Code Quality
+
+- ✅ **`unwrap()` → `expect()` in production code**: 6 `unwrap()` calls in `client_common.rs` replaced with `expect()` documenting invariants
+
+---
+
 ## Contributing
 
 We welcome contributions! If you'd like to work on any of these roadmap items:
@@ -498,7 +517,7 @@ Have ideas for the roadmap? Open an issue with the `enhancement` label or start 
 ---
 
 **Last Updated**: 2026-02-18
-**Current Version**: 4.5.0
+**Current Version**: 4.6.0
 
 ## Version 3.2.0 Progress Summary
 

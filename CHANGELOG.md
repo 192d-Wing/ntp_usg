@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-02-18
+
+### Added
+
+#### Testing
+
+- **12 unit tests for `nts.rs`**: NTS-KE server address parsing, `NtsKeResult` field validation, `NtsSession` construction and cookie management, NTS request building with unique identifiers.
+- **10 unit tests for `client.rs`**: Builder defaults, poll interval clamping (min/max/initial), server accumulation, DNS resolution, `max_poll` flooring to `min_poll`.
+- **10 unit tests for `client_common.rs`**: `short_format_to_secs` conversions (zero, integer, fractional, mixed), peer selection with empty/no-sample/single/demobilized/multi-peer scenarios.
+- **19 unit tests for `server.rs`**: Builder defaults, all configuration methods (listen, stratum, precision, leap indicator, reference ID, root delay/dispersion, interleaved, max clients, allow/deny, rate limit, metrics), method chaining, socket binding, system state access, config handle.
+
+### Changed
+
+#### Code Quality
+
+- **Replaced 6 `unwrap()` calls with `expect()`** in `client_common.rs` production code: All `unwrap()` calls on `best_sample()` and `min_by()` now use `expect()` with invariant documentation (`"pre-filtered to have samples"`, `"candidates is non-empty"`).
+
 ## [4.5.0] - 2026-02-18
 
 ### Changed
@@ -714,6 +731,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[4.6.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.4.0...v4.5.0
 [4.4.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.2.0...v4.3.0

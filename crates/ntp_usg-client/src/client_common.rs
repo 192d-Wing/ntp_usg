@@ -544,7 +544,10 @@ pub(crate) fn select_and_build_state(
         .enumerate()
         .filter(|(_, p)| !p.demobilized && p.filter.best_sample().is_some())
         .map(|(i, p)| {
-            let best = p.filter.best_sample().unwrap();
+            let best = p
+                .filter
+                .best_sample()
+                .expect("pre-filtered to have samples");
             (
                 i,
                 PeerCandidate {
@@ -574,9 +577,12 @@ pub(crate) fn select_and_build_state(
                         .partial_cmp(&b.root_distance())
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
-                .unwrap();
+                .expect("candidates is non-empty");
             let peer = &peers[*best_idx];
-            let sample = peer.filter.best_sample().unwrap();
+            let sample = peer
+                .filter
+                .best_sample()
+                .expect("pre-filtered to have samples");
             (
                 sample.offset,
                 sample.delay,
@@ -602,9 +608,12 @@ pub(crate) fn select_and_build_state(
                             .partial_cmp(&b.root_distance())
                             .unwrap_or(std::cmp::Ordering::Equal)
                     })
-                    .unwrap();
+                    .expect("candidates is non-empty");
                 let peer = &peers[*best_idx];
-                let sample = peer.filter.best_sample().unwrap();
+                let sample = peer
+                    .filter
+                    .best_sample()
+                    .expect("pre-filtered to have samples");
                 (
                     sample.offset,
                     sample.delay,
@@ -624,7 +633,10 @@ pub(crate) fn select_and_build_state(
                 match selection::combine(&survivors) {
                     Some(est) => {
                         let sys_peer = &peers[est.system_peer_index];
-                        let sample = sys_peer.filter.best_sample().unwrap();
+                        let sample = sys_peer
+                            .filter
+                            .best_sample()
+                            .expect("system peer was pre-filtered to have samples");
                         (
                             est.offset,
                             sample.delay,
@@ -983,6 +995,113 @@ mod tests {
         let peer = PeerState::new("127.0.0.1:123".parse().unwrap(), protocol::MINPOLL);
         assert!(peer.v5_state.is_none());
     }
+
+    // ── short_format_to_secs ──────────────────────────────────────
+
+    #[test]
+    fn test_short_format_to_secs_zero() {
+        let sf = protocol::ShortFormat {
+            seconds: 0,
+            fraction: 0,
+        };
+        assert_eq!(short_format_to_secs(&sf), 0.0);
+    }
+
+    #[test]
+    fn test_short_format_to_secs_one_second() {
+        let sf = protocol::ShortFormat {
+            seconds: 1,
+            fraction: 0,
+        };
+        assert_eq!(short_format_to_secs(&sf), 1.0);
+    }
+
+    #[test]
+    fn test_short_format_to_secs_half_second() {
+        let sf = protocol::ShortFormat {
+            seconds: 0,
+            fraction: 32768,
+        };
+        assert!((short_format_to_secs(&sf) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_short_format_to_secs_mixed() {
+        let sf = protocol::ShortFormat {
+            seconds: 2,
+            fraction: 16384,
+        };
+        assert!((short_format_to_secs(&sf) - 2.25).abs() < 1e-6);
+    }
+
+    // ── select_and_build_state ─────────────────────────────────────
+
+    #[test]
+    fn test_select_and_build_state_empty_peers() {
+        let mut peers: Vec<PeerState> = vec![];
+        let result = select_and_build_state(&mut peers, 0, 0.0, None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_select_and_build_state_no_samples() {
+        let mut peers = vec![PeerState::new("127.0.0.1:123".parse().unwrap(), 4)];
+        let result = select_and_build_state(&mut peers, 0, 0.0, None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_select_and_build_state_single_peer_with_sample() {
+        let mut peers = vec![PeerState::new("127.0.0.1:123".parse().unwrap(), 4)];
+        peers[0].filter.add(0.005, 0.020);
+        peers[0].stratum = Some(protocol::Stratum(2));
+        peers[0].root_delay_secs = 0.001;
+        peers[0].root_dispersion_secs = 0.002;
+
+        let result = select_and_build_state(&mut peers, 1, 0.0, None);
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert!((r.offset - 0.005).abs() < 1e-9);
+        assert_eq!(r.state.stratum, 2);
+        assert_eq!(r.state.total_responses, 1);
+        assert_eq!(r.state.system_peer_count, 1);
+    }
+
+    #[test]
+    fn test_select_and_build_state_demobilized_peer_excluded() {
+        let mut peers = vec![PeerState::new("127.0.0.1:123".parse().unwrap(), 4)];
+        peers[0].filter.add(0.005, 0.020);
+        peers[0].stratum = Some(protocol::Stratum(2));
+        peers[0].demobilized = true;
+
+        let result = select_and_build_state(&mut peers, 1, 0.0, None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_select_and_build_state_two_peers_picks_best() {
+        let mut peers = vec![
+            PeerState::new("127.0.0.1:123".parse().unwrap(), 4),
+            PeerState::new("127.0.0.2:123".parse().unwrap(), 4),
+        ];
+        peers[0].filter.add(0.010, 0.100);
+        peers[0].stratum = Some(protocol::Stratum(2));
+        peers[0].root_delay_secs = 0.050;
+        peers[0].root_dispersion_secs = 0.010;
+
+        peers[1].filter.add(0.002, 0.020);
+        peers[1].stratum = Some(protocol::Stratum(2));
+        peers[1].root_delay_secs = 0.010;
+        peers[1].root_dispersion_secs = 0.005;
+
+        let result = select_and_build_state(&mut peers, 2, 0.0, None);
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert!((r.offset - 0.002).abs() < 1e-9);
+        assert_eq!(r.state.system_peer_count, 2);
+    }
+
+    // ── NtpSyncState ─────────────────────────────────────────────
 
     #[test]
     fn test_sync_state_default() {

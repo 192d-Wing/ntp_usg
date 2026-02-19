@@ -422,7 +422,8 @@ impl NtpServer {
 
     /// Run the server, processing incoming NTP requests indefinitely.
     ///
-    /// This future runs until an I/O error occurs on the socket.
+    /// This future runs until an I/O error occurs on the socket. Use
+    /// `tokio::select!` or a shutdown signal to stop the server gracefully.
     pub async fn run(mut self) -> io::Result<()> {
         let mut recv_buf = [0u8; 2048];
 
@@ -470,5 +471,187 @@ impl NtpServer {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_builder_defaults() {
+        let builder = NtpServer::builder();
+        assert!(!builder.enable_interleaved);
+        assert_eq!(builder.max_clients, 100_000);
+        assert!(builder.allow_list.is_none());
+        assert!(builder.deny_list.is_none());
+        assert!(builder.rate_limit.is_none());
+        assert!(builder.metrics.is_none());
+        assert_eq!(builder.system_state.stratum, protocol::Stratum::PRIMARY);
+        assert_eq!(builder.system_state.precision, -20);
+    }
+
+    #[test]
+    fn test_builder_listen() {
+        let builder = NtpServer::builder().listen("0.0.0.0:1234");
+        assert_eq!(builder.listen_addr, "0.0.0.0:1234");
+    }
+
+    #[test]
+    fn test_builder_stratum() {
+        let builder = NtpServer::builder().stratum(protocol::Stratum(2));
+        assert_eq!(builder.system_state.stratum, protocol::Stratum(2));
+    }
+
+    #[test]
+    fn test_builder_precision() {
+        let builder = NtpServer::builder().precision(-24);
+        assert_eq!(builder.system_state.precision, -24);
+    }
+
+    #[test]
+    fn test_builder_leap_indicator() {
+        let builder = NtpServer::builder().leap_indicator(protocol::LeapIndicator::AddOne);
+        assert_eq!(
+            builder.system_state.leap_indicator,
+            protocol::LeapIndicator::AddOne
+        );
+    }
+
+    #[test]
+    fn test_builder_reference_id() {
+        let ref_id = protocol::ReferenceIdentifier::PrimarySource(protocol::PrimarySource::Gps);
+        let builder = NtpServer::builder().reference_id(ref_id);
+        assert_eq!(builder.system_state.reference_id, ref_id);
+    }
+
+    #[test]
+    fn test_builder_root_delay() {
+        let delay = protocol::ShortFormat {
+            seconds: 1,
+            fraction: 500,
+        };
+        let builder = NtpServer::builder().root_delay(delay);
+        assert_eq!(builder.system_state.root_delay, delay);
+    }
+
+    #[test]
+    fn test_builder_root_dispersion() {
+        let disp = protocol::ShortFormat {
+            seconds: 0,
+            fraction: 1000,
+        };
+        let builder = NtpServer::builder().root_dispersion(disp);
+        assert_eq!(builder.system_state.root_dispersion, disp);
+    }
+
+    #[test]
+    fn test_builder_enable_interleaved() {
+        let builder = NtpServer::builder().enable_interleaved(true);
+        assert!(builder.enable_interleaved);
+    }
+
+    #[test]
+    fn test_builder_max_clients() {
+        let builder = NtpServer::builder().max_clients(500);
+        assert_eq!(builder.max_clients, 500);
+    }
+
+    #[test]
+    fn test_builder_allow() {
+        let net = IpNet::new("192.168.0.0".parse().unwrap(), 24);
+        let builder = NtpServer::builder().allow(net);
+        assert_eq!(builder.allow_list.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_builder_deny() {
+        let net = IpNet::new("10.0.0.0".parse().unwrap(), 8);
+        let builder = NtpServer::builder().deny(net);
+        assert_eq!(builder.deny_list.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_builder_rate_limit() {
+        let config = RateLimitConfig::default();
+        let builder = NtpServer::builder().rate_limit(config);
+        assert!(builder.rate_limit.is_some());
+        let rl = builder.rate_limit.unwrap();
+        assert!(rl.max_requests_per_window > 0);
+    }
+
+    #[test]
+    fn test_builder_metrics() {
+        let metrics = Arc::new(ServerMetrics::new());
+        let builder = NtpServer::builder().metrics(metrics.clone());
+        assert!(builder.metrics.is_some());
+    }
+
+    #[test]
+    fn test_builder_chaining() {
+        let builder = NtpServer::builder()
+            .listen("[::]:8123")
+            .stratum(protocol::Stratum(3))
+            .precision(-18)
+            .enable_interleaved(true)
+            .max_clients(10_000);
+
+        assert_eq!(builder.listen_addr, "[::]:8123");
+        assert_eq!(builder.system_state.stratum, protocol::Stratum(3));
+        assert_eq!(builder.system_state.precision, -18);
+        assert!(builder.enable_interleaved);
+        assert_eq!(builder.max_clients, 10_000);
+    }
+
+    #[tokio::test]
+    async fn test_builder_build_binds_socket() {
+        let server = NtpServer::builder()
+            .listen("127.0.0.1:0")
+            .build()
+            .await
+            .expect("should bind to ephemeral port");
+
+        let addr = server.local_addr().unwrap();
+        assert!(addr.port() > 0);
+        assert!(server.metrics().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_builder_build_with_metrics() {
+        let metrics = Arc::new(ServerMetrics::new());
+        let server = NtpServer::builder()
+            .listen("127.0.0.1:0")
+            .metrics(metrics.clone())
+            .build()
+            .await
+            .unwrap();
+
+        assert!(server.metrics().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_server_system_state_access() {
+        let server = NtpServer::builder()
+            .listen("127.0.0.1:0")
+            .stratum(protocol::Stratum(2))
+            .build()
+            .await
+            .unwrap();
+
+        let state = server.system_state().read().unwrap();
+        assert_eq!(state.stratum, protocol::Stratum(2));
+    }
+
+    #[tokio::test]
+    async fn test_server_config_handle() {
+        let server = NtpServer::builder()
+            .listen("127.0.0.1:0")
+            .build()
+            .await
+            .unwrap();
+
+        // config_handle should be obtainable
+        let _handle = server.config_handle();
     }
 }
