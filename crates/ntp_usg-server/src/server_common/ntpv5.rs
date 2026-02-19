@@ -10,7 +10,7 @@
 use std::io;
 use std::net::IpAddr;
 
-use log::debug;
+use tracing::debug;
 
 use ntp_proto::extension::{ExtensionField, parse_extension_fields, write_extension_fields_buf};
 use ntp_proto::ntpv5_ext::{

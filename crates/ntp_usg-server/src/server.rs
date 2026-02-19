@@ -28,10 +28,10 @@
 //! # }
 //! ```
 
-use log::debug;
 use std::io;
 use std::sync::{Arc, RwLock};
 use tokio::net::UdpSocket;
+use tracing::debug;
 
 use crate::protocol;
 use crate::server_common::{

@@ -6,7 +6,6 @@
 use super::nmea::{FixQuality, GpsFix, parse_sentence};
 use super::{RefClock, RefClockSample};
 use crate::unix_time;
-use log::{debug, warn};
 use serialport::SerialPort;
 use std::future::Future;
 use std::io::{self, BufRead, BufReader};
@@ -15,6 +14,7 @@ use std::pin::Pin;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task;
+use tracing::{debug, warn};
 
 /// GPS receiver configuration
 #[derive(Clone, Debug)]

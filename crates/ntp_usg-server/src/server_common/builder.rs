@@ -274,3 +274,115 @@ macro_rules! define_server_builder {
     };
 }
 pub(crate) use define_server_builder;
+
+#[cfg(test)]
+#[allow(unreachable_pub, dead_code)]
+mod tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+    use std::time::Duration;
+
+    // Invoke the macro with empty extras so we have a testable NtpServerBuilder.
+    define_server_builder! {
+        /// Test-only builder.
+        extra_fields {}
+        extra_defaults {}
+    }
+
+    #[test]
+    fn test_into_config_defaults() {
+        let cfg = NtpServerBuilder::new().into_config();
+        assert_eq!(cfg.max_clients, 100_000);
+        assert_eq!(cfg.listen_addr, crate::default_listen_addr(123));
+        assert!(cfg.metrics.is_none());
+        assert!(cfg.server_config.rate_limit.is_none());
+        assert!(!cfg.server_config.enable_interleaved);
+    }
+
+    #[test]
+    fn test_into_config_listen_addr() {
+        let cfg = NtpServerBuilder::new()
+            .listen("127.0.0.1:9999")
+            .into_config();
+        assert_eq!(cfg.listen_addr, "127.0.0.1:9999");
+    }
+
+    #[test]
+    fn test_into_config_stratum_precision() {
+        use crate::protocol::{PrimarySource, ReferenceIdentifier, Stratum};
+
+        let cfg = NtpServerBuilder::new()
+            .stratum(Stratum::SECONDARY_MIN)
+            .precision(-24)
+            .reference_id(ReferenceIdentifier::PrimarySource(PrimarySource::Gps))
+            .into_config();
+        assert_eq!(cfg.system_state.stratum, Stratum::SECONDARY_MIN);
+        assert_eq!(cfg.system_state.precision, -24);
+        assert_eq!(
+            cfg.system_state.reference_id,
+            ReferenceIdentifier::PrimarySource(PrimarySource::Gps)
+        );
+    }
+
+    #[test]
+    fn test_into_config_allow_deny() {
+        use crate::server_common::IpNet;
+        use std::net::IpAddr;
+
+        let cfg = NtpServerBuilder::new()
+            .allow(IpNet::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)), 8))
+            .deny(IpNet::new(IpAddr::V4(Ipv4Addr::new(192, 168, 0, 0)), 16))
+            .into_config();
+        // AccessControl was constructed — verify it exists by checking the type.
+        // The AccessControl::new() receives Some(vec![...]) for both lists.
+        let _ac = &cfg.server_config.access_control;
+    }
+
+    #[test]
+    fn test_into_config_multiple_allow_entries() {
+        use crate::server_common::IpNet;
+        use std::net::IpAddr;
+
+        let cfg = NtpServerBuilder::new()
+            .allow(IpNet::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)), 8))
+            .allow(IpNet::new(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 0)), 12))
+            .allow(IpNet::new(IpAddr::V4(Ipv4Addr::new(192, 168, 0, 0)), 16))
+            .into_config();
+        let _ac = &cfg.server_config.access_control;
+    }
+
+    #[test]
+    fn test_into_config_rate_limit() {
+        use crate::server_common::RateLimitConfig;
+
+        let rl = RateLimitConfig {
+            max_requests_per_window: 10,
+            window_duration: Duration::from_secs(60),
+            min_interval: Duration::from_secs(2),
+        };
+        let cfg = NtpServerBuilder::new().rate_limit(rl).into_config();
+        let rl_cfg = cfg.server_config.rate_limit.unwrap();
+        assert_eq!(rl_cfg.max_requests_per_window, 10);
+        assert_eq!(rl_cfg.window_duration, Duration::from_secs(60));
+        assert_eq!(rl_cfg.min_interval, Duration::from_secs(2));
+    }
+
+    #[test]
+    fn test_into_config_interleaved_max_clients() {
+        let cfg = NtpServerBuilder::new()
+            .enable_interleaved(true)
+            .max_clients(500)
+            .into_config();
+        assert!(cfg.server_config.enable_interleaved);
+        assert_eq!(cfg.max_clients, 500);
+    }
+
+    #[test]
+    fn test_into_config_metrics() {
+        let metrics = Arc::new(ServerMetrics::default());
+        let cfg = NtpServerBuilder::new()
+            .metrics(metrics.clone())
+            .into_config();
+        assert!(cfg.metrics.is_some());
+    }
+}

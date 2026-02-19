@@ -8,7 +8,6 @@
 
 use super::{RefClock, RefClockSample};
 use crate::unix_time;
-use log::debug;
 use std::fs::File;
 use std::future::Future;
 use std::io;
@@ -17,6 +16,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::time::Duration;
 use tokio::task;
+use tracing::debug;
 
 // Linux PPS API constants (from <linux/pps.h>)
 const PPS_GETCAP: u64 = 0x800470a3;

@@ -36,10 +36,10 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use log::debug;
 use rustls::pki_types::ServerName;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio_rustls::TlsConnector;
+use tracing::debug;
 
 pub use crate::nts_common::NtsKeResult;
 use crate::nts_common::*;

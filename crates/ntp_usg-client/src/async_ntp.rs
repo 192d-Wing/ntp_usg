@@ -22,11 +22,11 @@
 //! # }
 //! ```
 
-use log::debug;
 use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::{ToSocketAddrs, UdpSocket};
+use tracing::debug;
 
 use crate::NtpResult;
 use crate::request::{bind_addr_for, build_request_packet, validate_response};

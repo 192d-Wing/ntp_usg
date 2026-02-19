@@ -525,6 +525,28 @@ Eliminated ~1,300 lines of duplication across 4 pairs of nearly-identical tokio 
 
 ---
 
+## Version 4.8.0 - Testing, Audit & Tracing ✅
+
+**Released**: 2026-02-18
+
+Increased test coverage for v4.7.0's shared modules, documented remaining tokio/smol duplication, and migrated from `log` to `tracing` for structured observability.
+
+### Test Coverage
+
+- ✅ **20 new unit tests** for shared modules: server builder `into_config()` (8), client builder `into_config()` (7), `NtsKeServerConfig::from_pem()` (5)
+
+### Documentation
+
+- ✅ **Duplication audit** (`docs/DUPLICATION_AUDIT.md`): Remaining ~570 lines of tokio/smol duplication catalogued with similarity percentages and maintenance guidelines
+
+### Observability
+
+- ✅ **`log` → `tracing` migration**: All 20 source files in client and server crates. Backward compatible via `tracing`'s `log` feature — existing `env_logger` users see identical output
+- ✅ **Structured fields**: 15 high-value log sites converted from positional format args to named tracing fields (peer metrics, NTS-KE negotiation, server request handling)
+- ✅ **`handle_request()` span**: Debug span with client IP on the server request processing pipeline
+
+---
+
 ## Contributing
 
 We welcome contributions! If you'd like to work on any of these roadmap items:
@@ -545,7 +567,7 @@ Have ideas for the roadmap? Open an issue with the `enhancement` label or start 
 ---
 
 **Last Updated**: 2026-02-18
-**Current Version**: 4.7.0
+**Current Version**: 4.8.0
 
 ## Version 3.2.0 Progress Summary
 

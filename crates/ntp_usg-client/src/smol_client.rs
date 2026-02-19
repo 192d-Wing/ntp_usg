@@ -36,12 +36,12 @@
 //! # }
 //! ```
 
-use log::{debug, warn};
 use smol::net::UdpSocket;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
+use tracing::{debug, warn};
 
 pub use crate::client_common::NtpSyncState;
 use crate::client_common::{PeerState, PollResult, check_kod, select_and_build_state};
@@ -197,6 +197,7 @@ impl NtpClient {
 
     /// Run the continuous poll loop. This future runs indefinitely.
     pub async fn run(mut self) {
+        debug!("NTP client starting with {} peers", self.peers.len());
         let mut next_poll: Vec<std::time::Instant> = self
             .peers
             .iter()
@@ -263,9 +264,9 @@ impl NtpClient {
             }
 
             debug!(
-                "polling peer {} (poll interval: {}s)",
-                self.peers[idx].addr,
-                1u64 << self.peers[idx].poll_exponent
+                peer = %self.peers[idx].addr,
+                poll_interval_s = 1u64 << self.peers[idx].poll_exponent,
+                "polling peer"
             );
 
             let result = Self::poll_peer(&mut self.peers[idx], &self.socket_opts).await;
@@ -310,25 +311,25 @@ impl NtpClient {
                     }
 
                     debug!(
-                        "peer {}: offset={:.6}s delay={:.6}s interleaved={}",
-                        self.peers[idx].addr, sample.offset, sample.delay, interleaved
+                        peer = %self.peers[idx].addr,
+                        offset = sample.offset,
+                        delay = sample.delay,
+                        interleaved,
+                        "peer sample received"
                     );
                 }
                 Ok(PollResult::RateKissCode) => {
                     self.peers[idx].reach_success();
                     self.peers[idx].decrease_poll(self.min_poll);
-                    warn!(
-                        "peer {} sent RATE, reducing poll interval",
-                        self.peers[idx].addr
-                    );
+                    warn!(peer = %self.peers[idx].addr, "peer sent RATE, reducing poll interval");
                 }
                 Ok(PollResult::DenyKissCode) => {
                     self.peers[idx].demobilized = true;
-                    warn!("peer {} sent DENY/RSTR, demobilizing", self.peers[idx].addr);
+                    warn!(peer = %self.peers[idx].addr, "peer sent DENY/RSTR, demobilizing");
                 }
                 Err(e) => {
                     self.peers[idx].reach_failure();
-                    debug!("peer {} poll failed: {}", self.peers[idx].addr, e);
+                    debug!(peer = %self.peers[idx].addr, error = %e, "peer poll failed");
                 }
             }
 

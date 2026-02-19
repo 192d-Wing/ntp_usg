@@ -32,10 +32,10 @@
 use std::io;
 use std::sync::{Arc, RwLock};
 
-use log::debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
+use tracing::debug;
 
 use crate::nts_common::*;
 pub use crate::nts_ke_server_common::NtsKeServerConfig;
@@ -77,7 +77,7 @@ impl NtsKeServer {
 
         loop {
             let (tcp_stream, peer_addr) = listener.accept().await?;
-            debug!("NTS-KE connection from {}", peer_addr);
+            debug!(peer = %peer_addr, "NTS-KE connection accepted");
 
             let acceptor = self.tls_acceptor.clone();
             let key_store = self.key_store.clone();
@@ -97,7 +97,7 @@ impl NtsKeServer {
                         )
                         .await
                         {
-                            debug!("NTS-KE error from {}: {}", peer_addr, e);
+                            debug!(peer = %peer_addr, error = %e, "NTS-KE connection error");
                         }
                     }
                     Err(e) => {

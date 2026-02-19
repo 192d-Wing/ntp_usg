@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.8.0] - 2026-02-18
+
+### Added
+
+#### Testing
+
+- **8 unit tests for server builder `into_config()`**: Defaults, listen addr, stratum/precision, allow/deny, multiple allow entries, rate limit, interleaved/max_clients, metrics.
+- **7 unit tests for client builder `into_config()`**: Defaults, servers, poll clamping, initial poll defaults/clamping, multiple servers.
+- **5 unit tests for `NtsKeServerConfig::from_pem()`**: Valid PEM parsing, garbage cert (yields empty chain), invalid key, empty cert (yields empty chain), config field access.
+
+#### Documentation
+
+- **`docs/DUPLICATION_AUDIT.md`**: Documents remaining ~570 lines of tokio/smol duplication with similarity percentages, the 4 categories of runtime-specific differences, rationale for not extracting further, and maintenance guidelines.
+
+### Changed
+
+#### Observability
+
+- **Replaced `log` with `tracing`** across all 20 source files in client and server crates. The `tracing` crate's `log` feature auto-emits `log` records when no tracing subscriber is installed, so existing `env_logger` users see identical output. When a tracing subscriber is installed, get spans and structured fields.
+- **Structured tracing fields** on 15 high-value log sites: peer polling (`peer`, `poll_interval_s`), sample results (`offset`, `delay`, `interleaved`), NTS-KE negotiation (`protocol`, `aead_algorithm`, `cookie_len`), server request handling (`client`, `error`), and NTS-KE connection events (`peer`, `error`).
+- **`handle_request()` span**: Added `tracing::debug_span!("handle_request", client = %src_ip)` to the server request processing pipeline.
+- **`ntp_usg-proto`** unchanged — retains optional `log` dependency with zero call sites.
+
 ## [4.7.0] - 2026-02-18
 
 ### Changed

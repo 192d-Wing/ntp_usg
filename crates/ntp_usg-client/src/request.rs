@@ -5,7 +5,7 @@
 //! `request()` API.  The async modules (`async_ntp`, `smol_ntp`) and continuous
 //! clients reuse the packet-building and validation helpers defined here.
 
-use log::debug;
+use tracing::debug;
 
 use crate::protocol::{self, ConstPackedSizeBytes, ReadBytes, WriteBytes};
 use crate::unix_time;

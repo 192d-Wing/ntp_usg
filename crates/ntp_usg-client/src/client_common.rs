@@ -9,10 +9,10 @@
 //! RFC 5905 Section 11.2 selection/clustering/combining pipeline, and
 //! the `NtpSyncState` published to consumers.
 
-use log::debug;
 use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
+use tracing::debug;
 
 use crate::filter::{ClockSample, SampleFilter};
 use crate::request::compute_offset_delay;
@@ -875,6 +875,7 @@ macro_rules! define_client_builder {
 pub(crate) use define_client_builder;
 
 #[cfg(test)]
+#[allow(unreachable_pub, dead_code)]
 mod tests {
     use super::*;
 
@@ -1310,5 +1311,86 @@ mod tests {
         assert_eq!(state.system_peer_count, 0);
         assert_eq!(state.frequency, 0.0);
         assert!(state.discipline_state.is_none());
+    }
+
+    // ── Builder into_config() ───────────────────────────────────
+
+    // Invoke the macro with empty extras for standalone testing.
+    // The macro generates `pub` items which trigger unreachable_pub inside tests.
+    define_client_builder! {
+        /// Test-only builder.
+        extra_fields {}
+        extra_defaults {}
+    }
+
+    #[test]
+    fn test_client_into_config_defaults() {
+        let cfg = NtpClientBuilder::new().into_config();
+        assert!(cfg.servers.is_empty());
+        assert_eq!(cfg.min_poll, protocol::MINPOLL);
+        assert_eq!(cfg.max_poll, protocol::MAXPOLL);
+        assert_eq!(cfg.initial_poll, protocol::MINPOLL);
+        assert!(!cfg.enable_discipline);
+        assert!(!cfg.enable_ntpv5);
+    }
+
+    #[test]
+    fn test_client_into_config_servers() {
+        let cfg = NtpClientBuilder::new()
+            .server("time.nist.gov")
+            .into_config();
+        assert_eq!(cfg.servers, vec!["time.nist.gov"]);
+    }
+
+    #[test]
+    fn test_client_into_config_poll_clamping() {
+        // max_poll < min_poll should be floored to min_poll.
+        let cfg = NtpClientBuilder::new()
+            .min_poll(8)
+            .max_poll(6)
+            .into_config();
+        assert_eq!(cfg.min_poll, 8);
+        assert_eq!(cfg.max_poll, 8);
+    }
+
+    #[test]
+    fn test_client_into_config_initial_defaults_to_min() {
+        let cfg = NtpClientBuilder::new()
+            .min_poll(6)
+            .max_poll(10)
+            .into_config();
+        assert_eq!(cfg.initial_poll, 6);
+    }
+
+    #[test]
+    fn test_client_into_config_initial_clamped_high() {
+        let cfg = NtpClientBuilder::new()
+            .min_poll(6)
+            .max_poll(10)
+            .initial_poll(15)
+            .into_config();
+        assert_eq!(cfg.initial_poll, 10);
+    }
+
+    #[test]
+    fn test_client_into_config_initial_clamped_low() {
+        let cfg = NtpClientBuilder::new()
+            .min_poll(6)
+            .max_poll(10)
+            .initial_poll(3)
+            .into_config();
+        assert_eq!(cfg.initial_poll, 6);
+    }
+
+    #[test]
+    fn test_client_into_config_multiple_servers() {
+        let cfg = NtpClientBuilder::new()
+            .server("time.nist.gov")
+            .server("time.cloudflare.com")
+            .server("time.google.com")
+            .into_config();
+        assert_eq!(cfg.servers.len(), 3);
+        assert_eq!(cfg.servers[0], "time.nist.gov");
+        assert_eq!(cfg.servers[2], "time.google.com");
     }
 }

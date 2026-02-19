@@ -12,6 +12,10 @@ All large-module decompositions identified below have been completed. This docum
 | `smol_client.rs` | ~953 | Consider shared trait/macro with `client.rs` to reduce duplication | **Done** — ~840 lines deduplicated into `client_common.rs` |
 | `lib.rs` (client) | ~897 | Move networking functions to `request.rs` or `sntp_core.rs` | **Done** — extracted to `request.rs` |
 
+## Tokio/Smol Duplication
+
+v4.7.0 extracted ~1,300 lines of high-value shared logic into `_common` modules and macros. The remaining ~570 lines of thin async I/O glue (timeouts, state publication, task spawning, timers) are documented in [DUPLICATION_AUDIT.md](DUPLICATION_AUDIT.md).
+
 ## Guidelines
 
 - **Preserve public API**: All splits should be internal reorganization with re-exports from the original module path.

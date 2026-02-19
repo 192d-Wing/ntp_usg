@@ -25,9 +25,9 @@
 //! # }
 //! ```
 
-use log::debug;
 use std::io;
 use std::sync::{Arc, RwLock};
+use tracing::debug;
 
 use crate::server_common::{
     ClientTable, ConfigHandle, HandleResult, ServerMetrics, ServerSystemState, handle_request,

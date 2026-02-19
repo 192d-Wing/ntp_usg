@@ -1,7 +1,7 @@
 use std::net::IpAddr;
 use std::time::Instant;
 
-use log::debug;
+use tracing::debug;
 
 use crate::protocol::{self, ConstPackedSizeBytes};
 use crate::unix_time;
@@ -45,6 +45,7 @@ pub fn handle_request(
     enable_interleaved: bool,
     metrics: Option<&ServerMetrics>,
 ) -> HandleResult {
+    let _span = tracing::debug_span!("handle_request", client = %src_ip).entered();
     if let Some(m) = metrics {
         m.inc_requests_received();
     }
@@ -73,7 +74,7 @@ pub fn handle_request(
     let request = match validate_client_request(recv_buf, recv_len) {
         Ok(req) => req,
         Err(e) => {
-            debug!("dropping invalid request from {}: {}", src_ip, e);
+            debug!(client = %src_ip, error = %e, "dropping invalid request");
             if let Some(m) = metrics {
                 m.inc_requests_dropped();
             }
@@ -167,7 +168,7 @@ pub fn handle_request(
     let buf = match serialize_response_with_t3(&response) {
         Ok(buf) => buf,
         Err(e) => {
-            debug!("failed to serialize response for {}: {}", src_ip, e);
+            debug!(client = %src_ip, error = %e, "failed to serialize response");
             if let Some(m) = metrics {
                 m.inc_requests_dropped();
             }

@@ -10,9 +10,9 @@
 use std::io;
 use std::sync::{Arc, RwLock};
 
-use log::debug;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls_pki_types::pem::PemObject;
+use tracing::debug;
 
 use crate::default_listen_addr;
 use crate::nts_common::*;
@@ -209,4 +209,66 @@ pub(crate) fn process_nts_ke_records(
     );
 
     Ok(resp)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Generate a self-signed PEM cert + key pair for testing.
+    fn generate_test_pem() -> (Vec<u8>, Vec<u8>) {
+        let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+        let cert_pem = cert.cert.pem().into_bytes();
+        let key_pem = cert.key_pair.serialize_pem().into_bytes();
+        (cert_pem, key_pem)
+    }
+
+    #[test]
+    fn test_from_pem_valid() {
+        let (cert_pem, key_pem) = generate_test_pem();
+        let config = NtsKeServerConfig::from_pem(&cert_pem, &key_pem).unwrap();
+        assert!(!config.cert_chain.is_empty());
+        assert!(config.ntp_server.is_none());
+        assert!(config.ntp_port.is_none());
+        assert_eq!(config.cookie_count, 8);
+        assert_eq!(config.listen_addr, default_listen_addr(4460));
+    }
+
+    #[test]
+    fn test_from_pem_garbage_cert_yields_empty_chain() {
+        // PEM iter skips non-PEM content, producing an empty cert chain.
+        let (_, key_pem) = generate_test_pem();
+        let config = NtsKeServerConfig::from_pem(b"not-a-cert", &key_pem).unwrap();
+        assert!(config.cert_chain.is_empty());
+    }
+
+    #[test]
+    fn test_from_pem_invalid_key() {
+        let (cert_pem, _) = generate_test_pem();
+        let result = NtsKeServerConfig::from_pem(&cert_pem, b"not-a-key");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_pem_empty_cert_yields_empty_chain() {
+        // Empty input yields an empty cert chain (no PEM blocks found).
+        let (_, key_pem) = generate_test_pem();
+        let config = NtsKeServerConfig::from_pem(b"", &key_pem).unwrap();
+        assert!(config.cert_chain.is_empty());
+    }
+
+    #[test]
+    fn test_config_fields() {
+        let (cert_pem, key_pem) = generate_test_pem();
+        let mut config = NtsKeServerConfig::from_pem(&cert_pem, &key_pem).unwrap();
+        config.ntp_server = Some("ntp.example.com".to_string());
+        config.ntp_port = Some(1234);
+        config.cookie_count = 4;
+        config.listen_addr = "127.0.0.1:4460".to_string();
+
+        assert_eq!(config.ntp_server.as_deref(), Some("ntp.example.com"));
+        assert_eq!(config.ntp_port, Some(1234));
+        assert_eq!(config.cookie_count, 4);
+        assert_eq!(config.listen_addr, "127.0.0.1:4460");
+    }
 }

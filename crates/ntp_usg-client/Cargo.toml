@@ -52,7 +52,7 @@ nts-smol = [
 
 [dependencies]
 ntp_usg-proto = { workspace = true }
-log = { workspace = true }
+tracing = { workspace = true }
 tokio = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 tokio-rustls = { workspace = true, optional = true }

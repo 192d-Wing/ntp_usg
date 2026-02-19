@@ -9,7 +9,7 @@
 
 use std::io;
 
-use log::debug;
+use tracing::debug;
 
 use crate::nts_common::*;
 
@@ -101,7 +101,10 @@ pub(crate) fn process_nts_ke_records(
                     ));
                 }
                 next_protocol = Some(proto);
-                debug!("NTS-KE: next protocol = 0x{:04X}", proto);
+                debug!(
+                    protocol = format_args!("0x{:04X}", proto),
+                    "NTS-KE: next protocol negotiated"
+                );
             }
             NTS_KE_AEAD_ALGORITHM => {
                 if record.body.len() < 2 {
@@ -111,7 +114,7 @@ pub(crate) fn process_nts_ke_records(
                     ));
                 }
                 aead_algorithm = read_be_u16(&record.body[..2]);
-                debug!("NTS-KE: AEAD algorithm = {}", aead_algorithm);
+                debug!(aead_algorithm, "NTS-KE: AEAD algorithm negotiated");
             }
             NTS_KE_ERROR => {
                 let code = if record.body.len() >= 2 {
@@ -133,7 +136,7 @@ pub(crate) fn process_nts_ke_records(
                 debug!("NTS-KE warning: code {}", code);
             }
             NTS_KE_NEW_COOKIE => {
-                debug!("NTS-KE: received cookie ({} bytes)", record.body.len());
+                debug!(cookie_len = record.body.len(), "NTS-KE: received cookie");
                 cookies.push(record.body.clone());
             }
             NTS_KE_SERVER => {

@@ -41,9 +41,9 @@ use std::time::Duration;
 
 use futures_lite::io::{AsyncReadExt, AsyncWriteExt};
 use futures_rustls::TlsConnector;
-use log::debug;
 use rustls::pki_types::ServerName;
 use smol::net::{TcpStream, UdpSocket};
+use tracing::debug;
 
 pub use crate::nts_common::NtsKeResult;
 use crate::nts_common::*;

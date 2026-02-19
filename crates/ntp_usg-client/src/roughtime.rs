@@ -30,10 +30,10 @@
 //! # }
 //! ```
 
-use log::debug;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::time::Duration;
+use tracing::debug;
 
 pub use ntp_proto::roughtime::{
     RoughtimeResult, build_chained_request, build_request, build_request_with_nonce,
