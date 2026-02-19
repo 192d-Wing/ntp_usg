@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.10.0] - 2026-02-19
+
+### Added
+
+#### Performance
+
+- **Pre-allocated loop buffer in `cluster_survivors()`**: Eliminated per-iteration `Vec` allocation by pre-allocating `sel_jitters` outside the loop and reusing with `clear()` + `extend()` each iteration.
+- **Cached `root_distance()` in `combine()`**: Root distances are now computed once and reused for both weight calculation and system peer selection, eliminating redundant recomputation.
+- **Eliminated double-clone in selection pipeline**: `peer_candidates` is now consumed with `into_iter()` after truechimer selection instead of being cloned twice.
+- **NTS AEAD benchmarks**: Added `bench_nts_aead_encrypt_256`, `bench_nts_aead_encrypt_512`, `bench_nts_aead_decrypt_256`, and `bench_nts_aead_decrypt_512` benchmarks to `ntp_usg-proto`.
+- **Server ACL/rate-limit benchmarks**: Added `bench_access_control_large_acl` (1000 /24 subnets) and `bench_rate_limit_full_table` (pre-filled ClientTable) to server throughput benchmarks.
+
+#### Error Handling
+
+- **NTS protocol errors (`NtsProtoError`)**: New typed error enum in `ntp_usg-proto` with variants `UnsupportedAeadAlgorithm`, `AeadKeyInit`, `AeadEncryptFailed`, `AeadDecryptFailed`, `MissingField`, and `ValidationFailed`. Migrated 15 `io::Error::new()` call sites in `nts_common.rs`.
+- **Protocol parse errors**: Migrated 3 `io::Error::new()` call sites in `protocol/io.rs` to use `ParseError::InvalidField` for leap indicator, mode, and timescale parsing.
+- **Reference clock errors (`NmeaError`, `PpsError`)**: New typed error enums in `ntp_usg-client` refclock module. Migrated 13 NMEA parser and 1 PPS `io::Error::new()` call sites.
+
+#### Testing
+
+- **NTPv5 integration tests**: V5 request/response roundtrip, V4 backward compatibility, and response length matching tests (`ntpv5_integration.rs`).
+- **Broadcast integration tests**: Parse valid mode-5 packet, reject non-broadcast mode, reject zero transmit, reject short buffer (`broadcast_integration.rs`).
+- **Symmetric integration tests**: Symmetric active mode construction and field verification (`symmetric_integration.rs`).
+- **Error downcast tests**: Roundtrip all `NtpError` variants through `io::Error` boundary with downcast verification (`error_downcast.rs`).
+- **Clock discipline integration tests**: Nset→Fset→Sync state transitions, spike detection and recovery, frequency correction direction (`discipline_integration.rs`).
+
+#### Cryptography
+
+- **`NtsAead` trait**: Abstraction layer for NTS AEAD operations in `ntp_usg-proto`, enabling future FIPS 140-3 backend swap without changing callers. Default implementation (`AesSivCmacAead`) delegates to existing `aes-siv` RustCrypto crate.
+- **`fips-aead` feature flag**: Placeholder feature in `ntp_usg-proto` for future FIPS-certified AES-SIV-CMAC backend. Currently a no-op — activates when a certified implementation becomes available.
+- **Updated `docs/CRYPTO.md`**: Added FIPS Migration Path section documenting the `NtsAead` trait, `AesSivCmacAead` default, and 4-step migration plan.
+
+### Fixed
+
+- **Doc warnings**: Fixed 3 broken intra-doc links for feature-gated modules (`crate::nts`, `client_common::NtpSyncState`, `server_common::validation`) that caused `RUSTDOCFLAGS="-D warnings"` failures when building without `--all-features`.
+
 ## [4.9.0] - 2026-02-19
 
 ### Added
@@ -787,6 +823,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[4.10.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.9.0...v4.10.0
 [4.9.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.8.0...v4.9.0
 [4.8.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.7.0...v4.8.0
 [4.7.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.6.0...v4.7.0

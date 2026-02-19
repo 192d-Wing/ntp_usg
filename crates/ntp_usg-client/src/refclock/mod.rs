@@ -16,6 +16,9 @@ use std::future::Future;
 #[cfg(feature = "tokio")]
 use std::pin::Pin;
 
+/// Error types for reference clock subsystems (NMEA, PPS).
+pub mod error;
+
 /// NMEA 0183 sentence parser for GPS receivers
 pub mod nmea;
 

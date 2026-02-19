@@ -53,7 +53,7 @@ pub enum NtpServerError {
 /// NTP protocol validation errors for incoming client requests.
 ///
 /// These correspond to the checks performed in
-/// [`server_common::validation`](crate::server_common) per RFC 5905 Section 8.
+/// `server_common::validation` per RFC 5905 Section 8.
 #[derive(Clone, Debug)]
 pub enum ProtocolError {
     /// Request packet too short (< 48 bytes).

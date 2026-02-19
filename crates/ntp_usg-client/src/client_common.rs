@@ -626,9 +626,14 @@ pub(crate) fn select_and_build_state(
                     peer.root_dispersion_secs,
                 )
             } else {
-                let mut survivors: Vec<PeerCandidate> = tc_indices
-                    .iter()
-                    .map(|&i| peer_candidates[i].clone())
+                // Filter peer_candidates to truechimers, consuming the Vec to
+                // avoid a second clone.
+                let tc_set: std::collections::HashSet<usize> = tc_indices.into_iter().collect();
+                let mut survivors: Vec<PeerCandidate> = peer_candidates
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(i, _)| tc_set.contains(i))
+                    .map(|(_, c)| c)
                     .collect();
                 selection::cluster_survivors(&mut survivors);
 

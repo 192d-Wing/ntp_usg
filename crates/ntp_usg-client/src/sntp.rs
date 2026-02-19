@@ -111,7 +111,7 @@
 //! - Use multiple servers for redundancy (call this API multiple times)
 //!
 //! For authenticated time synchronization, use NTS (Network Time Security)
-//! instead via the `nts` feature flag and [`crate::nts`] module.
+//! instead via the `nts` feature flag and `crate::nts` module.
 
 use std::io;
 use std::net::ToSocketAddrs;

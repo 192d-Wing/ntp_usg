@@ -147,15 +147,17 @@ pub fn select_truechimers(candidates: &[PeerCandidate]) -> Vec<usize> {
 ///
 /// Modifies `candidates` in place by removing outliers from the end.
 pub fn cluster_survivors(candidates: &mut Vec<PeerCandidate>) {
+    // Pre-allocate outside the loop to avoid repeated heap allocation.
+    let mut sel_jitters: Vec<f64> = Vec::with_capacity(candidates.len());
+
     loop {
         if candidates.len() <= NMIN {
             break;
         }
 
         // Compute selection jitter for each candidate.
-        let sel_jitters: Vec<f64> = (0..candidates.len())
-            .map(|i| selection_jitter(candidates, i))
-            .collect();
+        sel_jitters.clear();
+        sel_jitters.extend((0..candidates.len()).map(|i| selection_jitter(candidates, i)));
 
         // Find the candidate with maximum selection jitter.
         let (max_idx, &max_sel_jitter) = sel_jitters
@@ -222,31 +224,30 @@ pub fn combine(survivors: &[PeerCandidate]) -> Option<CombinedEstimate> {
         });
     }
 
+    // Cache root distances to avoid redundant computation.
+    let distances: Vec<f64> = survivors.iter().map(|c| c.root_distance()).collect();
+
     // Compute weights (inverse root distance).
-    let weights: Vec<f64> = survivors
+    let weights: Vec<f64> = distances
         .iter()
-        .map(|c| {
-            let rd = c.root_distance();
-            if rd > 0.0 { 1.0 / rd } else { 1.0 }
-        })
+        .map(|&rd| if rd > 0.0 { 1.0 / rd } else { 1.0 })
         .collect();
     let total_weight: f64 = weights.iter().sum();
+
+    // System peer: minimum root distance (computed once, reused below).
+    let (sys_idx, _) = distances
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .unwrap();
 
     if total_weight <= 0.0 {
         // Degenerate case: all root distances are zero or negative. Use simple average.
         let avg_offset = survivors.iter().map(|c| c.offset).sum::<f64>() / survivors.len() as f64;
-        let system_peer = survivors
-            .iter()
-            .min_by(|a, b| {
-                a.root_distance()
-                    .partial_cmp(&b.root_distance())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .unwrap();
         return Some(CombinedEstimate {
             offset: avg_offset,
-            jitter: system_peer.jitter,
-            system_peer_index: system_peer.peer_index,
+            jitter: survivors[sys_idx].jitter,
+            system_peer_index: survivors[sys_idx].peer_index,
         });
     }
 
@@ -270,20 +271,10 @@ pub fn combine(survivors: &[PeerCandidate]) -> Option<CombinedEstimate> {
         / total_weight;
     let jitter = jitter_sq.sqrt();
 
-    // System peer: minimum root distance.
-    let system_peer = survivors
-        .iter()
-        .min_by(|a, b| {
-            a.root_distance()
-                .partial_cmp(&b.root_distance())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .unwrap();
-
     Some(CombinedEstimate {
         offset,
         jitter,
-        system_peer_index: system_peer.peer_index,
+        system_peer_index: survivors[sys_idx].peer_index,
     })
 }
 

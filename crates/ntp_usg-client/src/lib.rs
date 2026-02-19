@@ -193,7 +193,7 @@ pub use request::{KissOfDeathError, NtpResult, request, request_with_timeout};
 /// Clock discipline states per RFC 5905 Figure 24.
 ///
 /// Represents the state machine of the PLL/FLL clock discipline algorithm.
-/// Defined unconditionally so that [`client_common::NtpSyncState`] can always
+/// Defined unconditionally so that `client_common::NtpSyncState` can always
 /// reference it regardless of which feature flags are enabled.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DisciplineState {

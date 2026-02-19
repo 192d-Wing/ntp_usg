@@ -9,8 +9,8 @@ use ntp_proto::protocol::{
     ShortFormat, Stratum, TimestampFormat, ToBytes, Version,
 };
 use ntp_server::server_common::{
-    AccessControl, ClientTable, RateLimitConfig, ServerMetrics, ServerSystemState, handle_request,
-    serialize_response_with_t3,
+    AccessControl, ClientTable, IpNet, RateLimitConfig, ServerMetrics, ServerSystemState,
+    handle_request, serialize_response_with_t3,
 };
 
 fn make_client_request_buf() -> [u8; Packet::PACKED_SIZE_BYTES] {
@@ -119,10 +119,92 @@ fn bench_response_serialization(c: &mut Criterion) {
     });
 }
 
+fn bench_access_control_large_acl(c: &mut Criterion) {
+    let buf = make_client_request_buf();
+    let state = ServerSystemState::default();
+    let metrics = ServerMetrics::default();
+    let src_ip: IpAddr = "172.16.50.1".parse().unwrap();
+
+    // Build an allow list with 1000 /24 subnets.
+    let allow_list: Vec<_> = (0..4u8)
+        .flat_map(|b| (0..=255u8).map(move |c| IpNet::new(IpAddr::from([10, b, c, 0]), 24)))
+        .take(1000)
+        .collect();
+    let ac = AccessControl::new(Some(allow_list), None);
+
+    c.bench_function("handle_request_large_acl_1000", |b| {
+        b.iter(|| {
+            let mut table = ClientTable::new(1024);
+            handle_request(
+                black_box(&buf),
+                buf.len(),
+                black_box(src_ip),
+                &state,
+                &ac,
+                None,
+                &mut table,
+                false,
+                Some(&metrics),
+            )
+        })
+    });
+}
+
+fn bench_rate_limit_full_table(c: &mut Criterion) {
+    let buf = make_client_request_buf();
+    let state = ServerSystemState::default();
+    let ac = AccessControl::default();
+    let metrics = ServerMetrics::default();
+    let rate_config = RateLimitConfig::default();
+
+    // Pre-fill the client table to capacity with unique IPs.
+    let max_clients = 1024;
+    let mut table = ClientTable::new(max_clients);
+    for i in 0..max_clients as u32 {
+        let ip: IpAddr = IpAddr::from([
+            (i >> 24) as u8 | 10,
+            (i >> 16) as u8,
+            (i >> 8) as u8,
+            i as u8,
+        ]);
+        handle_request(
+            &buf,
+            buf.len(),
+            ip,
+            &state,
+            &ac,
+            Some(&rate_config),
+            &mut table,
+            false,
+            None,
+        );
+    }
+
+    // Benchmark a new client hitting the full table.
+    let new_ip: IpAddr = "192.168.1.1".parse().unwrap();
+    c.bench_function("handle_request_full_table_1024", |b| {
+        b.iter(|| {
+            handle_request(
+                black_box(&buf),
+                buf.len(),
+                black_box(new_ip),
+                &state,
+                &ac,
+                Some(&rate_config),
+                &mut table,
+                false,
+                Some(&metrics),
+            )
+        })
+    });
+}
+
 criterion_group!(
     benches,
     bench_handle_request_basic,
     bench_handle_request_with_rate_limit,
     bench_response_serialization,
+    bench_access_control_large_acl,
+    bench_rate_limit_full_table,
 );
 criterion_main!(benches);

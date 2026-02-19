@@ -8,6 +8,7 @@ use super::{
     ReferenceIdentifier, ShortFormat, Stratum, TimestampFormat, Version, WriteBytes, WriteToBytes,
     be_u32_to_bytes,
 };
+use crate::error::ParseError;
 
 // Writer implementations.
 
@@ -167,21 +168,15 @@ impl ReadFromBytes for (LeapIndicator, Version, Mode) {
         let li_u8 = li_vn_mode >> 6;
         let vn_u8 = (li_vn_mode >> 3) & 0b111;
         let mode_u8 = li_vn_mode & 0b111;
-        let li = match LeapIndicator::try_from(li_u8).ok() {
-            Some(li) => li,
-            None => {
-                let err_msg = "unknown leap indicator";
-                return Err(io::Error::new(io::ErrorKind::InvalidData, err_msg));
-            }
-        };
+        let li = LeapIndicator::try_from(li_u8).map_err(|_| ParseError::InvalidField {
+            field: "leap indicator",
+            value: li_u8 as u32,
+        })?;
         let vn = Version(vn_u8);
-        let mode = match Mode::try_from(mode_u8).ok() {
-            Some(mode) => mode,
-            None => {
-                let err_msg = "unknown association mode";
-                return Err(io::Error::new(io::ErrorKind::InvalidData, err_msg));
-            }
-        };
+        let mode = Mode::try_from(mode_u8).map_err(|_| ParseError::InvalidField {
+            field: "mode",
+            value: mode_u8 as u32,
+        })?;
         Ok((li, vn, mode))
     }
 }
@@ -271,8 +266,13 @@ impl WriteToBytes for Timescale {
 impl ReadFromBytes for Timescale {
     fn read_from_bytes<R: ReadBytesExt>(mut reader: R) -> io::Result<Self> {
         let raw = reader.read_u8()?;
-        Timescale::try_from(raw)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "unknown timescale value"))
+        Timescale::try_from(raw).map_err(|_| {
+            ParseError::InvalidField {
+                field: "timescale",
+                value: raw as u32,
+            }
+            .into()
+        })
     }
 }
 

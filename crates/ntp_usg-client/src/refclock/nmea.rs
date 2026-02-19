@@ -7,6 +7,8 @@
 
 use std::io;
 
+use super::error::NmeaError;
+
 /// GPS fix quality
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FixQuality {
@@ -120,17 +122,15 @@ pub fn parse_sentence(sentence: &str) -> io::Result<Option<GpsFix>> {
         let expected_checksum = &sentence[star_pos + 1..];
 
         let calculated = calculate_checksum(&data[1..]); // Skip '$'
-        let expected = u8::from_str_radix(expected_checksum, 16)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid checksum format"))?;
+        let expected =
+            u8::from_str_radix(expected_checksum, 16).map_err(|_| NmeaError::InvalidChecksum)?;
 
         if calculated != expected {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Checksum mismatch: expected {:02X}, got {:02X}",
-                    expected, calculated
-                ),
-            ));
+            return Err(NmeaError::ChecksumMismatch {
+                expected,
+                actual: calculated,
+            }
+            .into());
         }
     }
 
@@ -223,15 +223,18 @@ fn parse_zda(fields: &[&str]) -> io::Result<Option<GpsFix>> {
 
     let time = parse_time(fields[1])?;
 
-    let day: u8 = fields[2]
-        .parse()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid day"))?;
-    let month: u8 = fields[3]
-        .parse()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid month"))?;
-    let year: u16 = fields[4]
-        .parse()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid year"))?;
+    let day: u8 = fields[2].parse().map_err(|_| NmeaError::ParseField {
+        sentence: "ZDA",
+        field: "day",
+    })?;
+    let month: u8 = fields[3].parse().map_err(|_| NmeaError::ParseField {
+        sentence: "ZDA",
+        field: "month",
+    })?;
+    let year: u16 = fields[4].parse().map_err(|_| NmeaError::ParseField {
+        sentence: "ZDA",
+        field: "year",
+    })?;
 
     Ok(Some(GpsFix {
         time,
@@ -247,42 +250,48 @@ fn parse_zda(fields: &[&str]) -> io::Result<Option<GpsFix>> {
 
 fn parse_time(s: &str) -> io::Result<(u8, u8, f64)> {
     if s.len() < 6 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Invalid time format",
-        ));
+        return Err(NmeaError::InvalidFormat {
+            detail: "time field too short",
+        }
+        .into());
     }
 
-    let hour: u8 = s[0..2]
-        .parse()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid hour"))?;
-    let minute: u8 = s[2..4]
-        .parse()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid minute"))?;
-    let second: f64 = s[4..]
-        .parse()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid second"))?;
+    let hour: u8 = s[0..2].parse().map_err(|_| NmeaError::ParseField {
+        sentence: "time",
+        field: "hour",
+    })?;
+    let minute: u8 = s[2..4].parse().map_err(|_| NmeaError::ParseField {
+        sentence: "time",
+        field: "minute",
+    })?;
+    let second: f64 = s[4..].parse().map_err(|_| NmeaError::ParseField {
+        sentence: "time",
+        field: "second",
+    })?;
 
     Ok((hour, minute, second))
 }
 
 fn parse_date(s: &str) -> io::Result<(u16, u8, u8)> {
     if s.len() != 6 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Invalid date format",
-        ));
+        return Err(NmeaError::InvalidFormat {
+            detail: "date field must be 6 characters",
+        }
+        .into());
     }
 
-    let day: u8 = s[0..2]
-        .parse()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid day"))?;
-    let month: u8 = s[2..4]
-        .parse()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid month"))?;
-    let year: u8 = s[4..6]
-        .parse()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid year"))?;
+    let day: u8 = s[0..2].parse().map_err(|_| NmeaError::ParseField {
+        sentence: "date",
+        field: "day",
+    })?;
+    let month: u8 = s[2..4].parse().map_err(|_| NmeaError::ParseField {
+        sentence: "date",
+        field: "month",
+    })?;
+    let year: u8 = s[4..6].parse().map_err(|_| NmeaError::ParseField {
+        sentence: "date",
+        field: "year",
+    })?;
 
     let full_year = if year >= 80 {
         1900 + year as u16

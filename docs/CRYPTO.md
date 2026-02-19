@@ -103,6 +103,33 @@ for NTS-secured time synchronization.
 | NTPv5 MAC | **No** (cmac+aes) | Awaiting FIPS-certified AES-CMAC |
 | Roughtime | **No** (ring) | Low priority — not security-critical |
 
+## FIPS Migration Path
+
+As of v4.10.0, the NTS AEAD layer is abstracted behind the `NtsAead` trait in
+`ntp_proto::nts_common`:
+
+```rust
+pub trait NtsAead: Send + Sync {
+    fn encrypt(&self, aad: &[u8], plaintext: &[u8]) -> io::Result<(Vec<u8>, Vec<u8>)>;
+    fn decrypt(&self, aad: &[u8], nonce: &[u8], ciphertext: &[u8]) -> io::Result<Vec<u8>>;
+    fn algorithm_id(&self) -> u16;
+    fn key_length(&self) -> usize;
+}
+```
+
+The default implementation (`AesSivCmacAead`) delegates to the `aes-siv`
+RustCrypto crate. The existing free functions `aead_encrypt()` and
+`aead_decrypt()` are preserved — no callers need to change.
+
+A `fips-aead` feature flag is defined in `ntp_usg-proto/Cargo.toml` but
+currently produces a `compile_error!` since no FIPS-certified backend exists.
+When one becomes available, the migration path is:
+
+1. Add the FIPS AES-SIV-CMAC dependency behind `fips-aead`
+2. Implement `NtsAead` for the FIPS backend
+3. Remove the `compile_error!` gate
+4. Conditionally use the FIPS backend when `fips-aead` is enabled
+
 For deployments requiring full FIPS 140-3 compliance end-to-end, the NTS AEAD
 layer is the primary gap. The TLS transport layer (which protects NTS-KE key
 establishment) is fully FIPS-compliant.

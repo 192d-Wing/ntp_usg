@@ -4,6 +4,11 @@
 //! Shared NTS constants, types, and pure functions used by both client
 //! and server NTS implementations.
 
+// NOTE: The `fips-aead` feature flag is defined in Cargo.toml as a placeholder.
+// It currently activates `nts` (the default AES-SIV-CMAC backend). When a FIPS
+// 140-3 certified AES-SIV-CMAC implementation becomes available for Rust, this
+// feature will switch to a validated backend. See docs/CRYPTO.md.
+
 use std::io;
 
 use aes_siv::aead::Aead;
@@ -16,6 +21,118 @@ use crate::extension::{
 };
 use crate::protocol::{self, ConstPackedSizeBytes, WriteBytes};
 use crate::unix_time;
+
+/// NTS protocol-level errors for AEAD and response validation.
+#[derive(Clone, Debug)]
+pub enum NtsProtoError {
+    /// The negotiated AEAD algorithm is not supported.
+    UnsupportedAeadAlgorithm {
+        /// The algorithm ID that was not recognized.
+        algorithm: u16,
+    },
+    /// AEAD key initialization failed (wrong key length or format).
+    AeadKeyInit,
+    /// AEAD encryption failed.
+    AeadEncryptFailed,
+    /// AEAD decryption/authentication failed — response may be tampered.
+    AeadDecryptFailed,
+    /// A required NTS extension field is missing from the response.
+    MissingField {
+        /// Name of the missing field.
+        field: &'static str,
+    },
+    /// NTS response validation failed.
+    ValidationFailed {
+        /// Description of what failed.
+        detail: &'static str,
+    },
+}
+
+impl core::fmt::Display for NtsProtoError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            NtsProtoError::UnsupportedAeadAlgorithm { algorithm } => {
+                write!(f, "unsupported AEAD algorithm: {}", algorithm)
+            }
+            NtsProtoError::AeadKeyInit => write!(f, "AEAD key initialization failed"),
+            NtsProtoError::AeadEncryptFailed => write!(f, "AEAD encryption failed"),
+            NtsProtoError::AeadDecryptFailed => {
+                write!(f, "AEAD authentication failed — response may be tampered")
+            }
+            NtsProtoError::MissingField { field } => {
+                write!(f, "NTS response missing {}", field)
+            }
+            NtsProtoError::ValidationFailed { detail } => {
+                write!(f, "NTS validation failed: {}", detail)
+            }
+        }
+    }
+}
+
+impl std::error::Error for NtsProtoError {}
+
+impl From<NtsProtoError> for io::Error {
+    fn from(err: NtsProtoError) -> io::Error {
+        io::Error::new(io::ErrorKind::InvalidData, err)
+    }
+}
+
+/// Trait abstracting NTS AEAD operations for future FIPS 140-3 backend swap.
+///
+/// The default implementation (`AesSivCmacAead`) uses the `aes-siv` RustCrypto
+/// crate. When a FIPS 140-3 certified AES-SIV-CMAC implementation becomes
+/// available for Rust, a second implementation can be provided behind the
+/// `fips-aead` feature flag.
+pub trait NtsAead: Send + Sync {
+    /// Encrypt plaintext with associated data, returning `(nonce, ciphertext)`.
+    fn encrypt(&self, aad: &[u8], plaintext: &[u8]) -> io::Result<(Vec<u8>, Vec<u8>)>;
+
+    /// Decrypt ciphertext with associated data and nonce.
+    fn decrypt(&self, aad: &[u8], nonce: &[u8], ciphertext: &[u8]) -> io::Result<Vec<u8>>;
+
+    /// The IANA AEAD algorithm identifier (e.g., 15 for AES-SIV-CMAC-256).
+    fn algorithm_id(&self) -> u16;
+
+    /// The required key length in bytes.
+    fn key_length(&self) -> usize;
+}
+
+/// Default AES-SIV-CMAC AEAD implementation using the `aes-siv` RustCrypto crate.
+pub struct AesSivCmacAead {
+    algorithm: u16,
+    key: Vec<u8>,
+}
+
+impl AesSivCmacAead {
+    /// Create a new instance for the given algorithm and key.
+    ///
+    /// Returns an error if the algorithm is unsupported or the key length is wrong.
+    pub fn new(algorithm: u16, key: Vec<u8>) -> io::Result<Self> {
+        let expected_len = aead_key_length(algorithm)?;
+        if key.len() != expected_len {
+            return Err(NtsProtoError::AeadKeyInit.into());
+        }
+        Ok(Self { algorithm, key })
+    }
+}
+
+impl NtsAead for AesSivCmacAead {
+    fn encrypt(&self, aad: &[u8], plaintext: &[u8]) -> io::Result<(Vec<u8>, Vec<u8>)> {
+        aead_encrypt(self.algorithm, &self.key, aad, plaintext)
+    }
+
+    fn decrypt(&self, aad: &[u8], nonce: &[u8], ciphertext: &[u8]) -> io::Result<Vec<u8>> {
+        aead_decrypt(self.algorithm, &self.key, aad, nonce, ciphertext)
+    }
+
+    fn algorithm_id(&self) -> u16 {
+        self.algorithm
+    }
+
+    fn key_length(&self) -> usize {
+        self.key.len()
+    }
+}
 
 // NTS-KE record types (RFC 8915 Section 4).
 
@@ -112,10 +229,7 @@ pub fn aead_key_length(algorithm: u16) -> io::Result<usize> {
     match algorithm {
         AEAD_AES_SIV_CMAC_256 => Ok(32),
         AEAD_AES_SIV_CMAC_512 => Ok(64),
-        _ => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("unsupported AEAD algorithm: {}", algorithm),
-        )),
+        _ => Err(NtsProtoError::UnsupportedAeadAlgorithm { algorithm }.into()),
     }
 }
 
@@ -209,10 +323,10 @@ pub fn validate_nts_response(
 ) -> io::Result<Vec<Vec<u8>>> {
     // Parse extension fields from the response.
     if recv_len <= protocol::Packet::PACKED_SIZE_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTS: response has no extension fields",
-        ));
+        return Err(NtsProtoError::ValidationFailed {
+            detail: "response has no extension fields",
+        }
+        .into());
     }
     let ext_data = &recv_buf[protocol::Packet::PACKED_SIZE_BYTES..recv_len];
     let ext_fields = extension::parse_extension_fields(ext_data)?;
@@ -221,35 +335,28 @@ pub fn validate_nts_response(
     let resp_uid = ext_fields
         .iter()
         .find(|ef| ef.field_type == UNIQUE_IDENTIFIER)
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "NTS: response missing Unique Identifier",
-            )
+        .ok_or(NtsProtoError::MissingField {
+            field: "Unique Identifier",
         })?;
     if resp_uid.value != uid_data {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTS: Unique Identifier mismatch",
-        ));
+        return Err(NtsProtoError::ValidationFailed {
+            detail: "Unique Identifier mismatch",
+        }
+        .into());
     }
 
     // Find the NTS Authenticator.
     let auth_ef = ext_fields
         .iter()
         .find(|ef| ef.field_type == extension::NTS_AUTHENTICATOR)
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "NTS: response missing NTS Authenticator",
-            )
+        .ok_or(NtsProtoError::MissingField {
+            field: "NTS Authenticator",
         })?;
-    let resp_auth = NtsAuthenticator::from_extension_field(auth_ef)?.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTS: failed to parse NTS Authenticator",
-        )
-    })?;
+    let resp_auth = NtsAuthenticator::from_extension_field(auth_ef)?.ok_or(
+        NtsProtoError::ValidationFailed {
+            detail: "failed to parse NTS Authenticator",
+        },
+    )?;
 
     // Build AAD for response verification: NTP header + extension fields before authenticator.
     let auth_ef_start = find_authenticator_offset(ext_data, &ext_fields)?;
@@ -295,10 +402,10 @@ pub fn find_authenticator_offset(
             break;
         }
     }
-    Err(io::Error::new(
-        io::ErrorKind::InvalidData,
-        "NTS: could not locate authenticator offset",
-    ))
+    Err(NtsProtoError::ValidationFailed {
+        detail: "could not locate authenticator offset",
+    }
+    .into())
 }
 
 /// AEAD encrypt using the negotiated algorithm.
@@ -312,12 +419,8 @@ pub fn aead_encrypt(
 ) -> io::Result<(Vec<u8>, Vec<u8>)> {
     match algorithm {
         AEAD_AES_SIV_CMAC_256 => {
-            let cipher = Aes128SivAead::new_from_slice(key).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("AES-SIV key error: {}", e),
-                )
-            })?;
+            let cipher =
+                Aes128SivAead::new_from_slice(key).map_err(|_| NtsProtoError::AeadKeyInit)?;
             let mut nonce_bytes = [0u8; 16];
             rand::fill(&mut nonce_bytes);
 
@@ -328,17 +431,13 @@ pub fn aead_encrypt(
             let nonce = aes_siv::Nonce::from_slice(&nonce_bytes);
             let ciphertext = cipher
                 .encrypt(nonce, payload)
-                .map_err(|e| io::Error::other(format!("AEAD encrypt failed: {}", e)))?;
+                .map_err(|_| NtsProtoError::AeadEncryptFailed)?;
 
             Ok((nonce_bytes.to_vec(), ciphertext))
         }
         AEAD_AES_SIV_CMAC_512 => {
-            let cipher = Aes256SivAead::new_from_slice(key).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("AES-SIV key error: {}", e),
-                )
-            })?;
+            let cipher =
+                Aes256SivAead::new_from_slice(key).map_err(|_| NtsProtoError::AeadKeyInit)?;
             let mut nonce_bytes = [0u8; 16];
             rand::fill(&mut nonce_bytes);
 
@@ -349,14 +448,11 @@ pub fn aead_encrypt(
             let nonce = aes_siv::Nonce::from_slice(&nonce_bytes);
             let ciphertext = cipher
                 .encrypt(nonce, payload)
-                .map_err(|e| io::Error::other(format!("AEAD encrypt failed: {}", e)))?;
+                .map_err(|_| NtsProtoError::AeadEncryptFailed)?;
 
             Ok((nonce_bytes.to_vec(), ciphertext))
         }
-        _ => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("unsupported AEAD algorithm: {}", algorithm),
-        )),
+        _ => Err(NtsProtoError::UnsupportedAeadAlgorithm { algorithm }.into()),
     }
 }
 
@@ -370,47 +466,30 @@ pub fn aead_decrypt(
 ) -> io::Result<Vec<u8>> {
     match algorithm {
         AEAD_AES_SIV_CMAC_256 => {
-            let cipher = Aes128SivAead::new_from_slice(key).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("AES-SIV key error: {}", e),
-                )
-            })?;
+            let cipher =
+                Aes128SivAead::new_from_slice(key).map_err(|_| NtsProtoError::AeadKeyInit)?;
             let payload = aes_siv::aead::Payload {
                 msg: ciphertext,
                 aad,
             };
             let nonce = aes_siv::Nonce::from_slice(nonce);
-            cipher.decrypt(nonce, payload).map_err(|_| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "NTS: AEAD authentication failed — response may be tampered",
-                )
-            })
+            cipher
+                .decrypt(nonce, payload)
+                .map_err(|_| NtsProtoError::AeadDecryptFailed.into())
         }
         AEAD_AES_SIV_CMAC_512 => {
-            let cipher = Aes256SivAead::new_from_slice(key).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("AES-SIV key error: {}", e),
-                )
-            })?;
+            let cipher =
+                Aes256SivAead::new_from_slice(key).map_err(|_| NtsProtoError::AeadKeyInit)?;
             let payload = aes_siv::aead::Payload {
                 msg: ciphertext,
                 aad,
             };
             let nonce = aes_siv::Nonce::from_slice(nonce);
-            cipher.decrypt(nonce, payload).map_err(|_| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "NTS: AEAD authentication failed — response may be tampered",
-                )
-            })
+            cipher
+                .decrypt(nonce, payload)
+                .map_err(|_| NtsProtoError::AeadDecryptFailed.into())
         }
-        _ => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("unsupported AEAD algorithm: {}", algorithm),
-        )),
+        _ => Err(NtsProtoError::UnsupportedAeadAlgorithm { algorithm }.into()),
     }
 }
 

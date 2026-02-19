@@ -25,7 +25,7 @@ A Network Time Protocol (NTP) library written in Rust, organized as a Cargo work
 
 ## Features
 
-### 🎯 Version 4.9.0 - Production-Grade NTP
+### 🎯 Version 4.10.0 - Production-Grade NTP
 
 - **RFC 5905 Full Compliance**: Selection, clustering, clock discipline (PLL/FLL), symmetric modes, and broadcast mode
 - **RFC 4330 SNTP API**: Simplified client API for one-off time queries
@@ -63,13 +63,13 @@ Add the crate(s) you need to your `Cargo.toml`:
 ```toml
 [dependencies]
 # Protocol types only (also supports no_std)
-ntp_usg-proto = "4.9"
+ntp_usg-proto = "4.10"
 
 # NTP client
-ntp_usg-client = { version = "4.9", features = ["tokio"] }
+ntp_usg-client = { version = "4.10", features = ["tokio"] }
 
 # NTP server
-ntp_usg-server = { version = "4.9", features = ["tokio"] }
+ntp_usg-server = { version = "4.10", features = ["tokio"] }
 ```
 
 **Minimum Supported Rust Version (MSRV):** 1.93
@@ -125,8 +125,8 @@ For `no_std` environments, use the proto crate with default features disabled:
 
 ```toml
 [dependencies]
-ntp_usg-proto = { version = "4.9", default-features = false }          # core parsing only
-ntp_usg-proto = { version = "4.9", default-features = false, features = ["alloc"] }  # + Vec-based types
+ntp_usg-proto = { version = "4.10", default-features = false }          # core parsing only
+ntp_usg-proto = { version = "4.10", default-features = false, features = ["alloc"] }  # + Vec-based types
 ```
 
 ## Usage
@@ -187,7 +187,7 @@ Enable the `tokio` feature:
 
 ```toml
 [dependencies]
-ntp_usg-client = { version = "4.9", features = ["tokio"] }
+ntp_usg-client = { version = "4.10", features = ["tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -233,7 +233,7 @@ Enable the `nts` feature for authenticated NTP:
 
 ```toml
 [dependencies]
-ntp_usg-client = { version = "4.9", features = ["nts"] }
+ntp_usg-client = { version = "4.10", features = ["nts"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -281,7 +281,7 @@ Enable the `smol-runtime` feature:
 
 ```toml
 [dependencies]
-ntp_usg-client = { version = "4.9", features = ["smol-runtime"] }
+ntp_usg-client = { version = "4.10", features = ["smol-runtime"] }
 smol = "2"
 ```
 
@@ -329,7 +329,7 @@ Enable the `clock` feature to correct the system clock based on NTP measurements
 
 ```toml
 [dependencies]
-ntp_usg-client = { version = "4.9", features = ["clock", "tokio"] }
+ntp_usg-client = { version = "4.10", features = ["clock", "tokio"] }
 ```
 
 ```rust
@@ -367,7 +367,7 @@ Enable the `tokio` feature on the server crate:
 
 ```toml
 [dependencies]
-ntp_usg-server = { version = "4.9", features = ["tokio"] }
+ntp_usg-server = { version = "4.10", features = ["tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -393,7 +393,7 @@ See [crates/ntp_usg-client/examples/multiple_servers.rs](crates/ntp_usg-client/e
 
 ## Examples
 
-### Production Examples (v4.9.0+)
+### Production Examples (v4.10.0+)
 
 The following examples demonstrate production-ready deployments with comprehensive monitoring and error handling:
 
@@ -488,7 +488,7 @@ cargo run -p ntp_usg-server --example nts_server --features ntp_usg-server/nts -
 - [x] WASM support
 - [x] Structured tracing
 - [x] Custom error types
-- [ ] FIPS 140-3 validated NTS AEAD
+- [ ] FIPS 140-3 validated NTS AEAD (trait abstraction ready, awaiting certified backend)
 
 ## Contributing
 

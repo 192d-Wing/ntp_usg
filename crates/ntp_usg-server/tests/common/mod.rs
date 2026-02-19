@@ -52,6 +52,7 @@ pub(crate) fn build_client_packet() -> [u8; Packet::PACKED_SIZE_BYTES] {
 }
 
 /// Build a client request with a specific NTP version.
+#[allow(dead_code)]
 pub(crate) fn build_client_packet_version(version: Version) -> [u8; Packet::PACKED_SIZE_BYTES] {
     let packet = Packet {
         version,

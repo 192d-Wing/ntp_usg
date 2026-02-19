@@ -6,6 +6,7 @@
 // Requires Linux kernel with CONFIG_PPS enabled.
 #![allow(unsafe_code)]
 
+use super::error::PpsError;
 use super::{RefClock, RefClockSample};
 use crate::unix_time;
 use std::fs::File;
@@ -245,10 +246,7 @@ impl RefClock for PpsReceiver {
                 };
 
                 if sequence <= last_seq {
-                    return Err(io::Error::new(
-                        io::ErrorKind::TimedOut,
-                        "No new PPS event received",
-                    ));
+                    return Err(PpsError::SequenceStale.into());
                 }
 
                 Ok((timestamp, sequence))

@@ -26,6 +26,7 @@ default = ["std"]
 std = ["dep:byteorder", "dep:log"]
 alloc = []
 nts = ["std", "dep:aes-siv", "dep:rand"]
+fips-aead = ["nts"]
 roughtime = ["std", "dep:ring", "dep:rand"]
 ntpv5 = ["std", "dep:cmac", "dep:aes"]
 
@@ -45,6 +46,11 @@ criterion = "0.8"
 [[bench]]
 name = "parsing_benchmark"
 harness = false
+
+[[bench]]
+name = "nts_benchmark"
+harness = false
+required-features = ["nts"]
 
 [[example]]
 name = "embedded_nostd"
