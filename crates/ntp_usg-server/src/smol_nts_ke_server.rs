@@ -11,49 +11,10 @@ use std::sync::{Arc, RwLock};
 
 use futures_lite::io::{AsyncReadExt, AsyncWriteExt};
 use log::debug;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use rustls_pki_types::pem::PemObject;
 
-use crate::default_listen_addr;
 use crate::nts_common::*;
-use crate::nts_server_common::{CookieContents, MasterKeyStore};
-
-/// Configuration for an NTS-KE server (smol runtime).
-pub struct NtsKeServerConfig {
-    /// TLS certificate chain (DER encoded).
-    pub cert_chain: Vec<CertificateDer<'static>>,
-    /// Private key corresponding to the certificate (DER encoded).
-    pub private_key: PrivateKeyDer<'static>,
-    /// Listen address (default: `"[::]:4460"`, or `"0.0.0.0:4460"` with `ipv4` feature).
-    pub listen_addr: String,
-    /// NTP server hostname to advertise to clients.
-    pub ntp_server: Option<String>,
-    /// NTP port to advertise to clients.
-    pub ntp_port: Option<u16>,
-    /// Number of cookies to issue per session (default: 8).
-    pub cookie_count: usize,
-}
-
-impl NtsKeServerConfig {
-    /// Create a config from PEM-encoded certificate and private key bytes.
-    pub fn from_pem(cert_pem: &[u8], key_pem: &[u8]) -> io::Result<Self> {
-        let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_slice_iter(cert_pem)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
-        let key = PrivateKeyDer::from_pem_slice(key_pem)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
-        Ok(NtsKeServerConfig {
-            cert_chain: certs,
-            private_key: key,
-            listen_addr: default_listen_addr(4460),
-            ntp_server: None,
-            ntp_port: None,
-            cookie_count: 8,
-        })
-    }
-}
+pub use crate::nts_ke_server_common::NtsKeServerConfig;
+use crate::nts_server_common::MasterKeyStore;
 
 /// An NTS-KE server using the smol runtime.
 pub struct NtsKeServer {
@@ -71,7 +32,6 @@ impl NtsKeServer {
         config: NtsKeServerConfig,
         key_store: Arc<RwLock<MasterKeyStore>>,
     ) -> io::Result<Self> {
-        // Build TLS server config with PQ-NTS or classical crypto provider.
         let tls_config =
             crate::tls_config::nts_server_config(config.cert_chain, config.private_key)?;
 
@@ -133,138 +93,31 @@ async fn handle_nts_ke_connection(
     ntp_port: Option<u16>,
     cookie_count: usize,
 ) -> io::Result<()> {
-    // 1. Read client NTS-KE records until End of Message.
-    let mut client_next_protocol: Option<u16> = None;
-    let mut client_aead_algorithms = Vec::new();
-
+    // Read all client NTS-KE records until End of Message.
+    let mut records = Vec::new();
     loop {
         let record = read_ke_record_server(&mut tls_stream).await?;
-        match record.record_type {
-            NTS_KE_END_OF_MESSAGE => break,
-            NTS_KE_NEXT_PROTOCOL => {
-                if record.body.len() >= 2 {
-                    let proto = read_be_u16(&record.body[..2]);
-                    if proto == NTS_PROTOCOL_NTPV4 {
-                        client_next_protocol = Some(proto);
-                    }
-                    #[cfg(feature = "ntpv5")]
-                    if proto == NTS_PROTOCOL_NTPV5 {
-                        client_next_protocol = Some(proto);
-                    }
-                }
-            }
-            NTS_KE_AEAD_ALGORITHM => {
-                if record.body.len() >= 2 {
-                    client_aead_algorithms.push(read_be_u16(&record.body[..2]));
-                }
-            }
-            _ => {
-                if record.critical {
-                    let mut resp = Vec::new();
-                    write_ke_record(&mut resp, true, NTS_KE_ERROR, &0u16.to_be_bytes());
-                    write_ke_record(&mut resp, true, NTS_KE_END_OF_MESSAGE, &[]);
-                    tls_stream.write_all(&resp).await?;
-                    tls_stream.flush().await?;
-                    return Ok(());
-                }
-            }
+        let is_eom = record.record_type == NTS_KE_END_OF_MESSAGE;
+        records.push(record);
+        if is_eom {
+            break;
         }
     }
 
-    // 2. Validate client request.
-    let negotiated_protocol = match client_next_protocol {
-        Some(proto) => proto,
-        None => {
-            let mut resp = Vec::new();
-            write_ke_record(&mut resp, true, NTS_KE_ERROR, &1u16.to_be_bytes());
-            write_ke_record(&mut resp, true, NTS_KE_END_OF_MESSAGE, &[]);
-            tls_stream.write_all(&resp).await?;
-            tls_stream.flush().await?;
-            return Ok(());
-        }
-    };
-
-    // 3. Negotiate AEAD algorithm (prefer CMAC-512 / 256-bit AES, fall back to CMAC-256).
-    let supported = [AEAD_AES_SIV_CMAC_512, AEAD_AES_SIV_CMAC_256];
-    let aead_algorithm = supported
-        .iter()
-        .find(|a| client_aead_algorithms.contains(a))
-        .copied()
-        .unwrap_or(AEAD_AES_SIV_CMAC_512);
-
-    // 4. Export TLS keying material.
-    let key_len = aead_key_length(aead_algorithm)?;
+    // Process records (shared logic: negotiate, export keys, generate cookies).
     let (_, tls_conn) = tls_stream.get_ref();
+    let resp = crate::nts_ke_server_common::process_nts_ke_records(
+        &records,
+        tls_conn,
+        key_store,
+        ntp_server,
+        ntp_port,
+        cookie_count,
+    )?;
 
-    let mut c2s_key = vec![0u8; key_len];
-    tls_conn
-        .export_keying_material(
-            &mut c2s_key,
-            NTS_EXPORTER_LABEL.as_bytes(),
-            Some(&[0x00, 0x00]),
-        )
-        .map_err(|e| io::Error::other(format!("TLS key export failed: {}", e)))?;
-
-    let mut s2c_key = vec![0u8; key_len];
-    tls_conn
-        .export_keying_material(
-            &mut s2c_key,
-            NTS_EXPORTER_LABEL.as_bytes(),
-            Some(&[0x00, 0x01]),
-        )
-        .map_err(|e| io::Error::other(format!("TLS key export failed: {}", e)))?;
-
-    // 5. Generate cookies.
-    let cookie_contents = CookieContents {
-        aead_algorithm,
-        c2s_key,
-        s2c_key,
-    };
-    let cookies: Vec<Vec<u8>> = {
-        let store = key_store
-            .read()
-            .map_err(|_| io::Error::other("master key store lock poisoned"))?;
-        (0..cookie_count)
-            .map(|_| store.encrypt_cookie(&cookie_contents))
-            .collect::<io::Result<Vec<_>>>()?
-    };
-
-    // 6. Build and send response.
-    let mut resp = Vec::new();
-
-    // Next Protocol (critical) — echo back whichever protocol the client negotiated.
-    write_ke_record(
-        &mut resp,
-        true,
-        NTS_KE_NEXT_PROTOCOL,
-        &negotiated_protocol.to_be_bytes(),
-    );
-    write_ke_record(
-        &mut resp,
-        true,
-        NTS_KE_AEAD_ALGORITHM,
-        &aead_algorithm.to_be_bytes(),
-    );
-    if let Some(server) = ntp_server {
-        write_ke_record(&mut resp, false, NTS_KE_SERVER, server.as_bytes());
-    }
-    if let Some(port) = ntp_port {
-        write_ke_record(&mut resp, false, NTS_KE_PORT, &port.to_be_bytes());
-    }
-    for cookie in &cookies {
-        write_ke_record(&mut resp, false, NTS_KE_NEW_COOKIE, cookie);
-    }
-    write_ke_record(&mut resp, true, NTS_KE_END_OF_MESSAGE, &[]);
-
+    // Send response and close.
     tls_stream.write_all(&resp).await?;
     tls_stream.flush().await?;
-
-    debug!(
-        "NTS-KE (smol): sent {} cookies, AEAD={}",
-        cookies.len(),
-        aead_algorithm
-    );
-
     let _ = tls_stream.close().await;
 
     Ok(())

@@ -60,6 +60,10 @@ pub(crate) use ntp_proto::nts_common;
 #[cfg(any(feature = "nts", feature = "nts-smol"))]
 pub(crate) mod tls_config;
 
+/// Shared NTS-KE client exchange logic (record processing and key export).
+#[cfg(any(feature = "nts", feature = "nts-smol"))]
+pub(crate) mod nts_ke_exchange;
+
 /// Clock sample filtering for the continuous NTP client.
 ///
 /// Implements a simplified version of the RFC 5905 Section 10 clock filter

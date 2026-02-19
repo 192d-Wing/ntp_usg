@@ -43,6 +43,7 @@ use tokio_rustls::TlsConnector;
 
 pub use crate::nts_common::NtsKeResult;
 use crate::nts_common::*;
+use crate::nts_ke_exchange;
 use crate::request::{bind_addr_for, compute_offset_delay, parse_and_validate_response};
 use crate::{NtpResult, unix_time};
 
@@ -91,17 +92,7 @@ async fn read_ke_record(
 pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
     use tokio::io::AsyncWriteExt;
 
-    // Parse server address — default port 4460.
-    let (hostname, port) = if let Some(idx) = server.rfind(':') {
-        if let Ok(p) = server[idx + 1..].parse::<u16>() {
-            (&server[..idx], p)
-        } else {
-            (server, NTS_KE_DEFAULT_PORT)
-        }
-    } else {
-        (server, NTS_KE_DEFAULT_PORT)
-    };
-
+    let (hostname, port) = nts_ke_exchange::parse_nts_ke_server_addr(server);
     let addr = format!("{}:{}", hostname, port);
     debug!("NTS-KE connecting to {}", addr);
 
@@ -119,192 +110,30 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
     })?;
     let mut tls_stream = connector.connect(server_name, tcp_stream).await?;
 
-    // Build NTS-KE request:
-    // 1. Next Protocol: NTPv4 (critical)
-    // 2. AEAD Algorithms: prefer CMAC-512 (256-bit AES), also accept CMAC-256 (critical)
-    // 3. End of Message (critical)
-    let mut request_buf = Vec::new();
-    write_ke_record(
-        &mut request_buf,
-        true,
-        NTS_KE_NEXT_PROTOCOL,
-        &NTS_PROTOCOL_NTPV4.to_be_bytes(),
-    );
-    write_ke_record(
-        &mut request_buf,
-        true,
-        NTS_KE_AEAD_ALGORITHM,
-        &AEAD_AES_SIV_CMAC_512.to_be_bytes(),
-    );
-    write_ke_record(
-        &mut request_buf,
-        true,
-        NTS_KE_AEAD_ALGORITHM,
-        &AEAD_AES_SIV_CMAC_256.to_be_bytes(),
-    );
-    write_ke_record(&mut request_buf, true, NTS_KE_END_OF_MESSAGE, &[]);
-
+    // Send NTS-KE request.
+    let request_buf = nts_ke_exchange::build_nts_ke_request();
     tls_stream.write_all(&request_buf).await?;
     tls_stream.flush().await?;
 
-    // Parse NTS-KE response.
-    let mut next_protocol: Option<u16> = None;
-    let mut aead_algorithm = AEAD_AES_SIV_CMAC_512;
-    let mut cookies = Vec::new();
-    let mut ntp_server = hostname.to_string();
-    let mut ntp_port: u16 = 123;
-
+    // Read all NTS-KE response records until End of Message.
+    let mut records = Vec::new();
     loop {
         let record = read_ke_record(&mut tls_stream).await?;
-
-        match record.record_type {
-            NTS_KE_END_OF_MESSAGE => {
-                debug!("NTS-KE: end of message");
-                break;
-            }
-            NTS_KE_NEXT_PROTOCOL => {
-                if record.body.len() < 2 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "NTS-KE: next protocol record too short",
-                    ));
-                }
-                let proto = read_be_u16(&record.body[..2]);
-                let supported = proto == NTS_PROTOCOL_NTPV4;
-                #[cfg(feature = "ntpv5")]
-                let supported = supported || proto == NTS_PROTOCOL_NTPV5;
-                if !supported {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("NTS-KE: unsupported protocol: {}", proto),
-                    ));
-                }
-                next_protocol = Some(proto);
-                debug!("NTS-KE: next protocol = 0x{:04X}", proto);
-            }
-            NTS_KE_AEAD_ALGORITHM => {
-                if record.body.len() < 2 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "NTS-KE: AEAD algorithm record too short",
-                    ));
-                }
-                aead_algorithm = read_be_u16(&record.body[..2]);
-                debug!("NTS-KE: AEAD algorithm = {}", aead_algorithm);
-            }
-            NTS_KE_ERROR => {
-                let code = if record.body.len() >= 2 {
-                    read_be_u16(&record.body[..2])
-                } else {
-                    0
-                };
-                return Err(io::Error::new(
-                    io::ErrorKind::ConnectionRefused,
-                    format!("NTS-KE server error: code {}", code),
-                ));
-            }
-            NTS_KE_WARNING => {
-                let code = if record.body.len() >= 2 {
-                    read_be_u16(&record.body[..2])
-                } else {
-                    0
-                };
-                debug!("NTS-KE warning: code {}", code);
-            }
-            NTS_KE_NEW_COOKIE => {
-                debug!("NTS-KE: received cookie ({} bytes)", record.body.len());
-                cookies.push(record.body);
-            }
-            NTS_KE_SERVER => {
-                ntp_server = String::from_utf8(record.body).map_err(|_| {
-                    io::Error::new(io::ErrorKind::InvalidData, "NTS-KE: invalid server name")
-                })?;
-                debug!("NTS-KE: NTP server = {}", ntp_server);
-            }
-            NTS_KE_PORT => {
-                if record.body.len() < 2 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "NTS-KE: port record too short",
-                    ));
-                }
-                ntp_port = read_be_u16(&record.body[..2]);
-                debug!("NTS-KE: NTP port = {}", ntp_port);
-            }
-            _ => {
-                if record.critical {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!(
-                            "NTS-KE: unrecognized critical record type {}",
-                            record.record_type
-                        ),
-                    ));
-                }
-                debug!(
-                    "NTS-KE: ignoring non-critical record type {}",
-                    record.record_type
-                );
-            }
+        let is_eom = record.record_type == NTS_KE_END_OF_MESSAGE;
+        records.push(record);
+        if is_eom {
+            break;
         }
     }
 
-    let next_protocol = next_protocol.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTS-KE: server did not send Next Protocol record",
-        )
-    })?;
-
-    if cookies.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "NTS-KE: server did not provide any cookies",
-        ));
-    }
-
-    // Export keys from TLS session (RFC 8915 Section 4.2).
-    let key_len = aead_key_length(aead_algorithm)?;
+    // Process records (shared logic: negotiate, export keys).
     let (_, tls_conn) = tls_stream.get_ref();
-
-    let mut c2s_key = vec![0u8; key_len];
-    tls_conn
-        .export_keying_material(
-            &mut c2s_key,
-            NTS_EXPORTER_LABEL.as_bytes(),
-            Some(&[0x00, 0x00]),
-        )
-        .map_err(|e| io::Error::other(format!("TLS key export failed: {}", e)))?;
-
-    let mut s2c_key = vec![0u8; key_len];
-    tls_conn
-        .export_keying_material(
-            &mut s2c_key,
-            NTS_EXPORTER_LABEL.as_bytes(),
-            Some(&[0x00, 0x01]),
-        )
-        .map_err(|e| io::Error::other(format!("TLS key export failed: {}", e)))?;
-
-    debug!(
-        "NTS-KE complete: {} cookies, AEAD={}, server={}:{}",
-        cookies.len(),
-        aead_algorithm,
-        ntp_server,
-        ntp_port
-    );
+    let result = nts_ke_exchange::process_nts_ke_records(&records, tls_conn, hostname)?;
 
     // Gracefully close TLS.
     let _ = tls_stream.shutdown().await;
 
-    Ok(NtsKeResult {
-        c2s_key,
-        s2c_key,
-        cookies,
-        aead_algorithm,
-        ntp_server,
-        ntp_port,
-        next_protocol,
-    })
+    Ok(result)
 }
 
 /// An NTS session for sending authenticated NTP requests.
@@ -464,56 +293,6 @@ impl NtsSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ── Server address parsing (lines 95-103 of nts_ke) ──────────
-
-    /// Helper that replicates the address parsing logic from `nts_ke()`.
-    fn parse_server_addr(server: &str) -> (&str, u16) {
-        if let Some(idx) = server.rfind(':') {
-            if let Ok(p) = server[idx + 1..].parse::<u16>() {
-                (&server[..idx], p)
-            } else {
-                (server, NTS_KE_DEFAULT_PORT)
-            }
-        } else {
-            (server, NTS_KE_DEFAULT_PORT)
-        }
-    }
-
-    #[test]
-    fn test_parse_server_default_port() {
-        let (host, port) = parse_server_addr("example.com");
-        assert_eq!(host, "example.com");
-        assert_eq!(port, NTS_KE_DEFAULT_PORT);
-    }
-
-    #[test]
-    fn test_parse_server_custom_port() {
-        let (host, port) = parse_server_addr("example.com:5555");
-        assert_eq!(host, "example.com");
-        assert_eq!(port, 5555);
-    }
-
-    #[test]
-    fn test_parse_server_invalid_port_uses_default() {
-        let (host, port) = parse_server_addr("example.com:notaport");
-        assert_eq!(host, "example.com:notaport");
-        assert_eq!(port, NTS_KE_DEFAULT_PORT);
-    }
-
-    #[test]
-    fn test_parse_server_ipv4_with_port() {
-        let (host, port) = parse_server_addr("192.168.1.1:4461");
-        assert_eq!(host, "192.168.1.1");
-        assert_eq!(port, 4461);
-    }
-
-    #[test]
-    fn test_parse_server_hostname_only() {
-        let (host, port) = parse_server_addr("time.cloudflare.com");
-        assert_eq!(host, "time.cloudflare.com");
-        assert_eq!(port, 4460);
-    }
 
     // ── NtsKeResult ──────────────────────────────────────────────
 

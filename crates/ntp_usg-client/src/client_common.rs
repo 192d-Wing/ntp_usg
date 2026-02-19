@@ -682,6 +682,198 @@ pub(crate) fn select_and_build_state(
     })
 }
 
+// ── Shared builder infrastructure ────────────────────────────────
+
+/// Runtime-independent configuration produced by `NtpClientBuilder::into_config`.
+///
+/// Contains everything needed to create an NTP client except the
+/// runtime-specific DNS resolution, NTS-KE, and state channel creation.
+#[allow(dead_code)] // Fields are read behind #[cfg] gates in runtime modules.
+pub(crate) struct ClientBuildConfig {
+    pub(crate) servers: Vec<String>,
+    pub(crate) min_poll: u8,
+    pub(crate) max_poll: u8,
+    pub(crate) initial_poll: u8,
+    pub(crate) socket_opts: crate::socket_opts::SocketOptions,
+    pub(crate) enable_discipline: bool,
+    pub(crate) enable_ntpv5: bool,
+}
+
+/// Define an `NtpClientBuilder` struct with shared NTP client configuration methods.
+///
+/// Both the tokio [`crate::client`] and smol [`crate::smol_client`] modules
+/// invoke this macro to generate their own `NtpClientBuilder` type with
+/// identical configuration methods. Each module then adds a runtime-specific
+/// `build()` method.
+///
+/// # Parameters
+///
+/// - `extra_fields { ... }` — Additional struct fields (e.g., NTS servers with
+///   runtime-specific feature gates)
+/// - `extra_defaults { ... }` — Default values for the extra fields in `new()`
+macro_rules! define_client_builder {
+    (
+        $(#[$struct_meta:meta])*
+        extra_fields { $($extra_field:tt)* }
+        extra_defaults { $($extra_default:tt)* }
+    ) => {
+        $(#[$struct_meta])*
+        pub struct NtpClientBuilder {
+            servers: Vec<String>,
+            min_poll: u8,
+            max_poll: u8,
+            initial_poll: Option<u8>,
+            socket_opts: $crate::socket_opts::SocketOptions,
+            #[cfg(feature = "discipline")]
+            enable_discipline: bool,
+            #[cfg(feature = "ntpv5")]
+            enable_ntpv5: bool,
+            $($extra_field)*
+        }
+
+        impl NtpClientBuilder {
+            fn new() -> Self {
+                NtpClientBuilder {
+                    servers: Vec::new(),
+                    min_poll: $crate::protocol::MINPOLL,
+                    max_poll: $crate::protocol::MAXPOLL,
+                    initial_poll: None,
+                    socket_opts: <$crate::socket_opts::SocketOptions
+                        as ::std::default::Default>::default(),
+                    #[cfg(feature = "discipline")]
+                    enable_discipline: false,
+                    #[cfg(feature = "ntpv5")]
+                    enable_ntpv5: false,
+                    $($extra_default)*
+                }
+            }
+
+            /// Add an NTP server address (hostname:port or ip:port).
+            pub fn server(mut self, addr: impl Into<String>) -> Self {
+                self.servers.push(addr.into());
+                self
+            }
+
+            /// Set minimum poll exponent (default: MINPOLL=4, i.e. 16s).
+            pub fn min_poll(mut self, exponent: u8) -> Self {
+                self.min_poll = exponent.clamp(
+                    $crate::protocol::MINPOLL,
+                    $crate::protocol::MAXPOLL,
+                );
+                self
+            }
+
+            /// Set maximum poll exponent (default: MAXPOLL=17, i.e. ~36h).
+            pub fn max_poll(mut self, exponent: u8) -> Self {
+                self.max_poll = exponent.clamp(
+                    $crate::protocol::MINPOLL,
+                    $crate::protocol::MAXPOLL,
+                );
+                self
+            }
+
+            /// Set initial poll exponent. Defaults to min_poll.
+            pub fn initial_poll(mut self, exponent: u8) -> Self {
+                self.initial_poll = Some(exponent);
+                self
+            }
+
+            /// Restrict IPv6 sockets to IPv6-only traffic (no IPv4-mapped addresses).
+            ///
+            /// Only applies to IPv6 peer sockets; ignored for IPv4 peers.
+            /// Requires the `socket-opts` feature.
+            #[cfg(feature = "socket-opts")]
+            pub fn v6only(mut self, enabled: bool) -> Self {
+                self.socket_opts.v6only = Some(enabled);
+                self
+            }
+
+            /// Set the DSCP (Differentiated Services Code Point) for outgoing NTP packets.
+            ///
+            /// The DSCP value (0-63) is placed in the upper 6 bits of the IP TOS /
+            /// IPv6 Traffic Class byte. Common values:
+            /// - 46 (EF) — Expedited Forwarding, recommended for NTP
+            /// - 0 — Best effort (default)
+            ///
+            /// Requires the `socket-opts` feature.
+            #[cfg(feature = "socket-opts")]
+            pub fn dscp(mut self, value: u8) -> Self {
+                self.socket_opts.dscp = Some(value);
+                self
+            }
+
+            /// Enable the clock discipline loop (PLL/FLL) and periodic clock adjustment.
+            ///
+            /// When enabled, the client feeds offset measurements from the selection
+            /// pipeline into the RFC 5905 Section 11.3 discipline loop and applies
+            /// phase/frequency corrections to the system clock via the Section 12
+            /// periodic adjustment process.
+            ///
+            /// Requires the `discipline` feature (which implies `clock`).
+            /// Clock corrections require elevated privileges (root/admin).
+            #[cfg(feature = "discipline")]
+            pub fn enable_discipline(mut self, enable: bool) -> Self {
+                self.enable_discipline = enable;
+                self
+            }
+
+            /// Enable NTPv5 version negotiation for all peers.
+            ///
+            /// When enabled, peers start in the `Negotiating` state and probe servers
+            /// for NTPv5 support using the version negotiation mechanism in
+            /// `draft-ietf-ntp-ntpv5-07` Section 5. Servers that respond with the
+            /// magic value transition to V5 mode; others stay on V4.
+            ///
+            /// Requires the `ntpv5` feature.
+            #[cfg(feature = "ntpv5")]
+            pub fn ntpv5(mut self, enable: bool) -> Self {
+                self.enable_ntpv5 = enable;
+                self
+            }
+
+            /// Convert this builder into a runtime-independent build configuration.
+            ///
+            /// Validates and clamps poll intervals. Does NOT validate that servers
+            /// is non-empty (NTS servers may be added runtime-specifically).
+            pub(crate) fn into_config(
+                self,
+            ) -> $crate::client_common::ClientBuildConfig {
+                let min_poll = self.min_poll;
+                let max_poll = if self.max_poll >= self.min_poll {
+                    self.max_poll
+                } else {
+                    self.min_poll
+                };
+                let initial_poll = self
+                    .initial_poll
+                    .unwrap_or(min_poll)
+                    .clamp(min_poll, max_poll);
+
+                #[cfg(feature = "discipline")]
+                let enable_discipline = self.enable_discipline;
+                #[cfg(not(feature = "discipline"))]
+                let enable_discipline = false;
+
+                #[cfg(feature = "ntpv5")]
+                let enable_ntpv5 = self.enable_ntpv5;
+                #[cfg(not(feature = "ntpv5"))]
+                let enable_ntpv5 = false;
+
+                $crate::client_common::ClientBuildConfig {
+                    servers: self.servers,
+                    min_poll,
+                    max_poll,
+                    initial_poll,
+                    socket_opts: self.socket_opts,
+                    enable_discipline,
+                    enable_ntpv5,
+                }
+            }
+        }
+    };
+}
+pub(crate) use define_client_builder;
+
 #[cfg(test)]
 mod tests {
     use super::*;

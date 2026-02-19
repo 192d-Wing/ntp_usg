@@ -497,6 +497,34 @@ Expanded unit test coverage to previously untested modules and hardened producti
 
 ---
 
+## Version 4.7.0 - Tokio/Smol Code Deduplication ✅
+
+**Released**: 2026-02-18
+
+Eliminated ~1,300 lines of duplication across 4 pairs of nearly-identical tokio and smol async runtime files. Every bug fix or feature change to shared logic now applies once instead of twice.
+
+### Server Builder
+
+- ✅ **`define_server_builder!` macro**: Extracted all builder configuration methods into `server_common/builder.rs`. Both tokio and smol `NtpServerBuilder` types generated from the same macro with runtime-specific `extra_fields`/`extra_defaults`.
+- ✅ **`ServerBuildConfig` struct**: Runtime-independent configuration passed from builder to runtime-specific `build()` method.
+
+### NTS-KE Server
+
+- ✅ **`nts_ke_server_common.rs`**: Extracted `NtsKeServerConfig`, `from_pem()`, and `process_nts_ke_records()`. Shared AEAD negotiation, TLS key export, and cookie generation.
+- ✅ **Thin runtime wrappers**: Both tokio and smol NTS-KE servers reduced to TLS accept/read/write wrappers.
+
+### Client Builder
+
+- ✅ **`define_client_builder!` macro**: Extracted all builder configuration methods into `client_common.rs`. Both tokio and smol `NtpClientBuilder` types generated from the same macro.
+- ✅ **`ClientBuildConfig` struct**: Runtime-independent configuration with poll interval validation/clamping.
+
+### NTS Client
+
+- ✅ **`nts_ke_exchange.rs`**: Extracted `parse_nts_ke_server_addr()`, `build_nts_ke_request()`, and `process_nts_ke_records()`. Shared NTS-KE request building, response parsing, and TLS key export.
+- ✅ **Collect-first-then-process pattern**: NTS-KE records collected via runtime-specific async I/O, then processed by shared pure logic. `rustls::ClientConnection` is the same type from both `tokio_rustls` and `futures_rustls`, enabling shared key export.
+
+---
+
 ## Contributing
 
 We welcome contributions! If you'd like to work on any of these roadmap items:
@@ -517,7 +545,7 @@ Have ideas for the roadmap? Open an issue with the `enhancement` label or start 
 ---
 
 **Last Updated**: 2026-02-18
-**Current Version**: 4.6.0
+**Current Version**: 4.7.0
 
 ## Version 3.2.0 Progress Summary
 

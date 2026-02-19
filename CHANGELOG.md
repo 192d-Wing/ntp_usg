@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.7.0] - 2026-02-18
+
+### Changed
+
+#### Code Deduplication
+
+- **Server builder**: Extracted `define_server_builder!` macro and `ServerBuildConfig` into `server_common/builder.rs`. Both tokio and smol `NtpServerBuilder` types are now generated from the same macro with runtime-specific `extra_fields`/`extra_defaults`. All builder configuration methods (listen, stratum, precision, leap indicator, reference ID, root delay/dispersion, allow/deny, rate limit, interleaved, max clients, metrics, v6only, dscp, NTPv5, refclock) exist in a single location.
+- **NTS-KE server**: Extracted `NtsKeServerConfig` struct, `from_pem()`, and `process_nts_ke_records()` into `nts_ke_server_common.rs`. Both tokio and smol NTS-KE server implementations now share all NTS-KE record processing, AEAD negotiation, TLS key export, and cookie generation logic. Runtime-specific code reduced to thin TLS accept/read/write wrappers.
+- **Client builder**: Extracted `define_client_builder!` macro and `ClientBuildConfig` into `client_common.rs`. Both tokio and smol `NtpClientBuilder` types are now generated from the same macro. All builder configuration methods (server, min/max/initial poll, v6only, dscp, discipline, NTPv5) and poll interval validation exist in a single location.
+- **NTS client**: Extracted `parse_nts_ke_server_addr()`, `build_nts_ke_request()`, and `process_nts_ke_records()` into `nts_ke_exchange.rs`. Both tokio and smol NTS client implementations now share all NTS-KE request building, response parsing, AEAD algorithm selection, and TLS key export logic. Runtime-specific code reduced to thin TLS connect/read/write wrappers.
+
+**Total**: ~1,300 lines of duplication eliminated across 4 file pairs. Each bug fix or feature change to shared logic now applies once instead of twice.
+
 ## [4.6.0] - 2026-02-18
 
 ### Added
@@ -731,6 +744,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[4.7.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.6.0...v4.7.0
 [4.6.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.4.0...v4.5.0
 [4.4.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.3.0...v4.4.0

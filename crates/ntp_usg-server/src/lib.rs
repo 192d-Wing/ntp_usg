@@ -81,6 +81,10 @@ pub mod smol_server;
 #[cfg(any(feature = "nts", feature = "nts-smol"))]
 pub mod nts_server_common;
 
+/// Shared NTS-KE server logic (config, record processing, key exchange).
+#[cfg(any(feature = "nts", feature = "nts-smol"))]
+pub(crate) mod nts_ke_server_common;
+
 /// NTS-KE server using the Tokio runtime (RFC 8915).
 ///
 /// Provides a TLS 1.3 listener for NTS Key Establishment, distributing cookies

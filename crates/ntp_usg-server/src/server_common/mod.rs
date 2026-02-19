@@ -8,6 +8,7 @@
 //! and interleaved mode tracking per RFC 5905, RFC 8633, and RFC 9769.
 
 mod access_control;
+mod builder;
 mod config;
 mod interleaved;
 mod metrics;
@@ -21,6 +22,8 @@ mod state;
 mod validation;
 
 pub use self::access_control::AccessControl;
+pub(crate) use self::builder::ServerBuildConfig;
+pub(crate) use self::builder::define_server_builder;
 pub use self::config::{ConfigHandle, ConfigSnapshot, ServerConfig};
 pub use self::metrics::{MetricsSnapshot, ServerMetrics};
 pub use self::network::IpNet;

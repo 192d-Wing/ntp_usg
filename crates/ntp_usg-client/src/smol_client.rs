@@ -45,7 +45,6 @@ use std::time::Duration;
 
 pub use crate::client_common::NtpSyncState;
 use crate::client_common::{PeerState, PollResult, check_kod, select_and_build_state};
-use crate::protocol;
 use crate::request::{bind_addr_for, build_request_packet, parse_and_validate_response};
 
 #[cfg(feature = "nts-smol")]
@@ -58,105 +57,24 @@ use crate::smol_nts;
 #[cfg(feature = "ntpv5")]
 use crate::client_common::NtpV5PeerState;
 
-/// Builder for configuring and creating an [`NtpClient`].
-pub struct NtpClientBuilder {
-    servers: Vec<String>,
-    #[cfg(feature = "nts-smol")]
-    nts_servers: Vec<String>,
-    min_poll: u8,
-    max_poll: u8,
-    initial_poll: Option<u8>,
-    socket_opts: crate::socket_opts::SocketOptions,
-    #[cfg(feature = "discipline")]
-    enable_discipline: bool,
-    #[cfg(feature = "ntpv5")]
-    enable_ntpv5: bool,
+// Generate the shared NtpClientBuilder struct and config methods.
+crate::client_common::define_client_builder! {
+    /// Builder for configuring and creating an [`NtpClient`].
+    extra_fields {
+        #[cfg(feature = "nts-smol")]
+        nts_servers: Vec<String>,
+    }
+    extra_defaults {
+        #[cfg(feature = "nts-smol")]
+        nts_servers: Vec::new(),
+    }
 }
 
 impl NtpClientBuilder {
-    fn new() -> Self {
-        NtpClientBuilder {
-            servers: Vec::new(),
-            #[cfg(feature = "nts-smol")]
-            nts_servers: Vec::new(),
-            min_poll: protocol::MINPOLL,
-            max_poll: protocol::MAXPOLL,
-            initial_poll: None,
-            socket_opts: crate::socket_opts::SocketOptions::default(),
-            #[cfg(feature = "discipline")]
-            enable_discipline: false,
-            #[cfg(feature = "ntpv5")]
-            enable_ntpv5: false,
-        }
-    }
-
-    /// Add an NTP server address (hostname:port or ip:port).
-    pub fn server(mut self, addr: impl Into<String>) -> Self {
-        self.servers.push(addr.into());
-        self
-    }
-
-    /// Set minimum poll exponent (default: MINPOLL=4, i.e. 16s).
-    pub fn min_poll(mut self, exponent: u8) -> Self {
-        self.min_poll = exponent.clamp(protocol::MINPOLL, protocol::MAXPOLL);
-        self
-    }
-
-    /// Set maximum poll exponent (default: MAXPOLL=17, i.e. ~36h).
-    pub fn max_poll(mut self, exponent: u8) -> Self {
-        self.max_poll = exponent.clamp(protocol::MINPOLL, protocol::MAXPOLL);
-        self
-    }
-
     /// Add an NTS server hostname.
     #[cfg(feature = "nts-smol")]
     pub fn nts_server(mut self, hostname: impl Into<String>) -> Self {
         self.nts_servers.push(hostname.into());
-        self
-    }
-
-    /// Set initial poll exponent. Defaults to min_poll.
-    pub fn initial_poll(mut self, exponent: u8) -> Self {
-        self.initial_poll = Some(exponent);
-        self
-    }
-
-    /// Restrict IPv6 sockets to IPv6-only traffic (no IPv4-mapped addresses).
-    ///
-    /// Only applies to IPv6 peer sockets; ignored for IPv4 peers.
-    /// Requires the `socket-opts` feature.
-    #[cfg(feature = "socket-opts")]
-    pub fn v6only(mut self, enabled: bool) -> Self {
-        self.socket_opts.v6only = Some(enabled);
-        self
-    }
-
-    /// Set the DSCP (Differentiated Services Code Point) for outgoing NTP packets.
-    ///
-    /// The DSCP value (0-63) is placed in the upper 6 bits of the IP TOS /
-    /// IPv6 Traffic Class byte. Requires the `socket-opts` feature.
-    #[cfg(feature = "socket-opts")]
-    pub fn dscp(mut self, value: u8) -> Self {
-        self.socket_opts.dscp = Some(value);
-        self
-    }
-
-    /// Enable the clock discipline loop (PLL/FLL) and periodic clock adjustment.
-    ///
-    /// Requires the `discipline` feature (which implies `clock`).
-    /// Clock corrections require elevated privileges (root/admin).
-    #[cfg(feature = "discipline")]
-    pub fn enable_discipline(mut self, enable: bool) -> Self {
-        self.enable_discipline = enable;
-        self
-    }
-
-    /// Enable NTPv5 version negotiation for all peers.
-    ///
-    /// Requires the `ntpv5` feature.
-    #[cfg(feature = "ntpv5")]
-    pub fn ntpv5(mut self, enable: bool) -> Self {
-        self.enable_ntpv5 = enable;
         self
     }
 
@@ -165,41 +83,34 @@ impl NtpClientBuilder {
     /// Returns the client (to be spawned) and a shared state handle.
     pub async fn build(self) -> io::Result<(NtpClient, Arc<RwLock<NtpSyncState>>)> {
         #[cfg(feature = "nts-smol")]
-        let has_nts = !self.nts_servers.is_empty();
+        let nts_servers = self.nts_servers.clone();
+        #[cfg(feature = "nts-smol")]
+        let has_nts = !nts_servers.is_empty();
         #[cfg(not(feature = "nts-smol"))]
         let has_nts = false;
 
-        if self.servers.is_empty() && !has_nts {
+        let cfg = self.into_config();
+
+        if cfg.servers.is_empty() && !has_nts {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "at least one server address is required",
             ));
         }
 
-        let min_poll = self.min_poll;
-        let max_poll = if self.max_poll >= self.min_poll {
-            self.max_poll
-        } else {
-            self.min_poll
-        };
-        let initial_poll = self
-            .initial_poll
-            .unwrap_or(min_poll)
-            .clamp(min_poll, max_poll);
-
         let mut peers = Vec::new();
-        for server in &self.servers {
+        for server in &cfg.servers {
             let addrs: Vec<SocketAddr> =
                 crate::request::prefer_addresses(smol::net::resolve(server.as_str()).await?);
             if let Some(&addr) = addrs.first() {
                 #[cfg(feature = "ntpv5")]
-                let peer = if self.enable_ntpv5 {
-                    PeerState::new_v5(addr, initial_poll)
+                let peer = if cfg.enable_ntpv5 {
+                    PeerState::new_v5(addr, cfg.initial_poll)
                 } else {
-                    PeerState::new(addr, initial_poll)
+                    PeerState::new(addr, cfg.initial_poll)
                 };
                 #[cfg(not(feature = "ntpv5"))]
-                let peer = PeerState::new(addr, initial_poll);
+                let peer = PeerState::new(addr, cfg.initial_poll);
                 peers.push(peer);
             } else {
                 return Err(io::Error::new(
@@ -210,7 +121,7 @@ impl NtpClientBuilder {
         }
 
         #[cfg(feature = "nts-smol")]
-        for nts_server in &self.nts_servers {
+        for nts_server in &nts_servers {
             let ke = smol_nts::nts_ke(nts_server).await?;
             let addr_str = format!("{}:{}", ke.ntp_server, ke.ntp_port);
             let addrs: Vec<SocketAddr> =
@@ -218,7 +129,7 @@ impl NtpClientBuilder {
             if let Some(&addr) = addrs.first() {
                 peers.push(PeerState::new_nts(
                     addr,
-                    initial_poll,
+                    cfg.initial_poll,
                     ke,
                     nts_server.clone(),
                 ));
@@ -239,18 +150,18 @@ impl NtpClientBuilder {
             NtpClient {
                 peers,
                 state: Arc::clone(&state),
-                min_poll,
-                max_poll,
+                min_poll: cfg.min_poll,
+                max_poll: cfg.max_poll,
                 total_responses: 0,
-                socket_opts: self.socket_opts,
+                socket_opts: cfg.socket_opts,
                 #[cfg(feature = "discipline")]
-                discipline: if self.enable_discipline {
+                discipline: if cfg.enable_discipline {
                     Some(crate::discipline::ClockDiscipline::new())
                 } else {
                     None
                 },
                 #[cfg(feature = "discipline")]
-                adjuster: if self.enable_discipline {
+                adjuster: if cfg.enable_discipline {
                     Some(crate::clock_adjust::ClockAdjuster::new())
                 } else {
                     None
@@ -865,6 +776,15 @@ impl NtpClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_builder_defaults() {
+        let builder = NtpClient::builder();
+        assert!(builder.servers.is_empty());
+        assert_eq!(builder.min_poll, crate::protocol::MINPOLL);
+        assert_eq!(builder.max_poll, crate::protocol::MAXPOLL);
+        assert!(builder.initial_poll.is_none());
+    }
 
     #[test]
     fn test_builder_rejects_empty_servers() {
