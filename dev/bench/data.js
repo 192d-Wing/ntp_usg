@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1771508865293,
+  "lastUpdate": 1781994177595,
   "repoUrl": "https://github.com/192d-Wing/ntp_usg",
   "entries": {
     "Selection Algorithm Benchmarks": [
@@ -2375,6 +2375,114 @@ window.BENCHMARK_DATA = {
             "name": "full_selection_pipeline/20",
             "value": 2639,
             "range": "± 2033",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "jwillman@jhics.org",
+            "name": "John Edward Willman V",
+            "username": "1456055067"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "09826bb71142632f05a53f0f1e60db4e7560cb0a",
+          "message": "Security review: panic/DoS fixes, NTS/crypto hardening, RFC 8915 cookie placement (#11)\n\n* fix: security review fixes — panics, DoS, NTS/crypto hardening\n\nFull code review, cargo audit (clean), and dependency assessment. Fixes\ncorrectness/security issues found across the workspace; all semver-compatible\ndeps are current (aes/cmac major bumps blocked by aes-siv stable).\n\nBuild/correctness:\n- server: skip IPv6 DSCP on Windows (set_tclass_v6 unsupported), matching the\n  client fix — restores the Windows build.\n- roughtime: reject Merkle paths > 32 nodes to prevent index-shift overflow\n  (debug panic / wrong result) from attacker-controlled PATH; add regression test.\n- roughtime: compute tag-value header length in u64 to avoid usize overflow on\n  32-bit/wasm bypassing the bounds check.\n- nmea: guard empty checksum slice and require ASCII before byte-index slicing,\n  preventing panics on malformed serial input.\n- unix_time: make ShortFormat -> Instant panic-free via same-sign normalization.\n\nNTS / crypto:\n- client: extract replacement cookies only from authenticated (pre-authenticator)\n  fields, preventing on-path cookie injection.\n- client+server: require and validate the NTS-KE AEAD algorithm against the\n  supported set; server rejects unsupported offers (RFC 8915 4.1.5).\n- server: cap NTS-KE record count (shared MAX_KE_RECORDS) to bound memory/CPU.\n- server: zeroize master key / cookie session keys on drop (zeroize dep).\n- server: opt-in cookie-key rotation task (tokio + smol) via shared helper.\n\nServer DoS / correctness:\n- drop denied/restricted clients silently instead of replying with KoD,\n  removing an unthrottled spoofed-reflection vector (matches NTPv5 path).\n- rate limiter: saturating_add on the request counter.\n\nClient / refclock:\n- selection: apply RFC 5905 11.2.1 accept test (stratum/root-distance) before\n  a peer becomes a truechimer.\n- gps/nmea: model satellite count as Option<u8> so RMC/ZDA time sentences are\n  usable (they report no count).\n\n* fix(nts): carry replacement cookies inside the authenticator (RFC 8915 §5.7)\n\nPreviously the server emitted new NTS cookies as cleartext extension fields\nbefore the authenticator (authenticated via AAD but not confidential), and the\nclient read them from cleartext while discarding the decrypted plaintext. That\nis non-standard and does not interoperate with RFC-compliant NTS peers\n(chrony, ntpd), which place replacement cookies inside the AEAD ciphertext.\n\n- server (build_nts_response): send only the Unique Identifier in cleartext and\n  encrypt the new NTS_COOKIE extension fields as the authenticator plaintext.\n- client (validate_nts_response): parse replacement cookies from the decrypted\n  authenticator plaintext instead of from cleartext fields.\n\nThis makes cookies confidential and integrity-protected, keeps the client and\nserver mutually compatible, and aligns the wire format with RFC 8915 for\ninterop. Manual-response proto tests updated to the new layout.\n\n* harden: code-review follow-ups on NTS key handling\n\nAddress findings from the high-effort review of the branch:\n\n- NtsRequestContext: replace derived Debug with a manual impl that redacts\n  s2c_key, so logging/backtraces can't leak the recovered session key (the\n  derive would have defeated the zeroize-on-drop hardening).\n- MasterKey: drop the unused `Clone` derive — cloning zeroized key material\n  creates extra secret copies that are easy to forget; the store moves keys.\n- nts_ke_server: fix misleading doc on the tokio spawn_key_rotation handle —\n  dropping a tokio JoinHandle detaches (does not stop) the task; document\n  calling .abort() instead.\n\n* style: cargo fmt\n\n* test: cover new NTS key handling and NMEA parser guards\n\nRaise patch coverage for the security fixes:\n- rotate_master_key: rotation advances the current key and retains the old key\n  for the grace period (old cookie still decrypts).\n- NtsRequestContext Debug redacts s2c_key.\n- NMEA parser no longer panics on a leading '*' or non-ASCII fields.",
+          "timestamp": "2026-06-20T17:18:57-05:00",
+          "tree_id": "d8d52a4908e21abcb4896b6b8ec8aab3e261152d",
+          "url": "https://github.com/192d-Wing/ntp_usg/commit/09826bb71142632f05a53f0f1e60db4e7560cb0a"
+        },
+        "date": 1781994177310,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "select_truechimers/3",
+            "value": 65,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/5",
+            "value": 142,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/10",
+            "value": 331,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/20",
+            "value": 737,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/3",
+            "value": 29,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/5",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/10",
+            "value": 515,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/15",
+            "value": 1326,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/3",
+            "value": 48,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/5",
+            "value": 48,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/10",
+            "value": 60,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/5",
+            "value": 341,
+            "range": "± 326",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/10",
+            "value": 970,
+            "range": "± 807",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/20",
+            "value": 2717,
+            "range": "± 2226",
             "unit": "ns/iter"
           }
         ]
