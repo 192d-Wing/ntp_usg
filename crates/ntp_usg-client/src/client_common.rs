@@ -562,6 +562,14 @@ pub(crate) fn select_and_build_state(
                 },
             )
         })
+        // RFC 5905 §11.2.1 accept test: drop insane peers before they can be
+        // selected as truechimers — an invalid stratum (0, or >= MAXSTRAT, which
+        // also covers peers with no reported stratum) or a root distance beyond
+        // MAXDIST means the source is too far/unsynchronized to trust.
+        .filter(|(_, c)| {
+            (1..protocol::MAXSTRAT).contains(&c.stratum)
+                && c.root_distance() <= f64::from(protocol::MAXDIST)
+        })
         .collect();
 
     if candidates.is_empty() {

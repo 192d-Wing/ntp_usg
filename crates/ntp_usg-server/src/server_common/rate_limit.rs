@@ -144,7 +144,10 @@ pub(crate) fn check_rate_limit(
         client.request_count = 0;
     }
 
-    client.request_count += 1;
+    // Saturate rather than wrap: a sustained flood must never overflow the
+    // counter back to zero (which would briefly re-allow the client) and must
+    // not panic in debug builds.
+    client.request_count = client.request_count.saturating_add(1);
     if client.request_count > config.max_requests_per_window {
         return RateLimitResult::RateExceeded;
     }

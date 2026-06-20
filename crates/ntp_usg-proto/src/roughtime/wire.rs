@@ -55,17 +55,25 @@ impl<'a> TagValueMap<'a> {
             });
         }
 
-        // Header: 4 (num_tags) + 4*(N-1) (offsets) + 4*N (tags)
-        let offsets_len = (num_tags as usize).saturating_sub(1) * 4;
-        let tags_len = num_tags as usize * 4;
-        let header_len = 4 + offsets_len + tags_len;
+        // Header: 4 (num_tags) + 4*(N-1) (offsets) + 4*N (tags).
+        // Compute in u64 to avoid `usize` overflow on 32-bit / wasm32 targets,
+        // where a large attacker-supplied `num_tags` could wrap and bypass the
+        // length check below.
+        let num_tags_u64 = num_tags as u64;
+        let header_len_u64 = 4 + num_tags_u64.saturating_sub(1) * 4 + num_tags_u64 * 4;
 
-        if buf.len() < header_len {
+        if (buf.len() as u64) < header_len_u64 {
             return Err(RoughtimeError::MessageTooShort {
-                needed: header_len,
+                needed: usize::try_from(header_len_u64).unwrap_or(usize::MAX),
                 available: buf.len(),
             });
         }
+
+        // Safe: the check above guarantees `header_len_u64 <= buf.len() <= usize::MAX`,
+        // and `num_tags >= 1` (the zero case returned early).
+        let offsets_len = (num_tags as usize - 1) * 4;
+        let tags_len = num_tags as usize * 4;
+        let header_len = 4 + offsets_len + tags_len;
 
         let offsets = &buf[4..4 + offsets_len];
         let tags = &buf[4 + offsets_len..header_len];

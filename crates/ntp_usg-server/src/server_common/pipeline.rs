@@ -83,27 +83,27 @@ pub fn handle_request(
     };
 
     // 2. Access control.
+    //
+    // Drop denied/restricted clients silently instead of replying with a KoD.
+    // The source IP of a UDP packet is unverified, so answering an access-denied
+    // address with a 48-byte KoD — before any rate limiting applies — lets the
+    // server be used as a spoofed-traffic reflector toward arbitrary victims
+    // (RFC 8633 §5.7). This matches the NTPv5 path, which also drops silently.
     match access_control.check(&src_ip) {
         AccessResult::Allow => {}
         AccessResult::Deny => {
-            let kod = build_kod_response(&request, protocol::KissOfDeath::Deny);
+            debug!(client = %src_ip, "access denied; dropping");
             if let Some(m) = metrics {
                 m.inc_kod_deny();
             }
-            match serialize_response_with_t3(&kod) {
-                Ok(buf) => return HandleResult::Response(buf),
-                Err(_) => return HandleResult::Drop,
-            }
+            return HandleResult::Drop;
         }
         AccessResult::Restrict => {
-            let kod = build_kod_response(&request, protocol::KissOfDeath::Rstr);
+            debug!(client = %src_ip, "access restricted; dropping");
             if let Some(m) = metrics {
                 m.inc_kod_rstr();
             }
-            match serialize_response_with_t3(&kod) {
-                Ok(buf) => return HandleResult::Response(buf),
-                Err(_) => return HandleResult::Drop,
-            }
+            return HandleResult::Drop;
         }
     }
 
@@ -572,16 +572,12 @@ mod tests {
             false,
             None,
         );
-        if let HandleResult::Response(resp_buf) = result {
-            let response: protocol::Packet = (&resp_buf[..48]).read_bytes().unwrap();
-            assert_eq!(response.stratum, protocol::Stratum::UNSPECIFIED);
-            assert_eq!(
-                response.reference_id,
-                protocol::ReferenceIdentifier::KissOfDeath(protocol::KissOfDeath::Deny)
-            );
-        } else {
-            panic!("expected Response, got Drop");
-        }
+        // Denied clients are dropped silently (no KoD) to avoid being used as a
+        // spoofed-traffic reflector; see the access-control step in handle_request.
+        assert!(
+            matches!(result, HandleResult::Drop),
+            "denied IP must be dropped, not answered"
+        );
     }
 
     #[test]

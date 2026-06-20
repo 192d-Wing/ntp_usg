@@ -170,7 +170,15 @@ impl From<protocol::ShortFormat> for Instant {
     fn from(t: protocol::ShortFormat) -> Self {
         let secs = t.seconds as i64 - EPOCH_DELTA;
         let subsec_nanos = (t.fraction as f64 / NTP_SCALE * 1e9) as i32;
-        Instant::new(secs, subsec_nanos).expect("ShortFormat produces same-sign components")
+        // `secs` is strongly negative (EPOCH_DELTA dwarfs a u16 seconds field)
+        // while `subsec_nanos` is non-negative. Normalize to same-sign components
+        // so this conversion of parsed data can never panic in `Instant::new`.
+        let (secs, subsec_nanos) = if secs < 0 && subsec_nanos > 0 {
+            (secs + 1, subsec_nanos - 1_000_000_000)
+        } else {
+            (secs, subsec_nanos)
+        };
+        Instant { secs, subsec_nanos }
     }
 }
 

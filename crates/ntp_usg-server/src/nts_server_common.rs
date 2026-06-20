@@ -23,6 +23,8 @@
 use std::io;
 use std::time::{Duration, Instant};
 
+use zeroize::Zeroize;
+
 use crate::error::{NtpServerError, NtsError, ProtocolError};
 use crate::extension::{
     self, ExtensionField, NtsAuthenticator, NtsCookie, UNIQUE_IDENTIFIER, UniqueIdentifier,
@@ -48,6 +50,14 @@ pub struct CookieContents {
     pub c2s_key: Vec<u8>,
     /// Server-to-client AEAD key.
     pub s2c_key: Vec<u8>,
+}
+
+impl Drop for CookieContents {
+    fn drop(&mut self) {
+        // Wipe session key material on drop so it does not linger in freed heap.
+        self.c2s_key.zeroize();
+        self.s2c_key.zeroize();
+    }
 }
 
 /// Serialize cookie contents to plaintext bytes.
@@ -96,7 +106,10 @@ fn deserialize_cookie_plaintext(plaintext: &[u8]) -> io::Result<CookieContents> 
 ///
 /// Each key has a unique numeric identifier embedded in cookie headers
 /// and a creation timestamp for implementing key rotation policies.
-#[derive(Clone)]
+//
+// Intentionally not `Clone`: the key material is zeroized on drop, and copying
+// it would create additional plaintext copies of the secret that are easy to
+// forget about. The store moves keys (`mem::replace`) rather than cloning.
 pub struct MasterKey {
     /// Unique key identifier, embedded in cookie headers.
     pub key_id: u32,
@@ -104,6 +117,13 @@ pub struct MasterKey {
     key: [u8; 64],
     /// When this key was created.
     created: Instant,
+}
+
+impl Drop for MasterKey {
+    fn drop(&mut self) {
+        // Wipe the cookie master key on drop (rotation/purge and shutdown).
+        self.key.zeroize();
+    }
 }
 
 impl MasterKey {
@@ -177,14 +197,16 @@ impl MasterKeyStore {
     ///
     /// Returns the opaque cookie bytes ready to send to the client.
     pub fn encrypt_cookie(&self, contents: &CookieContents) -> io::Result<Vec<u8>> {
-        let plaintext = serialize_cookie_plaintext(contents);
+        let mut plaintext = serialize_cookie_plaintext(contents);
 
         // AAD = key_id bytes.
         let aad = self.current.key_id.to_be_bytes();
 
         // AES-SIV encrypt using the current master key (CMAC-512 / 256-bit AES).
-        let (nonce, ciphertext) =
-            aead_encrypt(AEAD_AES_SIV_CMAC_512, &self.current.key, &aad, &plaintext)?;
+        let result = aead_encrypt(AEAD_AES_SIV_CMAC_512, &self.current.key, &aad, &plaintext);
+        // Wipe the transient plaintext copy of the session keys.
+        plaintext.zeroize();
+        let (nonce, ciphertext) = result?;
 
         // Assemble cookie: key_id || nonce || ciphertext.
         let mut cookie = Vec::with_capacity(4 + nonce.len() + ciphertext.len());
@@ -226,17 +248,32 @@ impl MasterKeyStore {
         };
 
         // Decrypt.
-        let plaintext = match aead_decrypt(AEAD_AES_SIV_CMAC_512, &key.key, aad, nonce, ciphertext)
-        {
-            Ok(pt) => pt,
-            Err(_) => return Ok(None), // Decryption failed.
-        };
+        let mut plaintext =
+            match aead_decrypt(AEAD_AES_SIV_CMAC_512, &key.key, aad, nonce, ciphertext) {
+                Ok(pt) => pt,
+                Err(_) => return Ok(None), // Decryption failed.
+            };
 
-        // Parse plaintext.
-        match deserialize_cookie_plaintext(&plaintext) {
+        // Parse plaintext, then wipe the transient copy of the session keys.
+        let parsed = deserialize_cookie_plaintext(&plaintext);
+        plaintext.zeroize();
+        match parsed {
             Ok(contents) => Ok(Some(contents)),
             Err(_) => Ok(None),
         }
+    }
+}
+
+/// Rotate the master key behind a shared store, logging on success or lock
+/// poisoning. Shared by the tokio and smol NTS-KE key-rotation tasks so both
+/// runtimes apply identical rotation behavior.
+pub fn rotate_master_key(key_store: &std::sync::Arc<std::sync::RwLock<MasterKeyStore>>) {
+    match key_store.write() {
+        Ok(mut store) => {
+            store.rotate();
+            tracing::debug!("NTS-KE cookie master key rotated");
+        }
+        Err(_) => tracing::debug!("NTS-KE key store poisoned; skipping rotation"),
     }
 }
 
@@ -245,7 +282,6 @@ impl MasterKeyStore {
 // ============================================================================
 
 /// Context extracted from an NTS-authenticated request, used to build the response.
-#[derive(Debug)]
 pub struct NtsRequestContext {
     /// Unique Identifier to echo back.
     pub uid_data: Vec<u8>,
@@ -255,6 +291,26 @@ pub struct NtsRequestContext {
     pub aead_algorithm: u16,
     /// New cookies to include in the response.
     pub new_cookies: Vec<Vec<u8>>,
+}
+
+// Manual `Debug` that redacts the session key — deriving it would print the
+// secret `s2c_key` in logs/backtraces, defeating the zeroize-on-drop hardening.
+impl core::fmt::Debug for NtsRequestContext {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("NtsRequestContext")
+            .field("uid_data", &self.uid_data)
+            .field("s2c_key", &"<redacted>")
+            .field("aead_algorithm", &self.aead_algorithm)
+            .field("new_cookies", &self.new_cookies)
+            .finish()
+    }
+}
+
+impl Drop for NtsRequestContext {
+    fn drop(&mut self) {
+        // Wipe the recovered server-to-client session key on drop.
+        self.s2c_key.zeroize();
+    }
 }
 
 /// Process an incoming NTS-authenticated NTP request.
@@ -299,7 +355,7 @@ pub fn process_nts_extensions(
         })?;
 
     // 4. Decrypt the cookie to recover session keys.
-    let cookie_contents =
+    let mut cookie_contents =
         key_store
             .decrypt_cookie(&cookie_ef.value)?
             .ok_or_else(|| -> io::Error {
@@ -347,10 +403,16 @@ pub fn process_nts_extensions(
         .map(|_| key_store.encrypt_cookie(&cookie_contents))
         .collect::<io::Result<Vec<_>>>()?;
 
+    // Move the s2c key out without a partial move (`CookieContents` impls `Drop`);
+    // the remaining contents (incl. c2s key) are zeroized when `cookie_contents`
+    // drops at the end of this scope.
+    let aead_algorithm = cookie_contents.aead_algorithm;
+    let s2c_key = std::mem::take(&mut cookie_contents.s2c_key);
+
     Ok(NtsRequestContext {
         uid_data,
-        s2c_key: cookie_contents.s2c_key,
-        aead_algorithm: cookie_contents.aead_algorithm,
+        s2c_key,
+        aead_algorithm,
         new_cookies,
     })
 }
@@ -368,13 +430,11 @@ pub fn build_nts_response(
     let mut resp_header = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
     (&mut resp_header[..]).write_bytes(*response_packet)?;
 
-    // Build pre-authenticator extension fields.
+    // Build pre-authenticator extension fields. Only the Unique Identifier is
+    // sent in cleartext (it must be echoed for replay matching); the replacement
+    // cookies go inside the encrypted authenticator below.
     let uid = UniqueIdentifier::new(ctx.uid_data.clone());
-    let mut pre_auth_fields: Vec<ExtensionField> = vec![uid.to_extension_field()];
-    for cookie in &ctx.new_cookies {
-        let nts_cookie = NtsCookie::new(cookie.clone());
-        pre_auth_fields.push(nts_cookie.to_extension_field());
-    }
+    let pre_auth_fields: Vec<ExtensionField> = vec![uid.to_extension_field()];
     let pre_auth_bytes = extension::write_extension_fields(&pre_auth_fields)?;
 
     // Build response AAD = header + pre-auth extensions.
@@ -382,13 +442,18 @@ pub fn build_nts_response(
     resp_aad.extend_from_slice(&resp_header);
     resp_aad.extend_from_slice(&pre_auth_bytes);
 
-    // AEAD encrypt with S2C key (empty plaintext for basic NTS).
-    let (nonce, ciphertext) = nts_common::aead_encrypt(
-        ctx.aead_algorithm,
-        &ctx.s2c_key,
-        &resp_aad,
-        &[], // No encrypted extensions.
-    )?;
+    // Encrypt the replacement cookies as the authenticator plaintext, so they
+    // are confidential and integrity-protected (RFC 8915 §5.7).
+    let cookie_fields: Vec<ExtensionField> = ctx
+        .new_cookies
+        .iter()
+        .map(|cookie| NtsCookie::new(cookie.clone()).to_extension_field())
+        .collect();
+    let plaintext = extension::write_extension_fields(&cookie_fields)?;
+
+    // AEAD encrypt with the S2C key.
+    let (nonce, ciphertext) =
+        nts_common::aead_encrypt(ctx.aead_algorithm, &ctx.s2c_key, &resp_aad, &plaintext)?;
 
     // Build NTS Authenticator extension field.
     let resp_auth = NtsAuthenticator::new(nonce, ciphertext);
@@ -410,6 +475,40 @@ pub fn build_nts_response(
 mod tests {
     use super::*;
     use crate::nts_common::AEAD_AES_SIV_CMAC_256;
+
+    #[test]
+    fn test_rotate_master_key_helper() {
+        use std::sync::{Arc, RwLock};
+        let store = Arc::new(RwLock::new(MasterKeyStore::new(Duration::from_secs(3600))));
+        let contents = CookieContents {
+            aead_algorithm: AEAD_AES_SIV_CMAC_512,
+            c2s_key: vec![0x11u8; 64],
+            s2c_key: vec![0x22u8; 64],
+        };
+        let cookie = store.read().unwrap().encrypt_cookie(&contents).unwrap();
+
+        rotate_master_key(&store);
+
+        // The current key id advanced, and the cookie minted under the previous
+        // key still decrypts during the grace period (retired key retained).
+        let decrypted = store.read().unwrap().decrypt_cookie(&cookie).unwrap();
+        assert!(decrypted.is_some());
+        assert_eq!(decrypted.unwrap().s2c_key, vec![0x22u8; 64]);
+    }
+
+    #[test]
+    fn test_nts_request_context_debug_redacts_session_key() {
+        let ctx = NtsRequestContext {
+            uid_data: vec![1, 2, 3],
+            s2c_key: vec![0xABu8; 64],
+            aead_algorithm: AEAD_AES_SIV_CMAC_512,
+            new_cookies: Vec::new(),
+        };
+        let rendered = format!("{ctx:?}");
+        assert!(rendered.contains("<redacted>"));
+        // The raw key bytes (0xAB = 171) must not appear in the debug output.
+        assert!(!rendered.contains("171"));
+    }
 
     // ── Cookie roundtrip ──────────────────────────────────────────
 

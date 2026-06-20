@@ -81,8 +81,14 @@ fn verify_merkle_tree(
     let mut current = [0u8; 32];
     current.copy_from_slice(&leaf_hash.as_ref()[..32]);
 
-    // Walk the path.
+    // Walk the path. A u32 leaf index addresses at most 32 tree levels, so a
+    // longer path is malformed; rejecting it also prevents the `index >> i`
+    // shift below from overflowing (`i >= 32` panics in debug builds and is a
+    // logic error in release). `path` is attacker-controlled and unsigned.
     let num_nodes = path.len() / 32;
+    if num_nodes > 32 {
+        return Err(RoughtimeError::MerkleVerificationFailed);
+    }
     for i in 0..num_nodes {
         let sibling = &path[i * 32..(i + 1) * 32];
         let mut node_input = [0u8; 65];
@@ -252,6 +258,21 @@ mod tests {
         // Path not a multiple of 32.
         assert_eq!(
             verify_merkle_tree(&nonce, &root, &[0; 17], 0),
+            Err(RoughtimeError::MerkleVerificationFailed)
+        );
+    }
+
+    #[test]
+    fn test_merkle_tree_overlong_path_rejected() {
+        // A path with more than 32 nodes is malformed (a u32 index addresses at
+        // most 32 levels). This previously panicked on `index >> i` (i >= 32) in
+        // debug builds; it must now be rejected cleanly. `index` is set so the
+        // shift would reach bit 32 if the loop were allowed to run that far.
+        let nonce = [0u8; 32];
+        let root = [0u8; 32];
+        let path = vec![0u8; 33 * 32];
+        assert_eq!(
+            verify_merkle_tree(&nonce, &root, &path, u32::MAX),
             Err(RoughtimeError::MerkleVerificationFailed)
         );
     }
