@@ -476,6 +476,40 @@ mod tests {
     use super::*;
     use crate::nts_common::AEAD_AES_SIV_CMAC_256;
 
+    #[test]
+    fn test_rotate_master_key_helper() {
+        use std::sync::{Arc, RwLock};
+        let store = Arc::new(RwLock::new(MasterKeyStore::new(Duration::from_secs(3600))));
+        let contents = CookieContents {
+            aead_algorithm: AEAD_AES_SIV_CMAC_512,
+            c2s_key: vec![0x11u8; 64],
+            s2c_key: vec![0x22u8; 64],
+        };
+        let cookie = store.read().unwrap().encrypt_cookie(&contents).unwrap();
+
+        rotate_master_key(&store);
+
+        // The current key id advanced, and the cookie minted under the previous
+        // key still decrypts during the grace period (retired key retained).
+        let decrypted = store.read().unwrap().decrypt_cookie(&cookie).unwrap();
+        assert!(decrypted.is_some());
+        assert_eq!(decrypted.unwrap().s2c_key, vec![0x22u8; 64]);
+    }
+
+    #[test]
+    fn test_nts_request_context_debug_redacts_session_key() {
+        let ctx = NtsRequestContext {
+            uid_data: vec![1, 2, 3],
+            s2c_key: vec![0xABu8; 64],
+            aead_algorithm: AEAD_AES_SIV_CMAC_512,
+            new_cookies: Vec::new(),
+        };
+        let rendered = format!("{ctx:?}");
+        assert!(rendered.contains("<redacted>"));
+        // The raw key bytes (0xAB = 171) must not appear in the debug output.
+        assert!(!rendered.contains("171"));
+    }
+
     // ── Cookie roundtrip ──────────────────────────────────────────
 
     #[test]

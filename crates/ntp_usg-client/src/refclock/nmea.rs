@@ -420,6 +420,30 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_sentence_leading_star_does_not_panic() {
+        // First '*' at index 0 leaves an empty data segment; must not panic on
+        // `&data[1..]`. A bad/short checksum yields an error, not a crash.
+        let _ = parse_sentence("*41");
+        let _ = parse_sentence("*");
+    }
+
+    #[test]
+    fn test_parse_time_rejects_non_ascii() {
+        // Multi-byte UTF-8 must be rejected before byte-index slicing (no panic).
+        assert!(parse_time("1\u{e9}3456").is_err());
+    }
+
+    #[test]
+    fn test_parse_date_rejects_non_ascii() {
+        assert!(parse_date("2\u{e9}0394").is_err());
+    }
+
+    #[test]
+    fn test_parse_coordinate_non_ascii_returns_none() {
+        assert!(parse_coordinate("48\u{e9}7.038", "N").is_none());
+    }
+
+    #[test]
     fn test_days_since_epoch() {
         // 1970-01-01 should be 0
         assert_eq!(days_since_unix_epoch(1970, 1, 1), Some(0));
