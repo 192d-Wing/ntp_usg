@@ -133,7 +133,7 @@ impl GpsReceiver {
                     match parse_sentence(line.trim()) {
                         Ok(Some(fix)) => {
                             debug!(
-                                "GPS fix: quality={:?}, sats={}, time={:?}",
+                                "GPS fix: quality={:?}, sats={:?}, time={:?}",
                                 fix.quality, fix.satellites, fix.time
                             );
                             // Send to channel (ignore errors if receiver dropped)
@@ -168,7 +168,9 @@ impl GpsReceiver {
             .map(|fix| {
                 fix.quality.is_valid()
                     && fix.quality as u8 >= self.config.min_quality as u8
-                    && fix.satellites >= self.config.min_satellites
+                    && fix
+                        .satellites
+                        .is_none_or(|s| s >= self.config.min_satellites)
                     && fix.date.is_some()
             })
             .unwrap_or(false)
@@ -210,10 +212,14 @@ impl RefClock for GpsReceiver {
                 )));
             }
 
-            if fix.satellites < self.config.min_satellites {
+            // Only enforce the satellite-count minimum on sentences that report
+            // it (GGA); RMC/ZDA carry no count and pass on quality/status alone.
+            if let Some(sats) = fix.satellites
+                && sats < self.config.min_satellites
+            {
                 return Err(io::Error::other(format!(
                     "GPS satellite count {} below minimum {}",
-                    fix.satellites, self.config.min_satellites
+                    sats, self.config.min_satellites
                 )));
             }
 
@@ -241,8 +247,8 @@ impl RefClock for GpsReceiver {
 
             // Quality score: 0 (worst) to 255 (best)
             // Based on satellite count and fix quality
-            let quality =
-                ((fix.satellites.min(16) as u16 * 10 + fix.quality as u16 * 5).min(255)) as u8;
+            let sat_score = u16::from(fix.satellites.unwrap_or(0).min(16)) * 10;
+            let quality = (sat_score + fix.quality as u16 * 5).min(255) as u8;
 
             Ok(RefClockSample {
                 timestamp: now,

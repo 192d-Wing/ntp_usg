@@ -78,28 +78,24 @@ fn test_response_stratum_and_reference() {
     });
 }
 
-/// 4. Denied client gets KoD DENY (stratum=0).
+/// 4. Denied client is dropped silently (no KoD), to avoid spoofed-reflection.
 #[test]
-fn test_deny_list_returns_kod_deny() {
+fn test_deny_list_drops_silently() {
     smol::block_on(async {
         let addr =
             spawn_test_server(NtpServer::builder().deny(IpNet::new("::1".parse().unwrap(), 128)))
                 .await;
 
         let request = build_client_packet();
-        let resp = send_receive_raw(addr, &request, Duration::from_secs(2))
-            .await
-            .expect("no response");
-        let pkt = parse_response(&resp);
+        let resp = send_receive_raw(addr, &request, Duration::from_millis(500)).await;
 
-        assert_eq!(pkt.stratum, Stratum::UNSPECIFIED);
-        assert_eq!(pkt.reference_id.as_bytes(), *b"DENY");
+        assert!(resp.is_none(), "denied client must receive no response");
     });
 }
 
-/// 5. Unmatched client gets KoD RSTR when allow list is set.
+/// 5. Unmatched client is dropped silently when an allow list is set.
 #[test]
-fn test_allow_list_restricts_unmatched() {
+fn test_allow_list_drops_unmatched() {
     smol::block_on(async {
         // Allow only 192.0.2.0/24 (TEST-NET), which won't match our loopback client.
         let addr = spawn_test_server(
@@ -108,13 +104,9 @@ fn test_allow_list_restricts_unmatched() {
         .await;
 
         let request = build_client_packet();
-        let resp = send_receive_raw(addr, &request, Duration::from_secs(2))
-            .await
-            .expect("no response");
-        let pkt = parse_response(&resp);
+        let resp = send_receive_raw(addr, &request, Duration::from_millis(500)).await;
 
-        assert_eq!(pkt.stratum, Stratum::UNSPECIFIED);
-        assert_eq!(pkt.reference_id.as_bytes(), *b"RSTR");
+        assert!(resp.is_none(), "restricted client must receive no response");
     });
 }
 

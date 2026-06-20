@@ -19,6 +19,12 @@ use crate::default_listen_addr;
 use crate::nts_common::*;
 use crate::nts_server_common::{CookieContents, MasterKeyStore};
 
+/// Maximum number of NTS-KE records a server reads from one connection before
+/// giving up. A legitimate client request contains only a handful; the cap
+/// bounds memory/CPU against a peer that never sends End-of-Message. Shared by
+/// the tokio and smol NTS-KE servers.
+pub(crate) const MAX_KE_RECORDS: usize = 32;
+
 /// Configuration for an NTS-KE server.
 pub struct NtsKeServerConfig {
     /// TLS certificate chain (DER encoded).
@@ -132,12 +138,23 @@ pub(crate) fn process_nts_ke_records(
     };
 
     // 3. Negotiate AEAD algorithm (prefer CMAC-512, fall back to CMAC-256).
+    // RFC 8915 §4.1.5: the server must select an algorithm the client offered.
+    // If the client offers none we support, reject with a Bad Request error
+    // rather than silently picking one the client cannot use.
     let supported = [AEAD_AES_SIV_CMAC_512, AEAD_AES_SIV_CMAC_256];
-    let aead_algorithm = supported
+    let aead_algorithm = match supported
         .iter()
         .find(|a| client_aead_algorithms.contains(a))
         .copied()
-        .unwrap_or(AEAD_AES_SIV_CMAC_512);
+    {
+        Some(a) => a,
+        None => {
+            let mut resp = Vec::new();
+            write_ke_record(&mut resp, true, NTS_KE_ERROR, &1u16.to_be_bytes());
+            write_ke_record(&mut resp, true, NTS_KE_END_OF_MESSAGE, &[]);
+            return Ok(resp);
+        }
+    };
 
     // 4. Export TLS keying material (RFC 8915 Section 4.2).
     let key_len = aead_key_length(aead_algorithm)?;

@@ -73,7 +73,7 @@ pub(crate) fn process_nts_ke_records(
     default_hostname: &str,
 ) -> io::Result<NtsKeResult> {
     let mut next_protocol: Option<u16> = None;
-    let mut aead_algorithm = AEAD_AES_SIV_CMAC_512;
+    let mut aead_algorithm: Option<u16> = None;
     let mut cookies = Vec::new();
     let mut ntp_server = default_hostname.to_string();
     let mut ntp_port: u16 = 123;
@@ -113,8 +113,18 @@ pub(crate) fn process_nts_ke_records(
                     })
                     .into());
                 }
-                aead_algorithm = read_be_u16(&record.body[..2]);
-                debug!(aead_algorithm, "NTS-KE: AEAD algorithm negotiated");
+                let proposed = read_be_u16(&record.body[..2]);
+                // RFC 8915 §4.1.5: the server must select an algorithm the
+                // client offered. We only offer the two AES-SIV-CMAC variants;
+                // reject anything else instead of failing later in key export.
+                if proposed != AEAD_AES_SIV_CMAC_512 && proposed != AEAD_AES_SIV_CMAC_256 {
+                    return Err(NtpError::Nts(NtsError::Other(format!(
+                        "server selected unsupported AEAD algorithm {proposed}"
+                    )))
+                    .into());
+                }
+                aead_algorithm = Some(proposed);
+                debug!(aead_algorithm = proposed, "NTS-KE: AEAD algorithm negotiated");
             }
             NTS_KE_ERROR => {
                 let code = if record.body.len() >= 2 {
@@ -170,6 +180,15 @@ pub(crate) fn process_nts_ke_records(
     let next_protocol = next_protocol.ok_or_else(|| -> io::Error {
         NtpError::Nts(NtsError::MissingRecord {
             record: "Next Protocol",
+        })
+        .into()
+    })?;
+
+    // RFC 8915 §4.1.5: the AEAD Negotiation record is required in the response;
+    // do not silently assume a default algorithm.
+    let aead_algorithm = aead_algorithm.ok_or_else(|| -> io::Error {
+        NtpError::Nts(NtsError::MissingRecord {
+            record: "AEAD Algorithm",
         })
         .into()
     })?;

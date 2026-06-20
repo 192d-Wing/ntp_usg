@@ -23,6 +23,8 @@
 use std::io;
 use std::time::{Duration, Instant};
 
+use zeroize::Zeroize;
+
 use crate::error::{NtpServerError, NtsError, ProtocolError};
 use crate::extension::{
     self, ExtensionField, NtsAuthenticator, NtsCookie, UNIQUE_IDENTIFIER, UniqueIdentifier,
@@ -48,6 +50,14 @@ pub struct CookieContents {
     pub c2s_key: Vec<u8>,
     /// Server-to-client AEAD key.
     pub s2c_key: Vec<u8>,
+}
+
+impl Drop for CookieContents {
+    fn drop(&mut self) {
+        // Wipe session key material on drop so it does not linger in freed heap.
+        self.c2s_key.zeroize();
+        self.s2c_key.zeroize();
+    }
 }
 
 /// Serialize cookie contents to plaintext bytes.
@@ -104,6 +114,13 @@ pub struct MasterKey {
     key: [u8; 64],
     /// When this key was created.
     created: Instant,
+}
+
+impl Drop for MasterKey {
+    fn drop(&mut self) {
+        // Wipe the cookie master key on drop (rotation/purge and shutdown).
+        self.key.zeroize();
+    }
 }
 
 impl MasterKey {
@@ -177,14 +194,16 @@ impl MasterKeyStore {
     ///
     /// Returns the opaque cookie bytes ready to send to the client.
     pub fn encrypt_cookie(&self, contents: &CookieContents) -> io::Result<Vec<u8>> {
-        let plaintext = serialize_cookie_plaintext(contents);
+        let mut plaintext = serialize_cookie_plaintext(contents);
 
         // AAD = key_id bytes.
         let aad = self.current.key_id.to_be_bytes();
 
         // AES-SIV encrypt using the current master key (CMAC-512 / 256-bit AES).
-        let (nonce, ciphertext) =
-            aead_encrypt(AEAD_AES_SIV_CMAC_512, &self.current.key, &aad, &plaintext)?;
+        let result = aead_encrypt(AEAD_AES_SIV_CMAC_512, &self.current.key, &aad, &plaintext);
+        // Wipe the transient plaintext copy of the session keys.
+        plaintext.zeroize();
+        let (nonce, ciphertext) = result?;
 
         // Assemble cookie: key_id || nonce || ciphertext.
         let mut cookie = Vec::with_capacity(4 + nonce.len() + ciphertext.len());
@@ -226,17 +245,32 @@ impl MasterKeyStore {
         };
 
         // Decrypt.
-        let plaintext = match aead_decrypt(AEAD_AES_SIV_CMAC_512, &key.key, aad, nonce, ciphertext)
-        {
-            Ok(pt) => pt,
-            Err(_) => return Ok(None), // Decryption failed.
-        };
+        let mut plaintext =
+            match aead_decrypt(AEAD_AES_SIV_CMAC_512, &key.key, aad, nonce, ciphertext) {
+                Ok(pt) => pt,
+                Err(_) => return Ok(None), // Decryption failed.
+            };
 
-        // Parse plaintext.
-        match deserialize_cookie_plaintext(&plaintext) {
+        // Parse plaintext, then wipe the transient copy of the session keys.
+        let parsed = deserialize_cookie_plaintext(&plaintext);
+        plaintext.zeroize();
+        match parsed {
             Ok(contents) => Ok(Some(contents)),
             Err(_) => Ok(None),
         }
+    }
+}
+
+/// Rotate the master key behind a shared store, logging on success or lock
+/// poisoning. Shared by the tokio and smol NTS-KE key-rotation tasks so both
+/// runtimes apply identical rotation behavior.
+pub fn rotate_master_key(key_store: &std::sync::Arc<std::sync::RwLock<MasterKeyStore>>) {
+    match key_store.write() {
+        Ok(mut store) => {
+            store.rotate();
+            tracing::debug!("NTS-KE cookie master key rotated");
+        }
+        Err(_) => tracing::debug!("NTS-KE key store poisoned; skipping rotation"),
     }
 }
 
@@ -255,6 +289,13 @@ pub struct NtsRequestContext {
     pub aead_algorithm: u16,
     /// New cookies to include in the response.
     pub new_cookies: Vec<Vec<u8>>,
+}
+
+impl Drop for NtsRequestContext {
+    fn drop(&mut self) {
+        // Wipe the recovered server-to-client session key on drop.
+        self.s2c_key.zeroize();
+    }
 }
 
 /// Process an incoming NTS-authenticated NTP request.
@@ -299,7 +340,7 @@ pub fn process_nts_extensions(
         })?;
 
     // 4. Decrypt the cookie to recover session keys.
-    let cookie_contents =
+    let mut cookie_contents =
         key_store
             .decrypt_cookie(&cookie_ef.value)?
             .ok_or_else(|| -> io::Error {
@@ -347,10 +388,16 @@ pub fn process_nts_extensions(
         .map(|_| key_store.encrypt_cookie(&cookie_contents))
         .collect::<io::Result<Vec<_>>>()?;
 
+    // Move the s2c key out without a partial move (`CookieContents` impls `Drop`);
+    // the remaining contents (incl. c2s key) are zeroized when `cookie_contents`
+    // drops at the end of this scope.
+    let aead_algorithm = cookie_contents.aead_algorithm;
+    let s2c_key = std::mem::take(&mut cookie_contents.s2c_key);
+
     Ok(NtsRequestContext {
         uid_data,
-        s2c_key: cookie_contents.s2c_key,
-        aead_algorithm: cookie_contents.aead_algorithm,
+        s2c_key,
+        aead_algorithm,
         new_cookies,
     })
 }

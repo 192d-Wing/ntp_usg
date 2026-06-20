@@ -31,6 +31,7 @@
 
 use std::io;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -110,6 +111,30 @@ impl NtsKeServer {
             );
         }
     }
+
+    /// Spawn a background task that rotates the cookie master key every
+    /// `interval`.
+    ///
+    /// Rotation retires the current key (still usable for decryption during the
+    /// store's grace period) and generates a fresh one, bounding how long any
+    /// single key — and thus the AES-SIV key protecting issued cookies — is in
+    /// use. This is **opt-in**: without calling it, the master key is never
+    /// rotated automatically. Pick an `interval` shorter than the grace period
+    /// passed to [`MasterKeyStore::new`] so cookies remain decryptable across a
+    /// rotation. The returned handle keeps the task alive; drop it to stop.
+    pub fn spawn_key_rotation(&self, interval: Duration) -> tokio::task::JoinHandle<()> {
+        let key_store = self.key_store.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            // Consume the immediate first tick so the freshly-created key is not
+            // rotated out the instant the task starts.
+            ticker.tick().await;
+            loop {
+                ticker.tick().await;
+                crate::nts_server_common::rotate_master_key(&key_store);
+            }
+        })
+    }
 }
 
 /// Handle a single NTS-KE client connection.
@@ -120,7 +145,9 @@ async fn handle_nts_ke_connection(
     ntp_port: Option<u16>,
     cookie_count: usize,
 ) -> io::Result<()> {
-    // Read all client NTS-KE records until End of Message.
+    // Read all client NTS-KE records until End of Message, capping the count
+    // (see `MAX_KE_RECORDS`) to bound memory/CPU against a peer that completes
+    // the TLS handshake but then streams records without ever sending EoM.
     let mut records = Vec::new();
     loop {
         let record = read_ke_record_server(&mut tls_stream).await?;
@@ -128,6 +155,12 @@ async fn handle_nts_ke_connection(
         records.push(record);
         if is_eom {
             break;
+        }
+        if records.len() >= crate::nts_ke_server_common::MAX_KE_RECORDS {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "NTS-KE request exceeded maximum record count",
+            ));
         }
     }
 

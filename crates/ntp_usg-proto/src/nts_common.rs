@@ -373,9 +373,15 @@ pub fn validate_nts_response(
         &resp_auth.ciphertext,
     )?;
 
-    // Extract new cookies from the response.
+    // Extract new cookies from the response. Only extension fields *before*
+    // the authenticator are covered by the AAD and therefore authenticated;
+    // stop at the authenticator so an on-path attacker cannot inject forged
+    // NTS_COOKIE fields appended after it.
     let mut new_cookies = Vec::new();
     for ef in &ext_fields {
+        if ef.field_type == extension::NTS_AUTHENTICATOR {
+            break;
+        }
         if let Some(cookie) = NtsCookie::from_extension_field(ef) {
             new_cookies.push(cookie.0);
         }

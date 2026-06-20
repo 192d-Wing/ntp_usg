@@ -70,8 +70,9 @@ pub struct GpsFix {
     /// Fix quality
     pub quality: FixQuality,
 
-    /// Number of satellites in use
-    pub satellites: u8,
+    /// Number of satellites in use, or `None` for sentence types (RMC, ZDA)
+    /// that do not report a satellite count.
+    pub satellites: Option<u8>,
 
     /// Horizontal dilution of precision
     pub hdop: Option<f64>,
@@ -89,7 +90,9 @@ pub struct GpsFix {
 impl GpsFix {
     /// Check if this GPS fix is valid for time synchronization
     pub fn is_valid(&self) -> bool {
-        self.quality.is_valid() && self.satellites >= 3
+        // Only gate on satellite count for sentences that report it (GGA);
+        // RMC/ZDA carry no count and rely on fix quality / status alone.
+        self.quality.is_valid() && self.satellites.is_none_or(|s| s >= 3)
     }
 
     /// Convert GPS time to Unix timestamp
@@ -121,7 +124,9 @@ pub fn parse_sentence(sentence: &str) -> io::Result<Option<GpsFix>> {
         let data = &sentence[..star_pos];
         let expected_checksum = &sentence[star_pos + 1..];
 
-        let calculated = calculate_checksum(&data[1..]); // Skip '$'
+        // Skip the leading '$'. Guard against a sentence whose first '*' is at
+        // index 0 (so `data` is empty), which would panic on `&data[1..]`.
+        let calculated = calculate_checksum(data.get(1..).unwrap_or(""));
         let expected =
             u8::from_str_radix(expected_checksum, 16).map_err(|_| NmeaError::InvalidChecksum)?;
 
@@ -161,7 +166,7 @@ fn parse_gga(fields: &[&str]) -> io::Result<Option<GpsFix>> {
 
     let time = parse_time(fields[1])?;
     let quality = FixQuality::from_u8(fields[6].parse().unwrap_or(0));
-    let satellites = fields[7].parse().unwrap_or(0);
+    let satellites = Some(fields[7].parse().unwrap_or(0));
     let hdop = fields[8].parse().ok();
     let altitude = fields[9].parse().ok();
 
@@ -208,7 +213,7 @@ fn parse_rmc(fields: &[&str]) -> io::Result<Option<GpsFix>> {
         time,
         date,
         quality,
-        satellites: 0, // RMC doesn't include satellite count
+        satellites: None, // RMC doesn't include satellite count
         hdop: None,
         altitude: None,
         latitude,
@@ -240,7 +245,7 @@ fn parse_zda(fields: &[&str]) -> io::Result<Option<GpsFix>> {
         time,
         date: Some((year, month, day)),
         quality: FixQuality::Gps, // ZDA doesn't include quality
-        satellites: 0,
+        satellites: None,
         hdop: None,
         altitude: None,
         latitude: None,
@@ -249,9 +254,11 @@ fn parse_zda(fields: &[&str]) -> io::Result<Option<GpsFix>> {
 }
 
 fn parse_time(s: &str) -> io::Result<(u8, u8, f64)> {
-    if s.len() < 6 {
+    // Require ASCII so the byte-index slices below land on char boundaries;
+    // a garbled serial feed can contain multi-byte UTF-8 that would panic.
+    if s.len() < 6 || !s.is_ascii() {
         return Err(NmeaError::InvalidFormat {
-            detail: "time field too short",
+            detail: "time field too short or non-ASCII",
         }
         .into());
     }
@@ -273,9 +280,9 @@ fn parse_time(s: &str) -> io::Result<(u8, u8, f64)> {
 }
 
 fn parse_date(s: &str) -> io::Result<(u16, u8, u8)> {
-    if s.len() != 6 {
+    if s.len() != 6 || !s.is_ascii() {
         return Err(NmeaError::InvalidFormat {
-            detail: "date field must be 6 characters",
+            detail: "date field must be 6 ASCII characters",
         }
         .into());
     }
@@ -303,7 +310,8 @@ fn parse_date(s: &str) -> io::Result<(u16, u8, u8)> {
 }
 
 fn parse_coordinate(value: &str, direction: &str) -> Option<f64> {
-    if value.is_empty() || direction.is_empty() {
+    // Require ASCII so the byte-index slices below land on char boundaries.
+    if value.is_empty() || direction.is_empty() || !value.is_ascii() {
         return None;
     }
 
@@ -355,7 +363,7 @@ mod tests {
 
         assert_eq!(fix.time, (12, 35, 19.0));
         assert_eq!(fix.quality, FixQuality::Gps);
-        assert_eq!(fix.satellites, 8);
+        assert_eq!(fix.satellites, Some(8));
         assert!((fix.hdop.unwrap() - 0.9).abs() < 0.001);
         assert!((fix.altitude.unwrap() - 545.4).abs() < 0.001);
     }
@@ -368,6 +376,10 @@ mod tests {
         assert_eq!(fix.time, (12, 35, 19.0));
         assert_eq!(fix.quality, FixQuality::Gps);
         assert_eq!(fix.date, Some((1994, 3, 23)));
+        // RMC reports no satellite count; a status-"A" fix must still be usable.
+        assert_eq!(fix.satellites, None);
+        assert!(fix.is_valid());
+        assert!(fix.to_unix_timestamp().is_some());
     }
 
     #[test]
@@ -377,6 +389,11 @@ mod tests {
 
         assert_eq!(fix.time, (12, 35, 19.0));
         assert_eq!(fix.date, Some((1994, 3, 23)));
+        // ZDA is the preferred time sentence; it must yield a usable timestamp
+        // despite reporting no satellite count.
+        assert_eq!(fix.satellites, None);
+        assert!(fix.is_valid());
+        assert!(fix.to_unix_timestamp().is_some());
     }
 
     #[test]
