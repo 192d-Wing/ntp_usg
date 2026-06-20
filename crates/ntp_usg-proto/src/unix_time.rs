@@ -178,10 +178,7 @@ impl From<protocol::ShortFormat> for Instant {
         } else {
             (secs, subsec_nanos)
         };
-        Instant {
-            secs,
-            subsec_nanos,
-        }
+        Instant { secs, subsec_nanos }
     }
 }
 

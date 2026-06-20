@@ -124,7 +124,10 @@ pub(crate) fn process_nts_ke_records(
                     .into());
                 }
                 aead_algorithm = Some(proposed);
-                debug!(aead_algorithm = proposed, "NTS-KE: AEAD algorithm negotiated");
+                debug!(
+                    aead_algorithm = proposed,
+                    "NTS-KE: AEAD algorithm negotiated"
+                );
             }
             NTS_KE_ERROR => {
                 let code = if record.body.len() >= 2 {
