@@ -121,7 +121,8 @@ impl NtsKeServer {
     /// use. This is **opt-in**: without calling it, the master key is never
     /// rotated automatically. Pick an `interval` shorter than the grace period
     /// passed to [`MasterKeyStore::new`] so cookies remain decryptable across a
-    /// rotation. The returned handle keeps the task alive; drop it to stop.
+    /// rotation. Dropping the returned [`tokio::task::JoinHandle`] does **not**
+    /// stop rotation (Tokio detaches the task); call `.abort()` on it to stop.
     pub fn spawn_key_rotation(&self, interval: Duration) -> tokio::task::JoinHandle<()> {
         let key_store = self.key_store.clone();
         tokio::spawn(async move {

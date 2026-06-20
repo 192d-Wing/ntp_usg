@@ -106,7 +106,10 @@ fn deserialize_cookie_plaintext(plaintext: &[u8]) -> io::Result<CookieContents> 
 ///
 /// Each key has a unique numeric identifier embedded in cookie headers
 /// and a creation timestamp for implementing key rotation policies.
-#[derive(Clone)]
+//
+// Intentionally not `Clone`: the key material is zeroized on drop, and copying
+// it would create additional plaintext copies of the secret that are easy to
+// forget about. The store moves keys (`mem::replace`) rather than cloning.
 pub struct MasterKey {
     /// Unique key identifier, embedded in cookie headers.
     pub key_id: u32,
@@ -279,7 +282,6 @@ pub fn rotate_master_key(key_store: &std::sync::Arc<std::sync::RwLock<MasterKeyS
 // ============================================================================
 
 /// Context extracted from an NTS-authenticated request, used to build the response.
-#[derive(Debug)]
 pub struct NtsRequestContext {
     /// Unique Identifier to echo back.
     pub uid_data: Vec<u8>,
@@ -289,6 +291,19 @@ pub struct NtsRequestContext {
     pub aead_algorithm: u16,
     /// New cookies to include in the response.
     pub new_cookies: Vec<Vec<u8>>,
+}
+
+// Manual `Debug` that redacts the session key — deriving it would print the
+// secret `s2c_key` in logs/backtraces, defeating the zeroize-on-drop hardening.
+impl core::fmt::Debug for NtsRequestContext {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("NtsRequestContext")
+            .field("uid_data", &self.uid_data)
+            .field("s2c_key", &"<redacted>")
+            .field("aead_algorithm", &self.aead_algorithm)
+            .field("new_cookies", &self.new_cookies)
+            .finish()
+    }
 }
 
 impl Drop for NtsRequestContext {
