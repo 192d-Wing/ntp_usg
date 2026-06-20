@@ -415,13 +415,11 @@ pub fn build_nts_response(
     let mut resp_header = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
     (&mut resp_header[..]).write_bytes(*response_packet)?;
 
-    // Build pre-authenticator extension fields.
+    // Build pre-authenticator extension fields. Only the Unique Identifier is
+    // sent in cleartext (it must be echoed for replay matching); the replacement
+    // cookies go inside the encrypted authenticator below.
     let uid = UniqueIdentifier::new(ctx.uid_data.clone());
-    let mut pre_auth_fields: Vec<ExtensionField> = vec![uid.to_extension_field()];
-    for cookie in &ctx.new_cookies {
-        let nts_cookie = NtsCookie::new(cookie.clone());
-        pre_auth_fields.push(nts_cookie.to_extension_field());
-    }
+    let pre_auth_fields: Vec<ExtensionField> = vec![uid.to_extension_field()];
     let pre_auth_bytes = extension::write_extension_fields(&pre_auth_fields)?;
 
     // Build response AAD = header + pre-auth extensions.
@@ -429,13 +427,18 @@ pub fn build_nts_response(
     resp_aad.extend_from_slice(&resp_header);
     resp_aad.extend_from_slice(&pre_auth_bytes);
 
-    // AEAD encrypt with S2C key (empty plaintext for basic NTS).
-    let (nonce, ciphertext) = nts_common::aead_encrypt(
-        ctx.aead_algorithm,
-        &ctx.s2c_key,
-        &resp_aad,
-        &[], // No encrypted extensions.
-    )?;
+    // Encrypt the replacement cookies as the authenticator plaintext, so they
+    // are confidential and integrity-protected (RFC 8915 §5.7).
+    let cookie_fields: Vec<ExtensionField> = ctx
+        .new_cookies
+        .iter()
+        .map(|cookie| NtsCookie::new(cookie.clone()).to_extension_field())
+        .collect();
+    let plaintext = extension::write_extension_fields(&cookie_fields)?;
+
+    // AEAD encrypt with the S2C key.
+    let (nonce, ciphertext) =
+        nts_common::aead_encrypt(ctx.aead_algorithm, &ctx.s2c_key, &resp_aad, &plaintext)?;
 
     // Build NTS Authenticator extension field.
     let resp_auth = NtsAuthenticator::new(nonce, ciphertext);

@@ -364,8 +364,9 @@ pub fn validate_nts_response(
     resp_aad.extend_from_slice(&recv_buf[..protocol::Packet::PACKED_SIZE_BYTES]);
     resp_aad.extend_from_slice(&ext_data[..auth_ef_start]);
 
-    // AEAD decrypt/verify.
-    let _plaintext = aead_decrypt(
+    // AEAD decrypt/verify. The recovered plaintext carries the server's
+    // encrypted extension fields.
+    let plaintext = aead_decrypt(
         aead_algorithm,
         s2c_key,
         &resp_aad,
@@ -373,17 +374,17 @@ pub fn validate_nts_response(
         &resp_auth.ciphertext,
     )?;
 
-    // Extract new cookies from the response. Only extension fields *before*
-    // the authenticator are covered by the AAD and therefore authenticated;
-    // stop at the authenticator so an on-path attacker cannot inject forged
-    // NTS_COOKIE fields appended after it.
+    // Extract replacement cookies. Per RFC 8915 §5.7 the server places the new
+    // NTS_COOKIE extension fields *inside* the authenticator ciphertext, so they
+    // are confidential and integrity-protected; parse them from the decrypted
+    // plaintext rather than from any cleartext fields (which an on-path attacker
+    // could forge).
     let mut new_cookies = Vec::new();
-    for ef in &ext_fields {
-        if ef.field_type == extension::NTS_AUTHENTICATOR {
-            break;
-        }
-        if let Some(cookie) = NtsCookie::from_extension_field(ef) {
-            new_cookies.push(cookie.0);
+    if !plaintext.is_empty() {
+        for ef in extension::parse_extension_fields(&plaintext)? {
+            if let Some(cookie) = NtsCookie::from_extension_field(&ef) {
+                new_cookies.push(cookie.0);
+            }
         }
     }
 
@@ -712,11 +713,12 @@ mod tests {
         let mut resp_header = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
         (&mut resp_header[..]).write_bytes(response_pkt).unwrap();
 
-        // Build response extension fields: UID + Cookie + Authenticator.
+        // Build response: UID in cleartext, the new Cookie encrypted inside the
+        // authenticator (RFC 8915 §5.7).
         let uid = UniqueIdentifier::new(uid_data.clone());
         let new_cookie_data = vec![0xCDu8; 100];
         let resp_cookie = NtsCookie::new(new_cookie_data.clone());
-        let pre_auth_fields = vec![uid.to_extension_field(), resp_cookie.to_extension_field()];
+        let pre_auth_fields = vec![uid.to_extension_field()];
         let pre_auth_bytes = extension::write_extension_fields(&pre_auth_fields).unwrap();
 
         // Build AAD = header + pre-auth fields.
@@ -724,9 +726,11 @@ mod tests {
         resp_aad.extend_from_slice(&resp_header);
         resp_aad.extend_from_slice(&pre_auth_bytes);
 
-        // Encrypt with s2c_key (empty plaintext).
+        // Encrypt the replacement cookie as the authenticator plaintext.
+        let plaintext =
+            extension::write_extension_fields(&[resp_cookie.to_extension_field()]).unwrap();
         let (nonce, ciphertext) =
-            aead_encrypt(AEAD_AES_SIV_CMAC_256, &s2c_key, &resp_aad, &[]).unwrap();
+            aead_encrypt(AEAD_AES_SIV_CMAC_256, &s2c_key, &resp_aad, &plaintext).unwrap();
 
         // Build authenticator extension field.
         let auth = NtsAuthenticator::new(nonce, ciphertext);
@@ -876,20 +880,22 @@ mod tests {
         let cookie1 = NtsCookie::new(vec![0xC1u8; 80]);
         let cookie2 = NtsCookie::new(vec![0xC2u8; 80]);
         let cookie3 = NtsCookie::new(vec![0xC3u8; 80]);
-        let pre_auth_fields = vec![
-            uid.to_extension_field(),
-            cookie1.to_extension_field(),
-            cookie2.to_extension_field(),
-            cookie3.to_extension_field(),
-        ];
+        // UID in cleartext; the three cookies are encrypted in the authenticator.
+        let pre_auth_fields = vec![uid.to_extension_field()];
         let pre_auth_bytes = extension::write_extension_fields(&pre_auth_fields).unwrap();
 
         let mut resp_aad = Vec::new();
         resp_aad.extend_from_slice(&resp_header);
         resp_aad.extend_from_slice(&pre_auth_bytes);
 
+        let plaintext = extension::write_extension_fields(&[
+            cookie1.to_extension_field(),
+            cookie2.to_extension_field(),
+            cookie3.to_extension_field(),
+        ])
+        .unwrap();
         let (nonce, ciphertext) =
-            aead_encrypt(AEAD_AES_SIV_CMAC_256, &s2c_key, &resp_aad, &[]).unwrap();
+            aead_encrypt(AEAD_AES_SIV_CMAC_256, &s2c_key, &resp_aad, &plaintext).unwrap();
         let auth = NtsAuthenticator::new(nonce, ciphertext);
         let auth_bytes = extension::write_extension_fields(&[auth.to_extension_field()]).unwrap();
 
