@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-06-20
+
+### Changed
+
+- **BREAKING — NTS cookie wire format**: replacement cookies are now carried encrypted inside the NTS Authenticator (RFC 8915 §5.7) instead of as cleartext extension fields. This is incompatible with 4.10.x peers and is required for interoperability with RFC-compliant NTS servers (chrony, ntpd).
+- **BREAKING — `GpsFix::satellites`** is now `Option<u8>` (was `u8`); it is `None` for sentence types (RMC, ZDA) that do not report a satellite count, which makes those time sentences usable for synchronization.
+- **BREAKING — `MasterKey`** no longer implements `Clone`; its key material is zeroized on drop and should not be copied.
+- **NTS-KE**: the AEAD Negotiation record is now required in the response and validated against the offered algorithm set; the server rejects requests offering no supported AEAD algorithm (RFC 8915 §4.1.5).
+
+### Added
+
+- Opt-in NTS-KE cookie master-key rotation: `NtsKeServer::spawn_key_rotation(interval)` for both the tokio and smol runtimes.
+- RFC 5905 §11.2.1 accept test (stratum / root-distance) applied in the client peer-selection pipeline before a peer becomes a truechimer.
+
+### Fixed
+
+- **Windows build**: the server `socket_opts` module no longer references the unsupported `set_tclass_v6` on Windows.
+- **Roughtime**: reject Merkle paths longer than 32 nodes, preventing a shift overflow (debug panic / wrong result in release) from an attacker-controlled `PATH`.
+- **Roughtime**: tag-value header length is computed in `u64` to avoid `usize` overflow bypassing the bounds check on 32-bit / wasm targets.
+- **NMEA**: the parser no longer panics on a leading `*` or non-ASCII fields from malformed serial input.
+- `ShortFormat -> Instant` conversion is now panic-free.
+- The server rate-limiter request counter uses saturating arithmetic.
+
+### Security
+
+- NTS replacement cookies are now confidential and integrity-protected (encrypted in the authenticator).
+- The NTS-KE master key and recovered session keys are zeroized on drop; `NtsRequestContext` redacts the session key in its `Debug` output.
+- NTS-KE caps the number of records read per connection to bound memory/CPU usage (DoS hardening).
+- The server now drops access-denied / restricted clients silently instead of replying with a Kiss-o'-Death, removing an unthrottled spoofed-traffic reflection vector.
+
 ## [4.10.1] - 2026-02-19
 
 ### Fixed
@@ -832,6 +862,7 @@ Replace in your code:
 
 Historical release information prior to the Edition 2024 migration.
 
+[5.0.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.10.1...v5.0.0
 [4.10.1]: https://github.com/192d-Wing/ntp_usg/compare/v4.10.0...v4.10.1
 [4.10.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.9.0...v4.10.0
 [4.9.0]: https://github.com/192d-Wing/ntp_usg/compare/v4.8.0...v4.9.0
