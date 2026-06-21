@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781994177595,
+  "lastUpdate": 1782008762787,
   "repoUrl": "https://github.com/192d-Wing/ntp_usg",
   "entries": {
     "Selection Algorithm Benchmarks": [
@@ -2483,6 +2483,114 @@ window.BENCHMARK_DATA = {
             "name": "full_selection_pipeline/20",
             "value": 2717,
             "range": "± 2226",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "John Edward Willman V",
+            "username": "1456055067"
+          },
+          "committer": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "John Edward Willman V",
+            "username": "1456055067"
+          },
+          "distinct": true,
+          "id": "c8917024f94c42e6658d91b95c86111498c92007",
+          "message": "chore: bump version to 5.0.0\n\nMajor release: breaking NTS cookie wire-format change (RFC 8915 §5.7),\nGpsFix::satellites is now Option<u8>, and MasterKey no longer derives Clone,\nplus the security/DoS hardening landed in PR #11. See CHANGELOG.md.",
+          "timestamp": "2026-06-20T21:21:52-05:00",
+          "tree_id": "9aaf60524b879eef19d50ed69c0089b465dfdd88",
+          "url": "https://github.com/192d-Wing/ntp_usg/commit/c8917024f94c42e6658d91b95c86111498c92007"
+        },
+        "date": 1782008762505,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "select_truechimers/3",
+            "value": 65,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/5",
+            "value": 143,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/10",
+            "value": 328,
+            "range": "± 36",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/20",
+            "value": 751,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/3",
+            "value": 29,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/5",
+            "value": 96,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/10",
+            "value": 513,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/15",
+            "value": 1328,
+            "range": "± 20",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/3",
+            "value": 48,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/5",
+            "value": 48,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/10",
+            "value": 60,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/5",
+            "value": 344,
+            "range": "± 333",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/10",
+            "value": 945,
+            "range": "± 832",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/20",
+            "value": 2710,
+            "range": "± 2223",
             "unit": "ns/iter"
           }
         ]
