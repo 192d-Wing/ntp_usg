@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790791104671,
+  "lastUpdate": 1790791781820,
   "repoUrl": "https://github.com/192d-Wing/ntp_usg",
   "entries": {
     "Selection Algorithm Benchmarks": [
@@ -2699,6 +2699,114 @@ window.BENCHMARK_DATA = {
             "name": "full_selection_pipeline/20",
             "value": 1615,
             "range": "± 1041",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "John Edward Willman V",
+            "username": "1456055067"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5ac8ab5dd705200720bd5c5ab1a04e4b5bac5cb6",
+          "message": "Merge pull request #4 from 192d-Wing:dependabot/github_actions/docker/login-action-4\n\nbuild(deps): bump docker/login-action from 3 to 4",
+          "timestamp": "2026-09-30T12:55:58-05:00",
+          "tree_id": "443c07a453451807d891bd42c05c787e03a01c64",
+          "url": "https://github.com/192d-Wing/ntp_usg/commit/5ac8ab5dd705200720bd5c5ab1a04e4b5bac5cb6"
+        },
+        "date": 1790791781058,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "select_truechimers/3",
+            "value": 66,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/5",
+            "value": 143,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/10",
+            "value": 333,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/20",
+            "value": 769,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/3",
+            "value": 30,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/5",
+            "value": 92,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/10",
+            "value": 511,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/15",
+            "value": 1406,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/3",
+            "value": 53,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/5",
+            "value": 51,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/10",
+            "value": 64,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/5",
+            "value": 322,
+            "range": "± 594",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/10",
+            "value": 941,
+            "range": "± 804",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/20",
+            "value": 2689,
+            "range": "± 2158",
             "unit": "ns/iter"
           }
         ]
