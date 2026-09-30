@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782008762787,
+  "lastUpdate": 1790791104671,
   "repoUrl": "https://github.com/192d-Wing/ntp_usg",
   "entries": {
     "Selection Algorithm Benchmarks": [
@@ -2591,6 +2591,114 @@ window.BENCHMARK_DATA = {
             "name": "full_selection_pipeline/20",
             "value": 2710,
             "range": "± 2223",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "john.willman.1@us.af.mil",
+            "name": "John Edward Willman V",
+            "username": "1456055067"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "27818655268a00e645c6a6e90ff322b53e99639f",
+          "message": "Merge pull request #8 from 192d-Wing/dependabot/github_actions/codecov/codecov-action-6",
+          "timestamp": "2026-09-30T12:54:42-05:00",
+          "tree_id": "d19ba7cf473ff76ed4a6e6e5807eb35b61f337c4",
+          "url": "https://github.com/192d-Wing/ntp_usg/commit/27818655268a00e645c6a6e90ff322b53e99639f"
+        },
+        "date": 1790791103889,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "select_truechimers/3",
+            "value": 37,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/5",
+            "value": 87,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/10",
+            "value": 189,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "select_truechimers/20",
+            "value": 412,
+            "range": "± 18",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/3",
+            "value": 20,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/5",
+            "value": 54,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/10",
+            "value": 330,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "cluster_survivors/15",
+            "value": 824,
+            "range": "± 48",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/3",
+            "value": 34,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/5",
+            "value": 32,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "combine/10",
+            "value": 39,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/5",
+            "value": 233,
+            "range": "± 370",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/10",
+            "value": 614,
+            "range": "± 878",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_selection_pipeline/20",
+            "value": 1615,
+            "range": "± 1041",
             "unit": "ns/iter"
           }
         ]
