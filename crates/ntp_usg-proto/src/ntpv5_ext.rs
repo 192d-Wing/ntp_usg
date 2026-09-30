@@ -16,6 +16,7 @@ use crate::extension::ExtensionField;
 use crate::protocol::TimestampFormat;
 
 use aes::Aes128;
+use cmac::digest::KeyInit;
 use cmac::{Cmac, Mac};
 
 // ============================================================================
@@ -323,7 +324,7 @@ impl MacField {
 /// and all serialized extension fields that precede the MAC extension field.
 pub fn compute_mac(key: &[u8; 16], data: &[u8]) -> [u8; 16] {
     let mut cmac =
-        <Cmac<Aes128> as Mac>::new_from_slice(key).expect("AES-128 key is always 16 bytes");
+        <Cmac<Aes128> as KeyInit>::new_from_slice(key).expect("AES-128 key is always 16 bytes");
     cmac.update(data);
     let result = cmac.finalize();
     result.into_bytes().into()
@@ -334,7 +335,7 @@ pub fn compute_mac(key: &[u8; 16], data: &[u8]) -> [u8; 16] {
 /// Returns `true` if the computed tag matches `expected`.
 pub fn verify_mac(key: &[u8; 16], data: &[u8], expected: &[u8; 16]) -> bool {
     let mut cmac =
-        <Cmac<Aes128> as Mac>::new_from_slice(key).expect("AES-128 key is always 16 bytes");
+        <Cmac<Aes128> as KeyInit>::new_from_slice(key).expect("AES-128 key is always 16 bytes");
     cmac.update(data);
     cmac.verify_slice(expected).is_ok()
 }
