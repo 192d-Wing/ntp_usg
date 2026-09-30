@@ -435,9 +435,9 @@ pub fn aead_encrypt(
                 msg: plaintext,
                 aad,
             };
-            let nonce = aes_siv::Nonce::from_slice(&nonce_bytes);
+            let nonce = aes_siv::Nonce::from(nonce_bytes);
             let ciphertext = cipher
-                .encrypt(nonce, payload)
+                .encrypt(&nonce, payload)
                 .map_err(|_| NtsProtoError::AeadEncryptFailed)?;
 
             Ok((nonce_bytes.to_vec(), ciphertext))
@@ -452,9 +452,9 @@ pub fn aead_encrypt(
                 msg: plaintext,
                 aad,
             };
-            let nonce = aes_siv::Nonce::from_slice(&nonce_bytes);
+            let nonce = aes_siv::Nonce::from(nonce_bytes);
             let ciphertext = cipher
-                .encrypt(nonce, payload)
+                .encrypt(&nonce, payload)
                 .map_err(|_| NtsProtoError::AeadEncryptFailed)?;
 
             Ok((nonce_bytes.to_vec(), ciphertext))
@@ -479,9 +479,10 @@ pub fn aead_decrypt(
                 msg: ciphertext,
                 aad,
             };
-            let nonce = aes_siv::Nonce::from_slice(nonce);
+            let nonce =
+                aes_siv::Nonce::try_from(nonce).map_err(|_| NtsProtoError::AeadDecryptFailed)?;
             cipher
-                .decrypt(nonce, payload)
+                .decrypt(&nonce, payload)
                 .map_err(|_| NtsProtoError::AeadDecryptFailed.into())
         }
         AEAD_AES_SIV_CMAC_512 => {
@@ -491,9 +492,10 @@ pub fn aead_decrypt(
                 msg: ciphertext,
                 aad,
             };
-            let nonce = aes_siv::Nonce::from_slice(nonce);
+            let nonce =
+                aes_siv::Nonce::try_from(nonce).map_err(|_| NtsProtoError::AeadDecryptFailed)?;
             cipher
-                .decrypt(nonce, payload)
+                .decrypt(&nonce, payload)
                 .map_err(|_| NtsProtoError::AeadDecryptFailed.into())
         }
         _ => Err(NtsProtoError::UnsupportedAeadAlgorithm { algorithm }.into()),
@@ -509,6 +511,15 @@ mod tests {
         assert_eq!(aead_key_length(AEAD_AES_SIV_CMAC_256).unwrap(), 32);
         assert_eq!(aead_key_length(AEAD_AES_SIV_CMAC_512).unwrap(), 64);
         assert!(aead_key_length(99).is_err());
+    }
+
+    #[test]
+    fn test_aead_decrypt_rejects_bad_nonce_length() {
+        let key = [0x42u8; 32];
+        let (nonce, ciphertext) = aead_encrypt(AEAD_AES_SIV_CMAC_256, &key, b"aad", b"x").unwrap();
+        for bad in [&nonce[..15], &[0u8; 17][..], &[][..]] {
+            assert!(aead_decrypt(AEAD_AES_SIV_CMAC_256, &key, b"aad", bad, &ciphertext).is_err());
+        }
     }
 
     #[test]
