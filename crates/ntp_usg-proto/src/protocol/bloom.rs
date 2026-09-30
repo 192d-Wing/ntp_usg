@@ -1,7 +1,7 @@
 // Copyright 2026 U.S. Federal Government (in countries where recognized)
 // SPDX-License-Identifier: Apache-2.0
 
-//! NTPv5 Bloom filter for loop detection (`draft-ietf-ntp-ntpv5-07`).
+//! NTPv5 Bloom filter for loop detection (`draft-ietf-ntp-ntpv5-09`).
 //!
 //! Each NTPv5 server has a 120-bit reference ID. The set of all upstream
 //! reference IDs is encoded in a 4096-bit (512-byte) Bloom filter that is

@@ -115,7 +115,7 @@ pub(crate) struct NtsPeerState {
 
 /// NTPv5 version negotiation and session state for a peer.
 ///
-/// Follows the version negotiation mechanism in `draft-ietf-ntp-ntpv5-07`
+/// Follows the version negotiation mechanism in `draft-ietf-ntp-ntpv5-09`
 /// Section 5: the client places a magic value in the NTPv4 Reference Timestamp
 /// field to signal V5 support. If the server echoes it, the peer transitions
 /// to V5 mode; otherwise it stays on V4.
@@ -836,7 +836,7 @@ macro_rules! define_client_builder {
             ///
             /// When enabled, peers start in the `Negotiating` state and probe servers
             /// for NTPv5 support using the version negotiation mechanism in
-            /// `draft-ietf-ntp-ntpv5-07` Section 5. Servers that respond with the
+            /// `draft-ietf-ntp-ntpv5-09` Section 5. Servers that respond with the
             /// magic value transition to V5 mode; others stay on V4.
             ///
             /// Requires the `ntpv5` feature.

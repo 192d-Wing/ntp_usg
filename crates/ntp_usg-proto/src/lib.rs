@@ -37,7 +37,7 @@ pub mod nts_common;
 #[cfg(feature = "roughtime")]
 pub mod roughtime;
 
-/// NTPv5 extension field constants and typed wrappers (`draft-ietf-ntp-ntpv5-07`).
+/// NTPv5 extension field constants and typed wrappers (`draft-ietf-ntp-ntpv5-09`).
 ///
 /// Defines provisional extension field type codes (0xF5xx range) and typed
 /// structs for NTPv5-specific extension fields including Draft Identification,

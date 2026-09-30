@@ -326,7 +326,7 @@ Improved correctness and ergonomics for IPv6-only deployments.
 **Priority**: Low — blocked on draft stabilization (not yet RFC)
 **Status**: Complete
 
-Full NTPv4-to-NTPv5 protocol upgrade per `draft-ietf-ntp-ntpv5-07` (active, expires Apr 2026).
+Full NTPv4-to-NTPv5 protocol upgrade per `draft-ietf-ntp-ntpv5-09` (active, expires Jan 2027).
 
 - [x] New 48-byte header struct: era number, timescale, flags, client/server cookies (`PacketV5`)
 - [x] `Time32` type: 4 integer + 28 fractional bits, ~3.7 ns resolution (vs NTPv4's ~15 µs)
@@ -343,7 +343,7 @@ Full NTPv4-to-NTPv5 protocol upgrade per `draft-ietf-ntp-ntpv5-07` (active, expi
 
 **Interop**: NTPv5 clients can negotiate with NTPv4 servers (version downgrade path defined in spec). Magic value `NTP5DRFT` in V4 Reference Timestamp field signals V5 support.
 
-**New deps**: `cmac = "0.7"`, `aes = "0.8"` (RustCrypto AES-CMAC-128 for MAC extension field)
+**New deps**: `cmac = "0.8"`, `aes = "0.9"` (RustCrypto AES-CMAC-128 for MAC extension field)
 
 ---
 

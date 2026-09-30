@@ -1,7 +1,7 @@
 // Copyright 2026 U.S. Federal Government (in countries where recognized)
 // SPDX-License-Identifier: Apache-2.0
 
-//! NTPv5 server request handling (`draft-ietf-ntp-ntpv5-07`).
+//! NTPv5 server request handling (`draft-ietf-ntp-ntpv5-09`).
 //!
 //! Validates NTPv5 client requests, builds server responses, and handles
 //! extension fields (Draft Identification, Reference IDs, Server Info,
@@ -77,7 +77,7 @@ pub(crate) fn validate_v5_client_request(
     // Verify Draft Identification is present and matches our draft version.
     let has_draft_id = extensions.iter().any(|ef| {
         ef.field_type == DRAFT_IDENTIFICATION
-            && DraftIdentification::from_extension_field(ef).is_some_and(|di| di.is_current())
+            && DraftIdentification::from_extension_field(ef).is_some_and(|di| di.is_supported())
     });
 
     if !has_draft_id {
