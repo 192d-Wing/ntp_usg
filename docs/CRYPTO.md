@@ -78,7 +78,7 @@ construction lacks the formal certification.
 
 ## NTPv5 MAC — Not FIPS Certified
 
-The NTPv5 draft (`draft-ietf-ntp-ntpv5-07`) specifies AES-CMAC-128 for the
+The NTPv5 draft (`draft-ietf-ntp-ntpv5-09`) specifies AES-CMAC-128 for the
 MAC extension field (type 0xF502). This is implemented via the `cmac` and `aes`
 crates from RustCrypto. The same FIPS gap as NTS AEAD applies.
 
