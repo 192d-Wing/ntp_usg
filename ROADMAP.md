@@ -326,7 +326,7 @@ Improved correctness and ergonomics for IPv6-only deployments.
 **Priority**: Low — blocked on draft stabilization (not yet RFC)
 **Status**: Complete
 
-Full NTPv4-to-NTPv5 protocol upgrade per `draft-ietf-ntp-ntpv5-07` (active, expires Apr 2026).
+Full NTPv4-to-NTPv5 protocol upgrade per `draft-ietf-ntp-ntpv5-09` (active, expires Jan 2027).
 
 - [x] New 48-byte header struct: era number, timescale, flags, client/server cookies (`PacketV5`)
 - [x] `Time32` type: 4 integer + 28 fractional bits, ~3.7 ns resolution (vs NTPv4's ~15 µs)

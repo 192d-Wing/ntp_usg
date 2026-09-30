@@ -283,7 +283,7 @@ pub(crate) fn validate_response(
 /// Build an NTPv4 client request with the version negotiation magic.
 ///
 /// Places `NEGOTIATION_MAGIC_DRAFT` in the Reference Timestamp field to signal
-/// NTPv5 support during version negotiation (`draft-ietf-ntp-ntpv5-07` §5).
+/// NTPv5 support during version negotiation (`draft-ietf-ntp-ntpv5-09` §5).
 ///
 /// Returns the serialized buffer and the origin timestamp (T1).
 #[cfg(feature = "ntpv5")]
@@ -414,7 +414,7 @@ pub(crate) fn build_v5_request_packet(
 /// Parse and validate an NTPv5 server response.
 ///
 /// Validates source IP, minimum size, VN=5, Mode=Server, Synchronized flag,
-/// non-zero transmit timestamp, and Draft Identification extension field.
+/// non-zero receive and transmit timestamps, and Draft Identification extension field.
 ///
 /// Returns the parsed V5 packet, destination timestamp (T4), and parsed
 /// extension fields.
@@ -484,6 +484,14 @@ pub(crate) fn parse_and_validate_v5_response(
         return Err(NtpError::Protocol(ProtocolError::ZeroTransmitTimestamp).into());
     }
 
+    // Validate receive timestamp non-zero (draft -09 Section 9).
+    if response.receive_timestamp.seconds == 0 && response.receive_timestamp.fraction == 0 {
+        return Err(NtpError::Protocol(ProtocolError::Other(
+            "server receive timestamp is zero".into(),
+        ))
+        .into());
+    }
+
     // Validate client cookie matches.
     if response.client_cookie != expected_client_cookie {
         return Err(NtpError::Protocol(ProtocolError::ClientCookieMismatch).into());
@@ -500,7 +508,7 @@ pub(crate) fn parse_and_validate_v5_response(
     // Verify Draft Identification is present and matches.
     let has_draft_id = ext_fields.iter().any(|ef| {
         if let Some(di) = DraftIdentification::from_extension_field(ef) {
-            di.is_current()
+            di.is_supported()
         } else {
             false
         }
@@ -676,6 +684,86 @@ fn test_request_nist_alt() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── parse_and_validate_v5_response ────────────────────────────
+
+    #[cfg(feature = "ntpv5")]
+    fn v5_response_bytes(recv_nonzero: bool, draft_id: &[u8]) -> (Vec<u8>, SocketAddr) {
+        use ntp_proto::extension::{ExtensionField, write_extension_fields};
+        use ntp_proto::ntpv5_ext::DRAFT_IDENTIFICATION;
+        use ntp_proto::protocol::ntpv5::{NtpV5Flags, PacketV5, Time32, Timescale};
+
+        let ts = protocol::TimestampFormat {
+            seconds: 1,
+            fraction: 1,
+        };
+        let packet = PacketV5 {
+            leap_indicator: protocol::LeapIndicator::NoWarning,
+            version: protocol::Version::V5,
+            mode: protocol::Mode::Server,
+            stratum: protocol::Stratum(2),
+            poll: 6,
+            precision: -20,
+            root_delay: Time32::ZERO,
+            root_dispersion: Time32::ZERO,
+            timescale: Timescale::Utc,
+            era: 0,
+            flags: NtpV5Flags(NtpV5Flags::SYNCHRONIZED),
+            server_cookie: 0,
+            client_cookie: 42,
+            receive_timestamp: if recv_nonzero {
+                ts
+            } else {
+                protocol::TimestampFormat::default()
+            },
+            transmit_timestamp: ts,
+        };
+        let mut buf = vec![0u8; PacketV5::PACKED_SIZE_BYTES];
+        (&mut buf[..]).write_bytes(packet).unwrap();
+        let ext = write_extension_fields(&[ExtensionField {
+            field_type: DRAFT_IDENTIFICATION,
+            value: draft_id.to_vec(),
+        }])
+        .unwrap();
+        buf.extend_from_slice(&ext);
+        (buf, "127.0.0.1:123".parse().unwrap())
+    }
+
+    #[cfg(feature = "ntpv5")]
+    fn validate_v5(buf: &[u8], src: SocketAddr) -> io::Result<()> {
+        parse_and_validate_v5_response(buf, buf.len(), src, &[src], 42).map(|_| ())
+    }
+
+    #[test]
+    #[cfg(feature = "ntpv5")]
+    fn test_v5_response_accepts_valid() {
+        let (buf, src) = v5_response_bytes(true, ntp_proto::ntpv5_ext::DRAFT_ID);
+        validate_v5(&buf, src).unwrap();
+    }
+
+    #[test]
+    #[cfg(feature = "ntpv5")]
+    fn test_v5_response_rejects_zero_receive_timestamp() {
+        let (buf, src) = v5_response_bytes(false, ntp_proto::ntpv5_ext::DRAFT_ID);
+        let err = validate_v5(&buf, src).unwrap_err();
+        assert!(err.to_string().contains("receive timestamp"), "{err}");
+    }
+
+    #[test]
+    #[cfg(feature = "ntpv5")]
+    fn test_v5_response_accepts_older_supported_drafts() {
+        for id in [&b"draft-ietf-ntp-ntpv5-07"[..], b"draft-ietf-ntp-ntpv5-08"] {
+            let (buf, src) = v5_response_bytes(true, id);
+            validate_v5(&buf, src).unwrap();
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "ntpv5")]
+    fn test_v5_response_rejects_unknown_draft() {
+        let (buf, src) = v5_response_bytes(true, b"draft-ietf-ntp-ntpv5-99");
+        assert!(validate_v5(&buf, src).is_err());
+    }
 
     // ── compute_offset_delay ──────────────────────────────────────
 

@@ -1,7 +1,7 @@
 // Copyright 2026 U.S. Federal Government (in countries where recognized)
 // SPDX-License-Identifier: Apache-2.0
 
-//! NTPv5 extension field constants and typed wrappers (`draft-ietf-ntp-ntpv5-07`).
+//! NTPv5 extension field constants and typed wrappers (`draft-ietf-ntp-ntpv5-09`).
 //!
 //! NTPv5 defines a provisional range of extension field type codes (0xF5xx)
 //! for use during the draft period. Each type code is paired with a typed
@@ -57,8 +57,18 @@ pub const DRAFT_IDENTIFICATION: u16 = 0xF5FF;
 // Well-known constants
 // ============================================================================
 
-/// The draft identification string for `draft-ietf-ntp-ntpv5-07`.
-pub const DRAFT_ID: &[u8] = b"draft-ietf-ntp-ntpv5-07";
+/// The draft identification string for `draft-ietf-ntp-ntpv5-09`.
+pub const DRAFT_ID: &[u8] = b"draft-ietf-ntp-ntpv5-09";
+
+/// Draft identification strings this implementation interoperates with.
+///
+/// Drafts -07 through -09 share the same wire format; -08 and -09 only add
+/// validation requirements and clarifications.
+pub const SUPPORTED_DRAFT_IDS: &[&[u8]] = &[
+    b"draft-ietf-ntp-ntpv5-07",
+    b"draft-ietf-ntp-ntpv5-08",
+    DRAFT_ID,
+];
 
 /// Version negotiation magic for NTPv4 Reference Timestamp field (draft).
 ///
@@ -209,7 +219,7 @@ impl ReferenceTimestamp {
 /// Draft Identification extension field (0xF5FF).
 ///
 /// MUST be included in all NTPv5 draft implementation requests.
-/// Contains the ASCII draft name (e.g., `b"draft-ietf-ntp-ntpv5-07"`).
+/// Contains the ASCII draft name (e.g., `b"draft-ietf-ntp-ntpv5-09"`).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DraftIdentification {
     /// The draft identification string.
@@ -245,6 +255,11 @@ impl DraftIdentification {
     /// Check if this matches the current draft version.
     pub fn is_current(&self) -> bool {
         self.draft_name == DRAFT_ID
+    }
+
+    /// Check if this matches any draft version in [`SUPPORTED_DRAFT_IDS`].
+    pub fn is_supported(&self) -> bool {
+        SUPPORTED_DRAFT_IDS.contains(&self.draft_name.as_slice())
     }
 }
 
@@ -360,6 +375,7 @@ mod tests {
         let back = DraftIdentification::from_extension_field(&ef).unwrap();
         assert_eq!(back, di);
         assert!(back.is_current());
+        assert!(back.is_supported());
     }
 
     #[test]

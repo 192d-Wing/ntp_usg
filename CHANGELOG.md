@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **NTPv5 draft -09**: `DRAFT_ID` is now `draft-ietf-ntp-ntpv5-09`. The client and server accept Draft Identification fields for drafts -07, -08 and -09 (`SUPPORTED_DRAFT_IDS`, `DraftIdentification::is_supported`), since the wire format is unchanged.
+- **NTPv5 client validation**: responses with a zero receive timestamp are now rejected, per the draft -09 client response checklist (Section 9).
+
 ## [5.0.0] - 2026-06-20
 
 ### Changed

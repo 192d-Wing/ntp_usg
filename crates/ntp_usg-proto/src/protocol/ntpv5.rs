@@ -1,7 +1,7 @@
 // Copyright 2026 U.S. Federal Government (in countries where recognized)
 // SPDX-License-Identifier: Apache-2.0
 
-//! NTPv5 protocol types per `draft-ietf-ntp-ntpv5-07`.
+//! NTPv5 protocol types per `draft-ietf-ntp-ntpv5-09`.
 //!
 //! NTPv5 shares the same 48-byte header size as NTPv4 but with a fundamentally
 //! different field layout starting at byte 12. The first 12 bytes
