@@ -230,8 +230,11 @@ mod tests {
         };
 
         let store = RwLock::new(MasterKeyStore::new(Duration::from_secs(3600)));
-        let c2s_key = vec![0x42u8; 32];
-        let s2c_key = vec![0x43u8; 32];
+        // Fresh random session keys per run, as NTS-KE would export them.
+        let mut c2s_key = vec![0u8; 32];
+        let mut s2c_key = vec![0u8; 32];
+        rand::fill(&mut c2s_key[..]);
+        rand::fill(&mut s2c_key[..]);
         let cookie = store
             .read()
             .unwrap()
