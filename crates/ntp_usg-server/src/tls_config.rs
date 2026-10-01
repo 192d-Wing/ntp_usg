@@ -27,7 +27,7 @@ pub(crate) fn nts_server_config(
     cert_chain: Vec<CertificateDer<'static>>,
     private_key: PrivateKeyDer<'static>,
 ) -> io::Result<rustls::ServerConfig> {
-    rustls::ServerConfig::builder_with_provider(Arc::new(crypto_provider()))
+    let mut config = rustls::ServerConfig::builder_with_provider(Arc::new(crypto_provider()))
         .with_protocol_versions(&[&rustls::version::TLS13])
         .expect("TLS 1.3 configuration valid")
         .with_no_client_auth()
@@ -37,5 +37,12 @@ pub(crate) fn nts_server_config(
                 detail: format!("TLS config error: {e}"),
             })
             .into()
-        })
+        })?;
+    // RFC 8915 Section 4: the server MUST select ALPN "ntske/1"; rustls rejects
+    // clients that do not offer it once this list is non-empty.
+    config.alpn_protocols = vec![NTS_KE_ALPN.to_vec()];
+    Ok(config)
 }
+
+/// ALPN protocol identifier for NTS-KE (RFC 8915 Section 4).
+pub(crate) const NTS_KE_ALPN: &[u8] = b"ntske/1";

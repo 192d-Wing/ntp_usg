@@ -161,7 +161,22 @@ pub fn timestamp_to_instant(ts: protocol::TimestampFormat, pivot: &Instant) -> I
     let ntp_secs = era_aware_ntp_seconds(ts.seconds, pivot);
     let secs = ntp_secs - EPOCH_DELTA;
     let subsec_nanos = (ts.fraction as f64 / NTP_SCALE * 1e9) as i32;
-    Instant::new(secs, subsec_nanos).expect("era-aware conversion produces same-sign components")
+    // Timestamps that resolve to before 1970 (e.g. a server sending seconds in
+    // the 1958-1969 range) give negative `secs` with non-negative nanos.
+    // Normalize rather than panic: this input comes from the network.
+    let (secs, subsec_nanos) = normalize_components(secs, subsec_nanos);
+    Instant { secs, subsec_nanos }
+}
+
+/// Normalize `(secs, subsec_nanos)` so both share a sign, as `Instant` requires.
+fn normalize_components(secs: i64, subsec_nanos: i32) -> (i64, i32) {
+    if secs < 0 && subsec_nanos > 0 {
+        (secs + 1, subsec_nanos - 1_000_000_000)
+    } else if secs > 0 && subsec_nanos < 0 {
+        (secs - 1, subsec_nanos + 1_000_000_000)
+    } else {
+        (secs, subsec_nanos)
+    }
 }
 
 // Conversion implementations.
@@ -173,11 +188,7 @@ impl From<protocol::ShortFormat> for Instant {
         // `secs` is strongly negative (EPOCH_DELTA dwarfs a u16 seconds field)
         // while `subsec_nanos` is non-negative. Normalize to same-sign components
         // so this conversion of parsed data can never panic in `Instant::new`.
-        let (secs, subsec_nanos) = if secs < 0 && subsec_nanos > 0 {
-            (secs + 1, subsec_nanos - 1_000_000_000)
-        } else {
-            (secs, subsec_nanos)
-        };
+        let (secs, subsec_nanos) = normalize_components(secs, subsec_nanos);
         Instant { secs, subsec_nanos }
     }
 }
@@ -227,9 +238,10 @@ impl From<protocol::DateFormat> for Instant {
     /// This conversion is unambiguous because [`protocol::DateFormat`] includes the era number.
     fn from(d: protocol::DateFormat) -> Self {
         let ntp_secs = d.era_number as i64 * ERA_SECONDS + d.era_offset as i64;
-        let secs = ntp_secs - EPOCH_DELTA;
+        let secs = ntp_secs.wrapping_sub(EPOCH_DELTA);
         let subsec_nanos = (d.fraction as f64 / NTP_SCALE_64 * 1e9) as i32;
-        Instant::new(secs, subsec_nanos).expect("DateFormat produces same-sign components")
+        let (secs, subsec_nanos) = normalize_components(secs, subsec_nanos);
+        Instant { secs, subsec_nanos }
     }
 }
 
@@ -340,5 +352,45 @@ mod tests {
         assert_eq!(date.era_number, -1);
         let back: Instant = date.into();
         assert_eq!(back.secs(), instant.secs());
+    }
+}
+
+#[cfg(test)]
+mod panic_regression_tests {
+    use super::*;
+
+    /// A server timestamp that resolves to 1958-1969 (era 0, before the Unix
+    /// epoch) with a non-zero fraction used to panic in `timestamp_to_instant`.
+    #[test]
+    fn timestamp_to_instant_pre_1970_does_not_panic() {
+        let pivot = Instant::new(1_700_000_000, 0).unwrap(); // 2023
+        let ts = protocol::TimestampFormat {
+            seconds: 0x7735_9400, // 1963-05-18
+            fraction: 0x8000_0000,
+        };
+        let i = timestamp_to_instant(ts, &pivot);
+        assert_eq!(i.secs(), -208_988_799);
+        assert_eq!(i.subsec_nanos(), -500_000_000);
+        // One tick before the Unix epoch, half a second in.
+        let ts = protocol::TimestampFormat {
+            seconds: 2_208_988_799,
+            fraction: 0x8000_0000,
+        };
+        let i = timestamp_to_instant(ts, &pivot);
+        assert_eq!((i.secs(), i.subsec_nanos()), (0, -500_000_000));
+    }
+
+    #[test]
+    fn date_format_pre_1970_and_extreme_era_do_not_panic() {
+        let _ = Instant::from(protocol::DateFormat {
+            era_number: 0,
+            era_offset: 0,
+            fraction: 1 << 63,
+        });
+        let _ = Instant::from(protocol::DateFormat {
+            era_number: i32::MIN,
+            era_offset: 0,
+            fraction: 0,
+        });
     }
 }

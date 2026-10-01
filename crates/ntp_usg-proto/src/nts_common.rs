@@ -172,6 +172,18 @@ pub const AEAD_AES_SIV_CMAC_512: u16 = 17;
 /// TLS exporter label for NTS (RFC 8915 Section 4.2).
 pub const NTS_EXPORTER_LABEL: &str = "EXPORTER-network-time-security";
 
+/// Build the per-association TLS exporter context (RFC 8915 Section 4.2).
+///
+/// The context is five octets: the negotiated Next Protocol ID, the negotiated
+/// AEAD Algorithm ID (both network byte order), then `0x00` for the C2S key or
+/// `0x01` for the S2C key. Binding the protocol and algorithm into the key
+/// prevents algorithm-confusion across the negotiation.
+pub fn exporter_context(next_protocol: u16, aead_algorithm: u16, s2c: bool) -> [u8; 5] {
+    let p = next_protocol.to_be_bytes();
+    let a = aead_algorithm.to_be_bytes();
+    [p[0], p[1], a[0], a[1], u8::from(s2c)]
+}
+
 /// Number of cookie placeholders to include in NTS requests.
 pub const COOKIE_PLACEHOLDER_COUNT: usize = 7;
 
@@ -505,6 +517,20 @@ pub fn aead_decrypt(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// RFC 8915 Section 4.2: five-octet context = protocol ID, AEAD ID, direction.
+    #[test]
+    fn exporter_context_matches_rfc_8915() {
+        assert_eq!(
+            exporter_context(0x0000, AEAD_AES_SIV_CMAC_256, false),
+            [0x00, 0x00, 0x00, 0x0F, 0x00]
+        );
+        assert_eq!(
+            exporter_context(0x0000, AEAD_AES_SIV_CMAC_512, true),
+            [0x00, 0x00, 0x00, 0x11, 0x01]
+        );
+        assert_eq!(exporter_context(0x8001, 0x000F, false)[..2], [0x80, 0x01]);
+    }
 
     #[test]
     fn test_aead_key_length() {

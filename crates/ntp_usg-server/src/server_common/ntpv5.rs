@@ -238,6 +238,10 @@ pub(crate) fn handle_v5_request(
     client_table: &mut ClientTable,
     metrics: Option<&ServerMetrics>,
 ) -> HandleResult {
+    // On a dual-stack `[::]` socket IPv4 clients arrive as `::ffff:a.b.c.d`.
+    // Canonicalize so access-control rules and per-client state written for
+    // IPv4 addresses apply to them.
+    let src_ip = src_ip.to_canonical();
     // 1. Validate V5 request.
     let (request, extensions) = match validate_v5_client_request(recv_buf, recv_len) {
         Ok(r) => r,
