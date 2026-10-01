@@ -659,6 +659,12 @@ fn is_network_skip_error(e: &io::Error) -> bool {
             | io::ErrorKind::AddrNotAvailable
     ) || e.raw_os_error() == Some(101) // ENETUNREACH (Network is unreachable)
       || e.raw_os_error() == Some(113) // EHOSTUNREACH (No route to host)
+      // DNS resolution failures (no resolver / no record on this runner).
+      || e.to_string().contains("failed to lookup address information")
+      || e.to_string().contains("No address associated with hostname")
+      || e.to_string().contains("Temporary failure in name resolution")
+      || e.to_string().contains("Name or service not known")
+      || e.to_string().contains("nodename nor servname provided")
 }
 
 #[cfg(test)]
@@ -690,6 +696,25 @@ fn test_request_nist_alt() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_kod_ntsn_display_mentions_rekey() {
+        let e = KissOfDeathError {
+            code: protocol::KissOfDeath::Ntsn,
+        };
+        let s = e.to_string();
+        assert!(s.contains("NTSN"), "{s}");
+        assert!(s.contains("NTS-KE"), "{s}");
+    }
+
+    #[test]
+    fn test_dns_failure_is_a_network_skip() {
+        let e = io::Error::other(
+            "failed to lookup address information: No address associated with hostname",
+        );
+        assert!(is_network_skip_error(&e));
+        assert!(!is_network_skip_error(&io::Error::other("bad packet")));
+    }
 
     // ── parse_and_validate_v5_response ────────────────────────────
 

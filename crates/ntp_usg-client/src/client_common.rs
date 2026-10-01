@@ -922,6 +922,37 @@ pub(crate) use define_client_builder;
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_check_kod_ntsn_backs_off() {
+        let e: io::Error = NtpError::KissOfDeath(KissOfDeathError {
+            code: protocol::KissOfDeath::Ntsn,
+        })
+        .into();
+        assert!(matches!(check_kod(&e), Some(PollResult::RateKissCode)));
+        // Legacy error path.
+        let legacy = io::Error::other(KissOfDeathError {
+            code: protocol::KissOfDeath::Ntsn,
+        });
+        assert!(matches!(check_kod(&legacy), Some(PollResult::RateKissCode)));
+    }
+
+    #[test]
+    #[cfg(feature = "discipline")]
+    fn test_builder_max_step_secs() {
+        define_client_builder! {
+            extra_fields {}
+            extra_defaults {}
+        }
+        let cfg = NtpClientBuilder::new().into_config();
+        assert_eq!(cfg.max_step_secs, Some(crate::discipline::PANICT));
+        let cfg = NtpClientBuilder::new().max_step_secs(None).into_config();
+        assert_eq!(cfg.max_step_secs, None);
+        let cfg = NtpClientBuilder::new()
+            .max_step_secs(Some(5.0))
+            .into_config();
+        assert_eq!(cfg.max_step_secs, Some(5.0));
+    }
+
     // ── PeerState ────────────────────────────────────────────────
 
     #[test]

@@ -401,6 +401,19 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(feature = "nts", feature = "nts-smol"))]
+    fn test_builder_nts_key_store() {
+        use crate::nts_server_common::MasterKeyStore;
+        let builder = NtpServer::builder();
+        assert!(builder.nts_key_store.is_none());
+        let store = Arc::new(RwLock::new(MasterKeyStore::new(
+            std::time::Duration::from_secs(60),
+        )));
+        let cfg = NtpServer::builder().nts_key_store(store).into_config();
+        assert!(cfg.server_config.nts_key_store.is_some());
+    }
+
+    #[test]
     fn test_builder_max_clients() {
         let builder = NtpServer::builder().max_clients(500);
         assert_eq!(builder.max_clients, 500);

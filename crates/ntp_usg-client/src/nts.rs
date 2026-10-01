@@ -341,6 +341,63 @@ fn nak_matches_request(buf: &[u8], t1: crate::protocol::TimestampFormat, uid: &[
 mod tests {
     use super::*;
 
+    // ── NTSN handling ────────────────────────────────────────────
+
+    fn nak_packet(t1: crate::protocol::TimestampFormat, uid: &[u8]) -> Vec<u8> {
+        use crate::protocol::{ConstPackedSizeBytes, WriteBytes};
+        use ntp_proto::extension::{ExtensionField, UNIQUE_IDENTIFIER, write_extension_fields};
+        let pkt = crate::protocol::Packet {
+            mode: crate::protocol::Mode::Server,
+            reference_id: crate::protocol::ReferenceIdentifier::KissOfDeath(
+                crate::protocol::KissOfDeath::Ntsn,
+            ),
+            origin_timestamp: t1,
+            ..crate::protocol::Packet::default()
+        };
+        let mut buf = vec![0u8; crate::protocol::Packet::PACKED_SIZE_BYTES];
+        (&mut buf[..]).write_bytes(pkt).unwrap();
+        buf.extend_from_slice(
+            &write_extension_fields(&[ExtensionField {
+                field_type: UNIQUE_IDENTIFIER,
+                value: uid.to_vec(),
+            }])
+            .unwrap(),
+        );
+        buf
+    }
+
+    #[test]
+    fn test_is_nts_nak_only_for_ntsn() {
+        let kod =
+            |code| -> io::Error { NtpError::KissOfDeath(crate::KissOfDeathError { code }).into() };
+        assert!(is_nts_nak(&kod(crate::protocol::KissOfDeath::Ntsn)));
+        assert!(!is_nts_nak(&kod(crate::protocol::KissOfDeath::Rate)));
+        assert!(!is_nts_nak(&io::Error::other("unrelated")));
+    }
+
+    /// A NAK is only honoured when both the origin timestamp and the Unique
+    /// Identifier match our request (RFC 8915 Section 5.7).
+    #[test]
+    fn test_nak_matches_request_requires_t1_and_uid() {
+        let t1 = crate::protocol::TimestampFormat {
+            seconds: 3_900_000_000,
+            fraction: 7,
+        };
+        let uid = [5u8; 32];
+        let buf = nak_packet(t1, &uid);
+        assert!(nak_matches_request(&buf, t1, &uid));
+
+        let other_t1 = crate::protocol::TimestampFormat {
+            seconds: 1,
+            fraction: 1,
+        };
+        assert!(!nak_matches_request(&buf, other_t1, &uid));
+        assert!(!nak_matches_request(&buf, t1, &[6u8; 32]));
+        assert!(!nak_matches_request(&buf[..20], t1, &uid));
+        // Header only, no Unique Identifier echoed.
+        assert!(!nak_matches_request(&buf[..48], t1, &uid));
+    }
+
     // ── NtsKeResult ──────────────────────────────────────────────
 
     #[test]

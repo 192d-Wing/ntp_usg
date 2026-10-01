@@ -219,6 +219,95 @@ mod tests {
         assert_eq!(efs[0].value, uid);
     }
 
+    /// End to end: a cookie issued by the key store, a client-built NTS request,
+    /// the full request pipeline, and client-side validation of the reply.
+    #[test]
+    fn valid_nts_request_roundtrips_through_pipeline() {
+        use crate::nts_server_common::CookieContents;
+        use crate::server_common::{AccessControl, ClientTable, handle_request_with_nts};
+        use ntp_proto::nts_common::{
+            AEAD_AES_SIV_CMAC_256, build_nts_request, validate_nts_response,
+        };
+
+        let store = RwLock::new(MasterKeyStore::new(Duration::from_secs(3600)));
+        let c2s_key = vec![0x42u8; 32];
+        let s2c_key = vec![0x43u8; 32];
+        let cookie = store
+            .read()
+            .unwrap()
+            .encrypt_cookie(&CookieContents {
+                aead_algorithm: AEAD_AES_SIV_CMAC_256,
+                c2s_key: c2s_key.clone(),
+                s2c_key: s2c_key.clone(),
+            })
+            .unwrap();
+        let (req, t1, uid) = build_nts_request(&c2s_key, AEAD_AES_SIV_CMAC_256, cookie).unwrap();
+
+        let state = ServerSystemState::default();
+        let ac = AccessControl::new(None, None);
+        let mut table = ClientTable::new(16);
+        let result = handle_request_with_nts(
+            &req,
+            req.len(),
+            "::ffff:192.0.2.1".parse().unwrap(),
+            &state,
+            &ac,
+            None,
+            &mut table,
+            false,
+            None,
+            Some(&store),
+        );
+        let HandleResult::NtsResponse(resp) = result else {
+            panic!("expected authenticated NTS response");
+        };
+
+        let hdr: protocol::Packet = (&resp[..48]).read_bytes().unwrap();
+        assert_eq!(hdr.mode, protocol::Mode::Server);
+        assert_eq!(hdr.origin_timestamp, t1);
+        assert_ne!(hdr.transmit_timestamp, protocol::TimestampFormat::default());
+
+        // The client accepts the reply and receives usable replacement cookies.
+        let new_cookies =
+            validate_nts_response(&s2c_key, AEAD_AES_SIV_CMAC_256, &uid, &resp, resp.len())
+                .unwrap();
+        assert!(!new_cookies.is_empty());
+        for c in &new_cookies {
+            let d = store.read().unwrap().decrypt_cookie(c).unwrap().unwrap();
+            assert_eq!(d.c2s_key, c2s_key);
+            assert_eq!(d.s2c_key, s2c_key);
+        }
+
+        // A reply authenticated under the wrong key must be rejected.
+        assert!(
+            validate_nts_response(&c2s_key, AEAD_AES_SIV_CMAC_256, &uid, &resp, resp.len())
+                .is_err()
+        );
+    }
+
+    /// The same request without a key store configured is dropped by the
+    /// pipeline, never answered in cleartext.
+    #[test]
+    fn pipeline_drops_nts_request_without_key_store() {
+        use crate::server_common::{AccessControl, ClientTable, handle_request};
+        let buf = request_bytes(&nts_fields(&[9u8; 32]));
+        let state = ServerSystemState::default();
+        let ac = AccessControl::new(None, None);
+        let mut table = ClientTable::new(16);
+        let result = handle_request(
+            &buf,
+            buf.len(),
+            "192.0.2.1".parse().unwrap(),
+            &state,
+            &ac,
+            None,
+            &mut table,
+            false,
+            None,
+        );
+        assert!(matches!(result, HandleResult::Drop));
+    }
+
     #[test]
     fn nts_request_without_uid_is_dropped() {
         let fields: Vec<_> = nts_fields(&[1u8; 32]).into_iter().skip(1).collect();

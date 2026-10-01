@@ -130,6 +130,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn server_config_debug_redacts_key_store() {
+        let cfg = ServerConfig {
+            access_control: AccessControl::new(None, None),
+            rate_limit: None,
+            enable_interleaved: false,
+            #[cfg(any(feature = "nts", feature = "nts-smol"))]
+            nts_key_store: Some(Arc::new(RwLock::new(
+                crate::nts_server_common::MasterKeyStore::new(std::time::Duration::from_secs(60)),
+            ))),
+        };
+        let s = format!("{cfg:?}");
+        assert!(s.contains("ServerConfig"));
+        assert!(s.contains("enable_interleaved"));
+        #[cfg(any(feature = "nts", feature = "nts-smol"))]
+        assert!(s.contains("<redacted>"));
+    }
+
+    #[test]
     fn test_config_handle_update() {
         let config = Arc::new(RwLock::new(ServerConfig {
             access_control: AccessControl::default(),
