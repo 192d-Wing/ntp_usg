@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Client: remote panic on pre-1970 server timestamps.** `timestamp_to_instant` (and `From<DateFormat>`) panicked when a server-supplied timestamp resolved to 1958–1969 with a non-zero fraction, crashing one-shot, continuous, NTS, broadcast and WASM clients from a single spoofed UDP reply. Components are now normalized; a `fuzz_timestamp_conversion` target was added.
+- **NTS: key derivation now follows RFC 8915 §4.2.** The TLS exporter context was 2 bytes; it is now the mandated 5 (Next Protocol ID, AEAD ID, direction). **BREAKING for interop between old and new builds of this crate**, but required to interoperate with any conforming NTS implementation and to bind the negotiated AEAD into the key.
+- **NTS-KE: ALPN `ntske/1`** is now offered by the client and required by the server (RFC 8915 §4).
+- **Server: IPv4 ACL bypass on dual-stack sockets fixed.** IPv4 clients reaching the default `[::]` listener arrive as `::ffff:a.b.c.d` and never matched IPv4 allow/deny rules or shared rate-limit state. Source addresses are now canonicalized.
+
 ### Changed
 
 - **NTPv5 draft -09**: `DRAFT_ID` is now `draft-ietf-ntp-ntpv5-09`. The client and server accept Draft Identification fields for drafts -07, -08 and -09 (`SUPPORTED_DRAFT_IDS`, `DraftIdentification::is_supported`), since the wire format is unchanged.

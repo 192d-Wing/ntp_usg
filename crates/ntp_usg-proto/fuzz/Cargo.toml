@@ -42,3 +42,8 @@ doc = false
 name = "fuzz_roughtime"
 path = "fuzz_targets/fuzz_roughtime.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_timestamp_conversion"
+path = "fuzz_targets/fuzz_timestamp_conversion.rs"
+doc = false

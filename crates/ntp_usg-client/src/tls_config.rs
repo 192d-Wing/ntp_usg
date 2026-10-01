@@ -31,9 +31,15 @@ fn crypto_provider() -> rustls::crypto::CryptoProvider {
 pub(crate) fn nts_client_config() -> rustls::ClientConfig {
     let root_store =
         rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    rustls::ClientConfig::builder_with_provider(Arc::new(crypto_provider()))
+    let mut config = rustls::ClientConfig::builder_with_provider(Arc::new(crypto_provider()))
         .with_protocol_versions(&[&rustls::version::TLS13])
         .expect("TLS 1.3 configuration valid")
         .with_root_certificates(root_store)
-        .with_no_client_auth()
+        .with_no_client_auth();
+    // RFC 8915 Section 4: ALPN "ntske/1" is REQUIRED for interoperability.
+    config.alpn_protocols = vec![NTS_KE_ALPN.to_vec()];
+    config
 }
+
+/// ALPN protocol identifier for NTS-KE (RFC 8915 Section 4).
+pub(crate) const NTS_KE_ALPN: &[u8] = b"ntske/1";

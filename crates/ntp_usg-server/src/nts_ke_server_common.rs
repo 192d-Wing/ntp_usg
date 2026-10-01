@@ -164,7 +164,11 @@ pub(crate) fn process_nts_ke_records(
         .export_keying_material(
             &mut c2s_key,
             NTS_EXPORTER_LABEL.as_bytes(),
-            Some(&[0x00, 0x00]),
+            Some(&exporter_context(
+                negotiated_protocol,
+                aead_algorithm,
+                false,
+            )),
         )
         .map_err(|e| -> io::Error {
             NtpServerError::Nts(NtsError::KeyExportFailed {
@@ -178,7 +182,7 @@ pub(crate) fn process_nts_ke_records(
         .export_keying_material(
             &mut s2c_key,
             NTS_EXPORTER_LABEL.as_bytes(),
-            Some(&[0x00, 0x01]),
+            Some(&exporter_context(negotiated_protocol, aead_algorithm, true)),
         )
         .map_err(|e| -> io::Error {
             NtpServerError::Nts(NtsError::KeyExportFailed {

@@ -28,7 +28,10 @@ impl IpNet {
 
     /// Check whether the given IP address falls within this network.
     pub fn contains(&self, ip: &IpAddr) -> bool {
-        match (&self.addr, ip) {
+        // Treat IPv4-mapped IPv6 addresses as their IPv4 form so an IPv4 rule
+        // matches a client reached through a dual-stack IPv6 socket.
+        let ip = ip.to_canonical();
+        match (&self.addr, &ip) {
             (IpAddr::V4(net), IpAddr::V4(addr)) => {
                 if self.prefix_len == 0 {
                     return true;
@@ -55,6 +58,17 @@ impl IpNet {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// IPv4 clients on a dual-stack `[::]` socket appear as `::ffff:a.b.c.d`
+    /// and must still match IPv4 rules.
+    #[test]
+    fn ipv4_mapped_ipv6_matches_ipv4_rule() {
+        let net = IpNet::new("10.0.0.0".parse().unwrap(), 8);
+        let mapped: IpAddr = "::ffff:10.1.2.3".parse().unwrap();
+        assert!(net.contains(&mapped));
+        let other: IpAddr = "::ffff:192.168.1.1".parse().unwrap();
+        assert!(!net.contains(&other));
+    }
 
     #[test]
     fn test_ipnet_contains_exact() {

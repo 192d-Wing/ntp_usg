@@ -45,6 +45,10 @@ pub fn handle_request(
     enable_interleaved: bool,
     metrics: Option<&ServerMetrics>,
 ) -> HandleResult {
+    // On a dual-stack `[::]` socket IPv4 clients arrive as `::ffff:a.b.c.d`.
+    // Canonicalize so access-control rules and per-client state written for
+    // IPv4 addresses apply to them.
+    let src_ip = src_ip.to_canonical();
     let _span = tracing::debug_span!("handle_request", client = %src_ip).entered();
     if let Some(m) = metrics {
         m.inc_requests_received();

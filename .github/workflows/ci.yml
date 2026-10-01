@@ -275,6 +275,9 @@ jobs:
       - name: Fuzz NTPv5 packet parsing (30s)
         working-directory: crates/ntp_usg-proto
         run: cargo +nightly fuzz run fuzz_packet_v5 -- -max_total_time=30
+      - name: Fuzz timestamp conversion (30s)
+        working-directory: crates/ntp_usg-proto
+        run: cargo +nightly fuzz run fuzz_timestamp_conversion -- -max_total_time=30
       - name: Fuzz Roughtime parsing (30s)
         working-directory: crates/ntp_usg-proto
         run: cargo +nightly fuzz run fuzz_roughtime -- -max_total_time=30
