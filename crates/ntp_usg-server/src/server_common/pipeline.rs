@@ -25,9 +25,23 @@ pub enum HandleResult {
         /// The serialized NTPv5 response packet.
         Vec<u8>,
     ),
+    /// Send this NTS-authenticated NTPv4 response (header + extension fields).
+    #[cfg(any(feature = "nts", feature = "nts-smol"))]
+    NtsResponse(
+        /// The serialized response including NTS extension fields.
+        Vec<u8>,
+    ),
     /// Drop the packet (invalid request, silently ignored).
     Drop,
 }
+
+/// Reference to the NTS master key store passed through the pipeline.
+#[cfg(any(feature = "nts", feature = "nts-smol"))]
+pub(crate) type NtsKeyStoreRef<'a> =
+    Option<&'a std::sync::RwLock<crate::nts_server_common::MasterKeyStore>>;
+/// Placeholder when NTS is compiled out.
+#[cfg(not(any(feature = "nts", feature = "nts-smol")))]
+pub(crate) type NtsKeyStoreRef<'a> = Option<&'a ()>;
 
 /// Handle a single incoming NTP request (pure logic, no I/O).
 ///
@@ -44,6 +58,65 @@ pub fn handle_request(
     client_table: &mut ClientTable,
     enable_interleaved: bool,
     metrics: Option<&ServerMetrics>,
+) -> HandleResult {
+    handle_request_inner(
+        recv_buf,
+        recv_len,
+        src_ip,
+        server_state,
+        access_control,
+        rate_limit_config,
+        client_table,
+        enable_interleaved,
+        metrics,
+        None,
+    )
+}
+
+/// [`handle_request`] with NTS support (RFC 8915).
+///
+/// `nts_key_store` is the master key store shared with the NTS-KE server; it
+/// is used to decrypt cookies and authenticate NTS requests.
+#[cfg(any(feature = "nts", feature = "nts-smol"))]
+#[allow(clippy::too_many_arguments)]
+pub fn handle_request_with_nts(
+    recv_buf: &[u8],
+    recv_len: usize,
+    src_ip: IpAddr,
+    server_state: &ServerSystemState,
+    access_control: &AccessControl,
+    rate_limit_config: Option<&RateLimitConfig>,
+    client_table: &mut ClientTable,
+    enable_interleaved: bool,
+    metrics: Option<&ServerMetrics>,
+    nts_key_store: NtsKeyStoreRef<'_>,
+) -> HandleResult {
+    handle_request_inner(
+        recv_buf,
+        recv_len,
+        src_ip,
+        server_state,
+        access_control,
+        rate_limit_config,
+        client_table,
+        enable_interleaved,
+        metrics,
+        nts_key_store,
+    )
+}
+
+#[allow(clippy::too_many_arguments, unused_variables)]
+fn handle_request_inner(
+    recv_buf: &[u8],
+    recv_len: usize,
+    src_ip: IpAddr,
+    server_state: &ServerSystemState,
+    access_control: &AccessControl,
+    rate_limit_config: Option<&RateLimitConfig>,
+    client_table: &mut ClientTable,
+    enable_interleaved: bool,
+    metrics: Option<&ServerMetrics>,
+    nts_key_store: NtsKeyStoreRef<'_>,
 ) -> HandleResult {
     // On a dual-stack `[::]` socket IPv4 clients arrive as `::ffff:a.b.c.d`.
     // Canonicalize so access-control rules and per-client state written for
@@ -129,6 +202,22 @@ pub fn handle_request(
                 }
             }
         }
+    }
+
+    // 3b. NTS (RFC 8915): a request carrying NTS extension fields is
+    // authenticated here and answered with an authenticated response or an
+    // NTSN Kiss-o'-Death. It never falls through to the unauthenticated path.
+    #[cfg(any(feature = "nts", feature = "nts-smol"))]
+    if let Some(result) = super::nts_pipeline::try_handle_nts(
+        recv_buf,
+        recv_len,
+        &request,
+        server_state,
+        nts_key_store,
+        src_ip,
+        metrics,
+    ) {
+        return result;
     }
 
     // 4. Record T2 (receive timestamp).
@@ -670,6 +759,8 @@ mod tests {
             }
             #[cfg(feature = "ntpv5")]
             HandleResult::V5Response(_) => panic!("expected V4 Response, got V5Response"),
+            #[cfg(any(feature = "nts", feature = "nts-smol"))]
+            HandleResult::NtsResponse(_) => panic!("expected V4 Response, got NtsResponse"),
             HandleResult::Drop => panic!("expected Response, got Drop"),
         }
     }

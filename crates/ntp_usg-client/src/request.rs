@@ -95,6 +95,12 @@ impl std::fmt::Display for KissOfDeathError {
             protocol::KissOfDeath::Rate => {
                 write!(f, "server sent Kiss-o'-Death RATE: reduce polling interval")
             }
+            protocol::KissOfDeath::Ntsn => {
+                write!(
+                    f,
+                    "server sent Kiss-o'-Death NTSN: NTS authentication failed, re-run NTS-KE"
+                )
+            }
         }
     }
 }

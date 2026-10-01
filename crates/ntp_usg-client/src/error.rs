@@ -142,6 +142,10 @@ pub enum NtsError {
     },
     /// No NTS cookies remaining.
     NoCookies,
+    /// The server answered with an `NTSN` Kiss-o'-Death (RFC 8915 Section 5.7):
+    /// it could not authenticate our request. All cookies have been discarded;
+    /// run NTS-KE again before making further requests.
+    NtsNak,
     /// NTS AEAD authentication failed.
     AuthenticationFailed,
     /// TLS key export failed.
@@ -242,6 +246,10 @@ impl fmt::Display for NtsError {
             }
             NtsError::MissingRecord { record } => write!(f, "missing NTS-KE record: {record}"),
             NtsError::NoCookies => write!(f, "no NTS cookies remaining"),
+            NtsError::NtsNak => write!(
+                f,
+                "server sent NTSN: NTS authentication failed, cookies discarded; re-run NTS-KE"
+            ),
             NtsError::AuthenticationFailed => write!(f, "NTS AEAD authentication failed"),
             NtsError::KeyExportFailed { detail } => {
                 write!(f, "TLS key export failed: {detail}")

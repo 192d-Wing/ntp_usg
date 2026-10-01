@@ -35,6 +35,14 @@ use std::fmt;
 /// Threshold for choosing slew vs step (128ms), following ntpd convention.
 const STEP_THRESHOLD_SECS: f64 = 0.128;
 
+/// Default sanity limit on a single clock step (seconds).
+///
+/// Matches ntpd's panic threshold: an offset larger than this is almost
+/// certainly a bad or malicious source rather than a real clock error, so it
+/// is refused rather than applied. Use [`apply_correction_with_limit`] to
+/// change or disable the limit.
+pub const MAX_STEP_SECS: f64 = 1000.0;
+
 /// Error type for clock adjustment operations.
 #[derive(Debug)]
 pub enum ClockError {
@@ -44,6 +52,16 @@ pub enum ClockError {
     OsError(i32),
     /// Clock adjustment is not supported on this platform.
     Unsupported,
+    /// The requested step exceeds the configured sanity limit and was refused.
+    ///
+    /// A single bad or malicious time source must not be able to move the
+    /// clock by an arbitrary amount; see [`MAX_STEP_SECS`].
+    StepTooLarge {
+        /// The offset that was requested (seconds).
+        offset_secs: f64,
+        /// The limit that was exceeded (seconds).
+        limit_secs: f64,
+    },
 }
 
 impl fmt::Display for ClockError {
@@ -52,6 +70,13 @@ impl fmt::Display for ClockError {
             ClockError::PermissionDenied => write!(f, "permission denied (requires root/admin)"),
             ClockError::OsError(code) => write!(f, "OS error: {}", code),
             ClockError::Unsupported => write!(f, "clock adjustment not supported on this platform"),
+            ClockError::StepTooLarge {
+                offset_secs,
+                limit_secs,
+            } => write!(
+                f,
+                "refusing to step clock by {offset_secs:.3}s: exceeds sanity limit of {limit_secs:.0}s"
+            ),
         }
     }
 }
@@ -121,6 +146,27 @@ pub fn step_clock(offset_seconds: f64) -> Result<(), ClockError> {
 /// Returns [`ClockError::PermissionDenied`] if the process lacks privileges.
 /// Returns [`ClockError::Unsupported`] on unsupported platforms.
 pub fn apply_correction(offset_seconds: f64) -> Result<CorrectionMethod, ClockError> {
+    apply_correction_with_limit(offset_seconds, Some(MAX_STEP_SECS))
+}
+
+/// [`apply_correction`] with an explicit step sanity limit.
+///
+/// `max_step` is the largest |offset| that will be applied; larger offsets
+/// return [`ClockError::StepTooLarge`] without touching the clock. `None`
+/// disables the check (equivalent to ntpd's `-g`), which is only appropriate
+/// for a one-time initial synchronization from a trusted source.
+pub fn apply_correction_with_limit(
+    offset_seconds: f64,
+    max_step: Option<f64>,
+) -> Result<CorrectionMethod, ClockError> {
+    if let Some(limit) = max_step
+        && (offset_seconds.abs() > limit || !offset_seconds.is_finite())
+    {
+        return Err(ClockError::StepTooLarge {
+            offset_secs: offset_seconds,
+            limit_secs: limit,
+        });
+    }
     if offset_seconds.abs() <= STEP_THRESHOLD_SECS {
         slew_clock(offset_seconds)?;
         Ok(CorrectionMethod::Slew)
@@ -366,6 +412,29 @@ mod platform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Oversized steps are refused before any OS call (no privileges needed).
+    #[test]
+    fn test_apply_correction_refuses_step_above_limit() {
+        match apply_correction_with_limit(2_000.0, Some(1_000.0)) {
+            Err(ClockError::StepTooLarge {
+                offset_secs,
+                limit_secs,
+            }) => {
+                assert_eq!(offset_secs, 2_000.0);
+                assert_eq!(limit_secs, 1_000.0);
+            }
+            other => panic!("expected StepTooLarge, got {other:?}"),
+        }
+        assert!(matches!(
+            apply_correction_with_limit(f64::INFINITY, Some(MAX_STEP_SECS)),
+            Err(ClockError::StepTooLarge { .. })
+        ));
+        assert!(matches!(
+            apply_correction(MAX_STEP_SECS + 1.0),
+            Err(ClockError::StepTooLarge { .. })
+        ));
+    }
 
     #[test]
     fn test_apply_correction_selects_slew_for_small_offset() {

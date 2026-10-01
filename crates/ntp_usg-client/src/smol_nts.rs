@@ -205,8 +205,23 @@ impl NtsSession {
         let mut recv_buf = [0u8; 2048];
         let (recv_len, src_addr) = sock.recv_from(&mut recv_buf).await?;
 
-        let (response, t4) =
-            parse_and_validate_response(&recv_buf, recv_len, src_addr, &self.resolved_addrs)?;
+        let (response, t4) = match parse_and_validate_response(
+            &recv_buf,
+            recv_len,
+            src_addr,
+            &self.resolved_addrs,
+        ) {
+            Ok(v) => v,
+            Err(e) if is_nts_nak(&e) => {
+                if nak_matches_request(&recv_buf[..recv_len], t1, &uid_data) {
+                    // RFC 8915 §5.7: discard all cookies; the caller must re-run NTS-KE.
+                    self.cookies.clear();
+                    return Err(NtpError::Nts(NtsError::NtsNak).into());
+                }
+                return Err(e);
+            }
+            Err(e) => return Err(e),
+        };
 
         if response.origin_timestamp != t1 {
             return Err(NtpError::Protocol(ProtocolError::OriginTimestampMismatch).into());
@@ -241,4 +256,36 @@ impl NtsSession {
             delay_seconds,
         })
     }
+}
+
+/// Return `true` if `e` is a Kiss-o'-Death with code `NTSN`.
+fn is_nts_nak(e: &io::Error) -> bool {
+    matches!(
+        e.get_ref().and_then(|i| i.downcast_ref::<NtpError>()),
+        Some(NtpError::KissOfDeath(k)) if k.code == crate::protocol::KissOfDeath::Ntsn
+    )
+}
+
+/// Verify an NTSN reply is genuinely for our request before acting on it:
+/// RFC 8915 §5.7 requires the origin timestamp and Unique Identifier to match,
+/// otherwise an off-path attacker could force cookie discard with one packet.
+fn nak_matches_request(buf: &[u8], t1: crate::protocol::TimestampFormat, uid: &[u8]) -> bool {
+    use crate::protocol::{ConstPackedSizeBytes, ReadBytes};
+    use ntp_proto::extension::{UNIQUE_IDENTIFIER, parse_extension_fields};
+    let n = crate::protocol::Packet::PACKED_SIZE_BYTES;
+    if buf.len() < n {
+        return false;
+    }
+    let Ok(hdr) = (&buf[..n]).read_bytes::<crate::protocol::Packet>() else {
+        return false;
+    };
+    if hdr.origin_timestamp != t1 {
+        return false;
+    }
+    parse_extension_fields(&buf[n..])
+        .map(|efs| {
+            efs.iter()
+                .any(|ef| ef.field_type == UNIQUE_IDENTIFIER && ef.value == uid)
+        })
+        .unwrap_or(false)
 }

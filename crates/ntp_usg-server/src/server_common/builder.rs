@@ -51,6 +51,10 @@ macro_rules! define_server_builder {
             max_clients: usize,
             socket_opts: $crate::socket_opts::SocketOptions,
             metrics: Option<::std::sync::Arc<$crate::server_common::ServerMetrics>>,
+            #[cfg(any(feature = "nts", feature = "nts-smol"))]
+            nts_key_store: Option<
+                ::std::sync::Arc<::std::sync::RwLock<$crate::nts_server_common::MasterKeyStore>>,
+            >,
             $($extra_field)*
         }
 
@@ -68,6 +72,8 @@ macro_rules! define_server_builder {
                     socket_opts: <$crate::socket_opts::SocketOptions
                         as ::std::default::Default>::default(),
                     metrics: None,
+                    #[cfg(any(feature = "nts", feature = "nts-smol"))]
+                    nts_key_store: None,
                     $($extra_default)*
                 }
             }
@@ -162,6 +168,22 @@ macro_rules! define_server_builder {
             /// Enable interleaved mode (RFC 9769) for improved timestamp accuracy.
             pub fn enable_interleaved(mut self, enable: bool) -> Self {
                 self.enable_interleaved = enable;
+                self
+            }
+
+            /// Serve NTS-authenticated requests (RFC 8915) using this master key
+            /// store, which must be the same store handed to the NTS-KE server so
+            /// cookies issued there can be decrypted here.
+            ///
+            /// Without this, requests carrying NTS extension fields are dropped.
+            #[cfg(any(feature = "nts", feature = "nts-smol"))]
+            pub fn nts_key_store(
+                mut self,
+                store: ::std::sync::Arc<
+                    ::std::sync::RwLock<$crate::nts_server_common::MasterKeyStore>,
+                >,
+            ) -> Self {
+                self.nts_key_store = Some(store);
                 self
             }
 
@@ -263,6 +285,8 @@ macro_rules! define_server_builder {
                         ),
                         rate_limit: self.rate_limit,
                         enable_interleaved: self.enable_interleaved,
+                        #[cfg(any(feature = "nts", feature = "nts-smol"))]
+                        nts_key_store: self.nts_key_store,
                     },
                     max_clients: self.max_clients,
                     metrics: self.metrics,

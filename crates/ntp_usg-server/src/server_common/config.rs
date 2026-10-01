@@ -42,7 +42,6 @@ use super::{AccessControl, RateLimitConfig};
 ///
 /// This struct is held behind `Arc<RwLock<>>` and read once per incoming
 /// request (synchronous read lock, never held across an `await` point).
-#[derive(Debug)]
 pub struct ServerConfig {
     /// IP-based access control (allow/deny lists).
     pub access_control: AccessControl,
@@ -50,6 +49,28 @@ pub struct ServerConfig {
     pub rate_limit: Option<RateLimitConfig>,
     /// Whether interleaved mode (RFC 9769) is enabled.
     pub enable_interleaved: bool,
+    /// NTS master key store shared with the NTS-KE server (RFC 8915).
+    ///
+    /// When set, requests carrying NTS extension fields are authenticated and
+    /// answered with an authenticated response; failures yield an `NTSN`
+    /// Kiss-o'-Death. When `None`, NTS requests are dropped.
+    #[cfg(any(feature = "nts", feature = "nts-smol"))]
+    pub nts_key_store: Option<Arc<RwLock<crate::nts_server_common::MasterKeyStore>>>,
+}
+
+impl std::fmt::Debug for ServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("ServerConfig");
+        d.field("access_control", &self.access_control)
+            .field("rate_limit", &self.rate_limit)
+            .field("enable_interleaved", &self.enable_interleaved);
+        #[cfg(any(feature = "nts", feature = "nts-smol"))]
+        d.field(
+            "nts_key_store",
+            &self.nts_key_store.as_ref().map(|_| "<redacted>"),
+        );
+        d.finish()
+    }
 }
 
 /// A cloneable handle for updating server configuration at runtime.
@@ -114,6 +135,8 @@ mod tests {
             access_control: AccessControl::default(),
             rate_limit: None,
             enable_interleaved: false,
+            #[cfg(any(feature = "nts", feature = "nts-smol"))]
+            nts_key_store: None,
         }));
         let handle = ConfigHandle::new(config.clone());
 
@@ -131,6 +154,8 @@ mod tests {
             access_control: AccessControl::default(),
             rate_limit: None,
             enable_interleaved: false,
+            #[cfg(any(feature = "nts", feature = "nts-smol"))]
+            nts_key_store: None,
         }));
         let handle1 = ConfigHandle::new(config);
         let handle2 = handle1.clone();
@@ -149,6 +174,8 @@ mod tests {
             access_control: AccessControl::default(),
             rate_limit: Some(RateLimitConfig::default()),
             enable_interleaved: false,
+            #[cfg(any(feature = "nts", feature = "nts-smol"))]
+            nts_key_store: None,
         }));
         let handle = ConfigHandle::new(config);
         let snap = handle.snapshot();

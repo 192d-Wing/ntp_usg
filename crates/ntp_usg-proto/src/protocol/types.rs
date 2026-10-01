@@ -348,6 +348,10 @@ pub enum KissOfDeath {
     /// The client MUST immediately reduce its polling interval to that server and continue to
     /// reduce it each time it receives a RATE kiss code.
     Rate = code_to_u32!(b"RATE"),
+    /// NTS NAK (RFC 8915 Section 5.7): the server could not authenticate the
+    /// NTS request (e.g. an expired cookie). The client MUST discard its
+    /// cookies and re-run NTS-KE before continuing.
+    Ntsn = code_to_u32!(b"NTSN"),
 }
 
 impl TryFrom<u32> for KissOfDeath {
@@ -358,6 +362,7 @@ impl TryFrom<u32> for KissOfDeath {
             v if v == code_to_u32!(b"DENY") => Ok(KissOfDeath::Deny),
             v if v == code_to_u32!(b"RSTR") => Ok(KissOfDeath::Rstr),
             v if v == code_to_u32!(b"RATE") => Ok(KissOfDeath::Rate),
+            v if v == code_to_u32!(b"NTSN") => Ok(KissOfDeath::Ntsn),
             _ => Err(()),
         }
     }

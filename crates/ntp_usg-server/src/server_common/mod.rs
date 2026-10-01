@@ -15,6 +15,8 @@ mod metrics;
 mod network;
 #[cfg(feature = "ntpv5")]
 mod ntpv5;
+#[cfg(any(feature = "nts", feature = "nts-smol"))]
+mod nts_pipeline;
 mod pipeline;
 mod rate_limit;
 mod response;
@@ -30,6 +32,8 @@ pub use self::network::IpNet;
 pub use self::rate_limit::RateLimitConfig;
 pub use self::state::ServerSystemState;
 
+#[cfg(any(feature = "nts", feature = "nts-smol"))]
+pub use self::pipeline::handle_request_with_nts;
 pub use self::pipeline::{HandleResult, handle_request};
 pub use self::rate_limit::{ClientState, ClientTable};
 pub use self::response::serialize_response_with_t3;

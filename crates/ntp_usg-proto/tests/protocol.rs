@@ -729,3 +729,11 @@ fn buf_reference_id_to_bytes_too_short() {
         }
     );
 }
+
+#[test]
+fn kiss_of_death_ntsn_roundtrip() {
+    use ntp_proto::protocol::KissOfDeath;
+    let raw = u32::from_be_bytes(*b"NTSN");
+    assert_eq!(KissOfDeath::try_from(raw), Ok(KissOfDeath::Ntsn));
+    assert_eq!(KissOfDeath::Ntsn as u32, raw);
+}

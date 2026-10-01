@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **NTS: key derivation now follows RFC 8915 §4.2.** The TLS exporter context was 2 bytes; it is now the mandated 5 (Next Protocol ID, AEAD ID, direction). **BREAKING for interop between old and new builds of this crate**, but required to interoperate with any conforming NTS implementation and to bind the negotiated AEAD into the key.
 - **NTS-KE: ALPN `ntske/1`** is now offered by the client and required by the server (RFC 8915 §4).
 - **Server: IPv4 ACL bypass on dual-stack sockets fixed.** IPv4 clients reaching the default `[::]` listener arrive as `::ffff:a.b.c.d` and never matched IPv4 allow/deny rules or shared rate-limit state. Source addresses are now canonicalized.
+- **Server: NTS requests are now actually authenticated.** The UDP pipeline previously ignored NTS extension fields and answered unauthenticated. With `NtpServer::builder().nts_key_store(store)` (the same store given to the NTS-KE server), requests carrying NTS fields are verified and answered with an authenticated response; failures return an `NTSN` Kiss-o'-Death echoing the Unique Identifier (RFC 8915 §5.7). Without a key store, NTS requests are dropped rather than answered in cleartext.
+- **`NTSN` kiss code added** (`KissOfDeath::Ntsn`). NTS clients verify the NAK's origin timestamp and Unique Identifier, then discard all cookies and return `NtsError::NtsNak`; callers must re-run NTS-KE.
+- **Client: clock-step sanity limit.** `apply_correction` now refuses offsets above `MAX_STEP_SECS` (1000 s, ntpd's panic threshold) with `ClockError::StepTooLarge`; `apply_correction_with_limit` makes the limit explicit. The discipline loop refuses samples above `PANICT` (configurable via `NtpClientBuilder::max_step_secs`, `None` disables). Previously a single unauthenticated server could step the clock by any amount.
 
 ### Changed
 
