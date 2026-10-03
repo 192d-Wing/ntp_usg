@@ -9,7 +9,7 @@
 [![Crates.io](https://img.shields.io/crates/v/ntp_usg-server.svg?style=for-the-badge&logo=rust&label=server%20crate)](https://crates.io/crates/ntp_usg-server)
 [![Crates.io](https://img.shields.io/crates/v/ntp_usg-wasm.svg?style=for-the-badge&logo=rust&label=wasm%20crate)](https://crates.io/crates/ntp_usg-wasm)
 [![License](https://img.shields.io/crates/l/ntp_usg-proto.svg?style=for-the-badge)](https://github.com/192d-Wing/ntp_usg#license)
-[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/192d-Wing/ntp_usg/ci.yml?branch=master&style=for-the-badge&logo=github)](https://github.com/192d-Wing/ntp_usg/actions/workflows/ci.yml)
+[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/192d-Wing/ntp_usg/ci.yml?branch=main&style=for-the-badge&logo=github)](https://github.com/192d-Wing/ntp_usg/actions/workflows/ci.yml)
 [![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/192d-Wing/ntp_usg?style=for-the-badge&logo=github)](https://github.com/192d-Wing/ntp_usg/issues)
 [![GitHub Issues or Pull Requests](https://img.shields.io/github/issues-pr/192d-Wing/ntp_usg?style=for-the-badge&logo=github)](https://github.com/192d-Wing/ntp_usg/pulls)
 [![Codecov](https://img.shields.io/codecov/c/github/192d-Wing/ntp_usg?style=for-the-badge&logo=codecov)](https://codecov.io/github/192d-Wing/ntp_usg)
