@@ -457,6 +457,9 @@ impl NtpClient {
                 nts_state.aead_algorithm,
                 cookie,
             )?;
+            // NTS requests are protected by the Unique Identifier and AEAD,
+            // so the real T1 goes on the wire unchanged.
+            let t1 = crate::request::OriginTimestamp::plain(t1);
             peer.current_t1 = Some(t1);
 
             #[cfg(feature = "socket-opts")]
@@ -627,7 +630,8 @@ impl NtpClient {
                 let (send_buf, client_cookie) =
                     build_v5_request_packet(*timescale, *server_cookie, bloom_req)?;
 
-                peer.current_t1 = Some(crate::unix_time::Instant::now().into());
+                peer.current_t1 =
+                    Some(crate::request::OriginTimestamp::plain(crate::unix_time::Instant::now().into()));
                 *prev_client_cookie = *current_client_cookie;
                 *current_client_cookie = client_cookie;
 

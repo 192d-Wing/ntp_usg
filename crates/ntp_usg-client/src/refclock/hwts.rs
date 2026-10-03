@@ -60,9 +60,16 @@ pub struct HwTimestamp {
 }
 
 impl HwTimestamp {
-    /// Convert to Duration since Unix epoch
+    /// Convert to Duration since Unix epoch.
+    ///
+    /// The kernel should always deliver `0 <= nsec < 1e9` and `sec >= 0`, but
+    /// this is driver-supplied data: a buggy or malicious driver must not be
+    /// able to panic the client. Negative seconds clamp to zero and
+    /// out-of-range nanoseconds are normalised rather than truncated.
     pub fn to_duration(&self) -> Duration {
-        Duration::new(self.sec as u64, self.nsec as u32)
+        let secs = u64::try_from(self.sec).unwrap_or(0);
+        let nanos = u64::try_from(self.nsec).unwrap_or(0);
+        Duration::from_secs(secs).saturating_add(Duration::from_nanos(nanos))
     }
 
     /// Get timestamp as f64 seconds
@@ -190,31 +197,32 @@ pub fn get_timestamping_capabilities(
 /// Extract hardware timestamp from ancillary message data
 ///
 /// This function parses the control message returned by recvmsg()
-/// to extract hardware timestamps.
+/// to extract hardware timestamps. The data is `SCM_TIMESTAMPING`:
+/// three consecutive `struct timespec` values laid out as
+/// `[software, deprecated, hardware]`.
 ///
-/// # Safety
-///
-/// This function uses unsafe pointer arithmetic to parse kernel structures.
-/// It should only be called with valid control message data from recvmsg().
-pub unsafe fn extract_timestamp(cmsg_data: &[u8]) -> Option<HwTimestamp> {
-    // Control message should contain one or more struct timespec
-    // Layout: [software_ts, deprecated, hardware_ts]
-    // We want the hardware timestamp (index 2)
+/// Passing arbitrary bytes is safe: too-short input yields `None`, and the
+/// value is read with an unaligned load so the slice's alignment does not
+/// matter.
+pub fn extract_timestamp(cmsg_data: &[u8]) -> Option<HwTimestamp> {
+    const TS_SIZE: usize = mem::size_of::<HwTimestamp>();
 
-    if cmsg_data.len() < mem::size_of::<HwTimestamp>() * 3 {
+    if cmsg_data.len() < TS_SIZE * 3 {
         // Not enough data for hardware timestamp
         return None;
     }
 
     // Hardware timestamp is at index 2 in the [software, deprecated, hardware] array
-    let hw_ts_offset = mem::size_of::<HwTimestamp>() * 2;
-    // SAFETY: The length check above guarantees cmsg_data contains at least
-    // 3 * size_of::<HwTimestamp>() bytes. hw_ts_offset points to the third
-    // element. HwTimestamp is #[repr(C)] with no padding, so the pointer cast
-    // is valid. The data comes from kernel recvmsg() and is properly aligned.
+    let hw_ts_offset = TS_SIZE * 2;
+    // SAFETY: The length check above guarantees `hw_ts_offset + TS_SIZE <=
+    // cmsg_data.len()`, so the read stays inside the slice. `HwTimestamp` is
+    // `#[repr(C)]` plain-old-data (two `i64`s) for which every bit pattern is
+    // valid. `cmsg_data` is a `&[u8]` and therefore only 1-byte aligned, so
+    // `read_unaligned` is required: a plain dereference of a `*const
+    // HwTimestamp` here would be UB whenever the buffer is not 8-byte aligned.
     let hw_ts = unsafe {
         let ts_ptr = cmsg_data.as_ptr().add(hw_ts_offset) as *const HwTimestamp;
-        *ts_ptr
+        ts_ptr.read_unaligned()
     };
 
     // Check if timestamp is non-zero (zero means not available)
@@ -291,6 +299,51 @@ mod tests {
 
         let secs_f64 = ts.as_secs_f64();
         assert!((secs_f64 - 1_234_567_890.123_456_7).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_hw_timestamp_conversion_out_of_range_does_not_panic() {
+        // nsec >= 1e9 must normalise, not truncate or panic.
+        let ts = HwTimestamp {
+            sec: 10,
+            nsec: 2_500_000_000,
+        };
+        assert_eq!(ts.to_duration(), Duration::new(12, 500_000_000));
+
+        // Negative values from a broken driver clamp to zero.
+        let ts = HwTimestamp { sec: -5, nsec: -1 };
+        assert_eq!(ts.to_duration(), Duration::ZERO);
+
+        // Extreme values saturate.
+        let ts = HwTimestamp {
+            sec: i64::MAX,
+            nsec: i64::MAX,
+        };
+        let _ = ts.to_duration();
+    }
+
+    #[test]
+    fn test_extract_timestamp_unaligned_buffer() {
+        // Build [sw, deprecated, hw] timespecs at a deliberately misaligned
+        // offset (1 byte) inside an over-allocated buffer.
+        let hw = HwTimestamp {
+            sec: 1_700_000_000,
+            nsec: 42,
+        };
+        let mut buf = vec![0u8; 1 + 3 * mem::size_of::<HwTimestamp>()];
+        let off = 1 + 2 * mem::size_of::<HwTimestamp>();
+        buf[off..off + 8].copy_from_slice(&hw.sec.to_ne_bytes());
+        buf[off + 8..off + 16].copy_from_slice(&hw.nsec.to_ne_bytes());
+
+        let got = extract_timestamp(&buf[1..]).expect("hw timestamp present");
+        assert_eq!(got.sec, hw.sec);
+        assert_eq!(got.nsec, hw.nsec);
+    }
+
+    #[test]
+    fn test_extract_timestamp_short_or_zero() {
+        assert!(extract_timestamp(&[0u8; 10]).is_none());
+        assert!(extract_timestamp(&[0u8; 3 * mem::size_of::<HwTimestamp>()]).is_none());
     }
 
     #[test]
