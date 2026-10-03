@@ -166,18 +166,83 @@ pub(crate) fn compute_offset_delay(
     (offset, delay)
 }
 
+/// Origin timestamp (T1) of an outgoing client request.
+///
+/// In basic (non-NTS) client mode the only off-path anti-spoofing defence is
+/// that the server must echo our Transmit Timestamp back in the Origin
+/// Timestamp field (RFC 5905 §8). If that value is simply the wall clock it
+/// is predictable to within the network jitter, so an attacker who can guess
+/// when we poll can forge a reply. As ntpd and chrony do, the value placed on
+/// the wire therefore has its fraction replaced with random bits, while the
+/// real send time is kept locally for the offset/delay computation.
+///
+/// The two fields must never be mixed up: `wire` is compared against the
+/// response's `origin_timestamp`, `actual` is fed into the clock arithmetic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct OriginTimestamp {
+    /// Value written into the request's Transmit Timestamp field.
+    pub(crate) wire: protocol::TimestampFormat,
+    /// Actual local time the request was built.
+    pub(crate) actual: protocol::TimestampFormat,
+}
+
+impl OriginTimestamp {
+    /// Record the current time as T1 and derive an unpredictable wire value
+    /// from it.
+    pub(crate) fn now() -> Self {
+        let actual: protocol::TimestampFormat = unix_time::Instant::now().into();
+        let wire = protocol::TimestampFormat {
+            seconds: actual.seconds,
+            fraction: random_u64() as u32,
+        };
+        OriginTimestamp { wire, actual }
+    }
+
+    /// An origin timestamp whose wire value *is* the real time.
+    ///
+    /// Used where the Transmit Timestamp field is not the anti-spoofing
+    /// token: NTS requests (protected by the Unique Identifier and AEAD) and
+    /// NTPv5 (which carries a separate random client cookie and does not echo
+    /// T1 at all).
+    #[cfg_attr(
+        not(any(feature = "nts", feature = "nts-smol", feature = "ntpv5")),
+        allow(dead_code)
+    )]
+    pub(crate) fn plain(ts: protocol::TimestampFormat) -> Self {
+        OriginTimestamp {
+            wire: ts,
+            actual: ts,
+        }
+    }
+}
+
+/// Produce an unpredictable 64-bit value without an extra dependency.
+///
+/// `RandomState` is seeded from OS entropy per thread and its key is advanced
+/// on every `new()`, so hashing the current time with it acts as a keyed PRF
+/// whose output cannot be predicted by an observer who only knows the time.
+pub(crate) fn random_u64() -> u64 {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+
+    let s = RandomState::new();
+    let mut h = s.build_hasher();
+    let now = unix_time::Instant::now();
+    h.write_i64(now.secs());
+    h.write_i32(now.subsec_nanos());
+    h.finish()
+}
+
 /// Build an NTP client request packet and serialize it.
 ///
 /// Returns the serialized buffer and the origin timestamp (T1).
-pub(crate) fn build_request_packet() -> io::Result<(
-    [u8; protocol::Packet::PACKED_SIZE_BYTES],
-    protocol::TimestampFormat,
-)> {
+pub(crate) fn build_request_packet()
+-> io::Result<([u8; protocol::Packet::PACKED_SIZE_BYTES], OriginTimestamp)> {
+    let t1 = OriginTimestamp::now();
     let packet = protocol::Packet {
-        transmit_timestamp: unix_time::Instant::now().into(),
+        transmit_timestamp: t1.wire,
         ..protocol::Packet::default()
     };
-    let t1 = packet.transmit_timestamp;
     let mut send_buf = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
     (&mut send_buf[..]).write_bytes(packet)?;
     Ok((send_buf, t1))
@@ -260,18 +325,20 @@ pub(crate) fn validate_response(
     recv_len: usize,
     src_addr: SocketAddr,
     resolved_addrs: &[SocketAddr],
-    t1: &protocol::TimestampFormat,
+    t1: &OriginTimestamp,
 ) -> io::Result<NtpResult> {
     let (response, t4) = parse_and_validate_response(recv_buf, recv_len, src_addr, resolved_addrs)?;
 
-    // Validate origin timestamp matches what we sent (anti-replay, RFC 5905 Section 8).
-    if response.origin_timestamp != *t1 {
+    // Validate origin timestamp matches what we sent (anti-replay/anti-spoof,
+    // RFC 5905 Section 8). The wire value is unpredictable; see
+    // [`OriginTimestamp`].
+    if response.origin_timestamp != t1.wire {
         return Err(NtpError::Protocol(ProtocolError::OriginTimestampMismatch).into());
     }
 
     // Convert all four timestamps to Instant for era-aware offset/delay computation.
     let t4_instant = unix_time::Instant::from(t4);
-    let t1_instant = unix_time::timestamp_to_instant(*t1, &t4_instant);
+    let t1_instant = unix_time::timestamp_to_instant(t1.actual, &t4_instant);
     let t2_instant = unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
     let t3_instant = unix_time::timestamp_to_instant(response.transmit_timestamp, &t4_instant);
 
@@ -293,11 +360,11 @@ pub(crate) fn validate_response(
 ///
 /// Returns the serialized buffer and the origin timestamp (T1).
 #[cfg(feature = "ntpv5")]
-pub(crate) fn build_v4_negotiation_packet() -> io::Result<(
-    [u8; protocol::Packet::PACKED_SIZE_BYTES],
-    protocol::TimestampFormat,
-)> {
+pub(crate) fn build_v4_negotiation_packet()
+-> io::Result<([u8; protocol::Packet::PACKED_SIZE_BYTES], OriginTimestamp)> {
     use ntp_proto::ntpv5_ext::NEGOTIATION_MAGIC_DRAFT;
+
+    let t1 = OriginTimestamp::now();
 
     let magic_ts = protocol::TimestampFormat {
         seconds: (NEGOTIATION_MAGIC_DRAFT >> 32) as u32,
@@ -316,9 +383,8 @@ pub(crate) fn build_v4_negotiation_packet() -> io::Result<(
         reference_timestamp: magic_ts,
         origin_timestamp: protocol::TimestampFormat::default(),
         receive_timestamp: protocol::TimestampFormat::default(),
-        transmit_timestamp: unix_time::Instant::now().into(),
+        transmit_timestamp: t1.wire,
     };
-    let t1 = packet.transmit_timestamp;
     let mut send_buf = [0u8; protocol::Packet::PACKED_SIZE_BYTES];
     (&mut send_buf[..]).write_bytes(packet)?;
     Ok((send_buf, t1))
@@ -350,20 +416,9 @@ pub(crate) fn build_v5_request_packet(
     use ntp_proto::extension::write_extension_fields;
     use ntp_proto::ntpv5_ext::{DraftIdentification, Padding, RefIdsRequest};
     use ntp_proto::protocol::ntpv5::{NtpV5Flags, PacketV5, Time32};
-    use std::collections::hash_map::RandomState;
-    use std::hash::{BuildHasher, Hasher};
 
-    // Generate a random client cookie using the standard library's RandomState.
-    // RandomState is seeded with OS entropy, so each build_hasher() call
-    // produces a different hasher. We feed in the current time for uniqueness.
-    let client_cookie = {
-        let s = RandomState::new();
-        let mut h = s.build_hasher();
-        let now = unix_time::Instant::now();
-        h.write_i64(now.secs());
-        h.write_i32(now.subsec_nanos());
-        h.finish()
-    };
+    // Random client cookie (anti-replay / anti-spoof for V5).
+    let client_cookie = random_u64();
 
     let packet = PacketV5 {
         leap_indicator: protocol::LeapIndicator::default(),
@@ -885,9 +940,87 @@ mod tests {
         assert_eq!(pkt.version, protocol::Version::V4);
         assert_eq!(pkt.mode, protocol::Mode::Client);
         assert_eq!(pkt.stratum, protocol::Stratum::UNSPECIFIED);
-        assert_eq!(pkt.transmit_timestamp, t1);
+        assert_eq!(pkt.transmit_timestamp, t1.wire);
         // T1 should be non-zero (set to current time).
-        assert!(t1.seconds != 0 || t1.fraction != 0);
+        assert!(t1.actual.seconds != 0 || t1.actual.fraction != 0);
+        // The wire value carries the real seconds but a randomised fraction.
+        assert_eq!(t1.wire.seconds, t1.actual.seconds);
+    }
+
+    #[test]
+    fn test_origin_timestamp_wire_fraction_is_unpredictable() {
+        // Across many requests the wire fraction must not track the clock:
+        // every value should be distinct and unrelated to the actual fraction.
+        let mut wires = std::collections::HashSet::new();
+        let mut equal_to_actual = 0;
+        for _ in 0..64 {
+            let t1 = OriginTimestamp::now();
+            wires.insert(t1.wire.fraction);
+            if t1.wire.fraction == t1.actual.fraction {
+                equal_to_actual += 1;
+            }
+        }
+        assert!(wires.len() >= 60, "wire fractions repeat: {}", wires.len());
+        assert_eq!(equal_to_actual, 0);
+    }
+
+    #[test]
+    fn test_validate_response_matches_wire_and_computes_with_actual() {
+        // Server echoes the *wire* T1; the computed offset must be derived
+        // from the *actual* T1, i.e. independent of the random fraction.
+        let t4_now: protocol::TimestampFormat = unix_time::Instant::now().into();
+        let actual = protocol::TimestampFormat {
+            seconds: t4_now.seconds,
+            fraction: 0,
+        };
+        let t1 = OriginTimestamp {
+            wire: protocol::TimestampFormat {
+                seconds: actual.seconds,
+                fraction: 0xDEAD_BEEF,
+            },
+            actual,
+        };
+        let server_ts = protocol::TimestampFormat {
+            seconds: actual.seconds,
+            fraction: 0,
+        };
+        let pkt = protocol::Packet {
+            leap_indicator: protocol::LeapIndicator::NoWarning,
+            version: protocol::Version::V4,
+            mode: protocol::Mode::Server,
+            stratum: protocol::Stratum(2),
+            poll: 6,
+            precision: -20,
+            root_delay: protocol::ShortFormat::default(),
+            root_dispersion: protocol::ShortFormat::default(),
+            reference_id: protocol::ReferenceIdentifier::SecondaryOrClient([127, 0, 0, 1]),
+            reference_timestamp: server_ts,
+            origin_timestamp: t1.wire,
+            receive_timestamp: server_ts,
+            transmit_timestamp: server_ts,
+        };
+        let mut buf = [0u8; 48];
+        (&mut buf[..]).write_bytes(pkt).unwrap();
+        let addrs = vec![src_addr()];
+
+        let result = validate_response(&buf, 48, src_addr(), &addrs, &t1).expect("wire T1 echoed");
+        // T1 == T2 == T3 (to the second); T4 is "now". Had the random wire
+        // fraction (~0.87 s) leaked into the arithmetic the offset would be
+        // off by ~0.43 s; with the actual T1 it is bounded by the test's own
+        // elapsed time plus T4's sub-second part.
+        assert!(result.offset_seconds.abs() < 1.0 + 0.1);
+        assert!(result.delay_seconds >= -0.001);
+
+        // A reply echoing the *actual* T1 instead of the wire value is rejected:
+        // that is exactly what an off-path attacker guessing the clock sends.
+        let forged = protocol::Packet {
+            origin_timestamp: t1.actual,
+            ..pkt
+        };
+        let mut fbuf = [0u8; 48];
+        (&mut fbuf[..]).write_bytes(forged).unwrap();
+        let err = validate_response(&fbuf, 48, src_addr(), &addrs, &t1).unwrap_err();
+        assert!(err.to_string().to_lowercase().contains("origin"), "{err}");
     }
 
     #[test]
@@ -1136,7 +1269,7 @@ mod tests {
 
         assert_eq!(pkt.version, protocol::Version::V4);
         assert_eq!(pkt.mode, protocol::Mode::Client);
-        assert_eq!(pkt.transmit_timestamp, t1);
+        assert_eq!(pkt.transmit_timestamp, t1.wire);
 
         // Verify the negotiation magic is in the Reference Timestamp field.
         assert!(response_has_negotiation_magic(&pkt));

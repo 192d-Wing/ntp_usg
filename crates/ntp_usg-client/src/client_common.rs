@@ -16,7 +16,7 @@ use tracing::debug;
 
 use crate::error::{NtpError, ProtocolError};
 use crate::filter::{ClockSample, SampleFilter};
-use crate::request::compute_offset_delay;
+use crate::request::{OriginTimestamp, compute_offset_delay};
 use crate::selection::{self, PeerCandidate};
 use crate::{DisciplineState, KissOfDeathError, protocol, unix_time};
 
@@ -167,11 +167,11 @@ pub(crate) struct PeerState {
     /// Root dispersion from the peer's last response (seconds).
     pub(crate) root_dispersion_secs: f64,
     /// Our transmit timestamp (T1) from the previous exchange (for interleaved mode).
-    pub(crate) prev_t1: Option<protocol::TimestampFormat>,
+    pub(crate) prev_t1: Option<OriginTimestamp>,
     /// Our receive timestamp (T4) from the previous exchange (for interleaved mode).
     pub(crate) prev_t4: Option<protocol::TimestampFormat>,
     /// Our transmit timestamp (T1) from the current (most recent sent) exchange.
-    pub(crate) current_t1: Option<protocol::TimestampFormat>,
+    pub(crate) current_t1: Option<OriginTimestamp>,
     /// Whether interleaved mode has been detected for this peer.
     pub(crate) interleaved: bool,
     /// If true, we have received DENY or RSTR and must stop polling.
@@ -319,7 +319,7 @@ impl PeerState {
         &mut self,
         response: &protocol::Packet,
         t4: protocol::TimestampFormat,
-        t1: protocol::TimestampFormat,
+        t1: OriginTimestamp,
     ) -> io::Result<PollResult> {
         self.stratum = Some(response.stratum);
         self.root_delay_secs = short_format_to_secs(&response.root_delay);
@@ -362,11 +362,10 @@ impl PeerState {
             // Interleaved mode: T2/T3 are from the *previous* exchange,
             // paired with our prev_t1/prev_t4.
             if let (Some(pt1), Some(pt4)) = (self.prev_t1, self.prev_t4) {
-                let _ = pt1; // T1 from previous exchange (used below via prev_t4)
                 let t4_instant = unix_time::Instant::from(pt4);
                 let t2 = unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
                 let t3 = unix_time::timestamp_to_instant(response.transmit_timestamp, &t4_instant);
-                let t1 = unix_time::timestamp_to_instant(pt1, &t4_instant);
+                let t1 = unix_time::timestamp_to_instant(pt1.actual, &t4_instant);
                 let (offset, delay) = compute_offset_delay(&t1, &t2, &t3, &t4_instant);
 
                 self.prev_t1 = self.current_t1;
@@ -400,7 +399,7 @@ impl PeerState {
         })?;
 
         let t4_instant = unix_time::Instant::from(t4);
-        let t1_instant = unix_time::timestamp_to_instant(t1_ts, &t4_instant);
+        let t1_instant = unix_time::timestamp_to_instant(t1_ts.actual, &t4_instant);
         let t2_instant = unix_time::timestamp_to_instant(t2, &t4_instant);
         let t3_instant = unix_time::timestamp_to_instant(t3, &t4_instant);
         let (offset, delay) =
@@ -467,14 +466,16 @@ pub(crate) fn check_kod(e: &io::Error) -> Option<PollResult> {
 pub(crate) fn classify_and_compute(
     response: &protocol::Packet,
     t4: protocol::TimestampFormat,
-    current_t1: protocol::TimestampFormat,
-    prev_t1: Option<protocol::TimestampFormat>,
+    current_t1: OriginTimestamp,
+    prev_t1: Option<OriginTimestamp>,
     prev_t4: Option<protocol::TimestampFormat>,
 ) -> io::Result<(ClockSample, bool)> {
-    if response.origin_timestamp == current_t1 {
+    // The server echoes whatever we put on the wire, so matching is done on
+    // `wire`; the arithmetic uses the real send time in `actual`.
+    if response.origin_timestamp == current_t1.wire {
         // Basic mode: all timestamps from the same exchange.
         let t4_instant = unix_time::Instant::from(t4);
-        let t1_instant = unix_time::timestamp_to_instant(current_t1, &t4_instant);
+        let t1_instant = unix_time::timestamp_to_instant(current_t1.actual, &t4_instant);
         let t2_instant = unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
         let t3_instant = unix_time::timestamp_to_instant(response.transmit_timestamp, &t4_instant);
         let (offset, delay) =
@@ -490,11 +491,11 @@ pub(crate) fn classify_and_compute(
             false,
         ))
     } else if let (Some(pt1), Some(pt4)) = (prev_t1, prev_t4) {
-        if response.origin_timestamp == pt1 {
+        if response.origin_timestamp == pt1.wire {
             // Interleaved mode: server returned more accurate timestamps
             // for the previous exchange.
             let t4_instant = unix_time::Instant::from(pt4);
-            let t1_instant = unix_time::timestamp_to_instant(pt1, &t4_instant);
+            let t1_instant = unix_time::timestamp_to_instant(pt1.actual, &t4_instant);
             let t2_instant =
                 unix_time::timestamp_to_instant(response.receive_timestamp, &t4_instant);
             let t3_instant =
@@ -1103,7 +1104,8 @@ mod tests {
             },
         };
 
-        let (sample, interleaved) = classify_and_compute(&response, t4, t1, None, None).unwrap();
+        let (sample, interleaved) =
+            classify_and_compute(&response, t4, OriginTimestamp::plain(t1), None, None).unwrap();
         assert!(!interleaved);
         assert!(sample.offset.is_finite());
         assert!(sample.delay.is_finite());
@@ -1149,8 +1151,14 @@ mod tests {
             },
         };
 
-        let (sample, interleaved) =
-            classify_and_compute(&response, t4, current_t1, Some(prev_t1), Some(prev_t4)).unwrap();
+        let (sample, interleaved) = classify_and_compute(
+            &response,
+            t4,
+            OriginTimestamp::plain(current_t1),
+            Some(OriginTimestamp::plain(prev_t1)),
+            Some(prev_t4),
+        )
+        .unwrap();
         assert!(interleaved);
         assert!(sample.offset.is_finite());
         assert!(sample.delay.is_finite());
@@ -1188,7 +1196,7 @@ mod tests {
             },
         };
 
-        let result = classify_and_compute(&response, t4, t1, None, None);
+        let result = classify_and_compute(&response, t4, OriginTimestamp::plain(t1), None, None);
         assert!(result.is_err());
     }
 
@@ -1233,7 +1241,13 @@ mod tests {
             },
         };
 
-        let result = classify_and_compute(&response, t4, current_t1, Some(prev_t1), Some(prev_t4));
+        let result = classify_and_compute(
+            &response,
+            t4,
+            OriginTimestamp::plain(current_t1),
+            Some(OriginTimestamp::plain(prev_t1)),
+            Some(prev_t4),
+        );
         assert!(result.is_err());
         assert!(
             result
