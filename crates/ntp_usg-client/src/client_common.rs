@@ -444,6 +444,10 @@ pub(crate) fn check_kod(e: &io::Error) -> Option<PollResult> {
         return Some(match kod.code {
             protocol::KissOfDeath::Rate => PollResult::RateKissCode,
             protocol::KissOfDeath::Deny | protocol::KissOfDeath::Rstr => PollResult::DenyKissCode,
+            // NTSN means our cookies are no longer valid; back off rather than
+            // demobilize. Re-running NTS-KE for continuous peers is tracked
+            // separately (issue #16).
+            protocol::KissOfDeath::Ntsn => PollResult::RateKissCode,
         });
     }
     // Legacy KissOfDeathError downcast for backward compatibility.
@@ -451,6 +455,7 @@ pub(crate) fn check_kod(e: &io::Error) -> Option<PollResult> {
     Some(match kod.code {
         protocol::KissOfDeath::Rate => PollResult::RateKissCode,
         protocol::KissOfDeath::Deny | protocol::KissOfDeath::Rstr => PollResult::DenyKissCode,
+        protocol::KissOfDeath::Ntsn => PollResult::RateKissCode,
     })
 }
 
@@ -711,6 +716,7 @@ pub(crate) struct ClientBuildConfig {
     pub(crate) initial_poll: u8,
     pub(crate) socket_opts: crate::socket_opts::SocketOptions,
     pub(crate) enable_discipline: bool,
+    pub(crate) max_step_secs: Option<f64>,
     pub(crate) enable_ntpv5: bool,
 }
 
@@ -741,6 +747,8 @@ macro_rules! define_client_builder {
             socket_opts: $crate::socket_opts::SocketOptions,
             #[cfg(feature = "discipline")]
             enable_discipline: bool,
+            #[cfg(feature = "discipline")]
+            max_step_secs: Option<f64>,
             #[cfg(feature = "ntpv5")]
             enable_ntpv5: bool,
             $($extra_field)*
@@ -757,6 +765,8 @@ macro_rules! define_client_builder {
                         as ::std::default::Default>::default(),
                     #[cfg(feature = "discipline")]
                     enable_discipline: false,
+                    #[cfg(feature = "discipline")]
+                    max_step_secs: Some($crate::discipline::PANICT),
                     #[cfg(feature = "ntpv5")]
                     enable_ntpv5: false,
                     $($extra_default)*
@@ -832,6 +842,19 @@ macro_rules! define_client_builder {
                 self
             }
 
+            /// Set the clock-step sanity limit for the discipline loop.
+            ///
+            /// Offsets larger than this (default
+            /// [`PANICT`](crate::discipline::PANICT), 1000 s) are refused
+            /// rather than stepped, so one bad or malicious server cannot move
+            /// the clock arbitrarily. `None` disables the limit; only use that
+            /// for a one-time initial sync from a trusted source.
+            #[cfg(feature = "discipline")]
+            pub fn max_step_secs(mut self, max_step: Option<f64>) -> Self {
+                self.max_step_secs = max_step;
+                self
+            }
+
             /// Enable NTPv5 version negotiation for all peers.
             ///
             /// When enabled, peers start in the `Negotiating` state and probe servers
@@ -868,6 +891,10 @@ macro_rules! define_client_builder {
                 let enable_discipline = self.enable_discipline;
                 #[cfg(not(feature = "discipline"))]
                 let enable_discipline = false;
+                #[cfg(feature = "discipline")]
+                let max_step_secs = self.max_step_secs;
+                #[cfg(not(feature = "discipline"))]
+                let max_step_secs = None;
 
                 #[cfg(feature = "ntpv5")]
                 let enable_ntpv5 = self.enable_ntpv5;
@@ -881,6 +908,7 @@ macro_rules! define_client_builder {
                     initial_poll,
                     socket_opts: self.socket_opts,
                     enable_discipline,
+                    max_step_secs,
                     enable_ntpv5,
                 }
             }
@@ -893,6 +921,37 @@ pub(crate) use define_client_builder;
 #[allow(unreachable_pub, dead_code)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_check_kod_ntsn_backs_off() {
+        let e: io::Error = NtpError::KissOfDeath(KissOfDeathError {
+            code: protocol::KissOfDeath::Ntsn,
+        })
+        .into();
+        assert!(matches!(check_kod(&e), Some(PollResult::RateKissCode)));
+        // Legacy error path.
+        let legacy = io::Error::other(KissOfDeathError {
+            code: protocol::KissOfDeath::Ntsn,
+        });
+        assert!(matches!(check_kod(&legacy), Some(PollResult::RateKissCode)));
+    }
+
+    #[test]
+    #[cfg(feature = "discipline")]
+    fn test_builder_max_step_secs() {
+        define_client_builder! {
+            extra_fields {}
+            extra_defaults {}
+        }
+        let cfg = NtpClientBuilder::new().into_config();
+        assert_eq!(cfg.max_step_secs, Some(crate::discipline::PANICT));
+        let cfg = NtpClientBuilder::new().max_step_secs(None).into_config();
+        assert_eq!(cfg.max_step_secs, None);
+        let cfg = NtpClientBuilder::new()
+            .max_step_secs(Some(5.0))
+            .into_config();
+        assert_eq!(cfg.max_step_secs, Some(5.0));
+    }
 
     // ── PeerState ────────────────────────────────────────────────
 

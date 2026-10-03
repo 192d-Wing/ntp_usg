@@ -35,8 +35,12 @@ use tracing::debug;
 
 use crate::error::{ConfigError, NtpServerError};
 use crate::protocol;
+#[cfg(not(any(feature = "nts", feature = "nts-smol")))]
+use crate::server_common::handle_request;
+#[cfg(any(feature = "nts", feature = "nts-smol"))]
+use crate::server_common::handle_request_with_nts;
 use crate::server_common::{
-    ClientTable, ConfigHandle, HandleResult, ServerMetrics, ServerSystemState, handle_request,
+    ClientTable, ConfigHandle, HandleResult, ServerMetrics, ServerSystemState,
 };
 
 #[cfg(feature = "refclock")]
@@ -265,7 +269,8 @@ impl NtpServer {
                     .config
                     .read()
                     .map_err(|_| io::Error::other("config lock poisoned"))?;
-                handle_request(
+                #[cfg(any(feature = "nts", feature = "nts-smol"))]
+                let result = handle_request_with_nts(
                     &recv_buf,
                     recv_len,
                     src_addr.ip(),
@@ -275,7 +280,21 @@ impl NtpServer {
                     &mut self.client_table,
                     config.enable_interleaved,
                     self.metrics.as_deref(),
-                )
+                    config.nts_key_store.as_deref(),
+                );
+                #[cfg(not(any(feature = "nts", feature = "nts-smol")))]
+                let result = handle_request(
+                    &recv_buf,
+                    recv_len,
+                    src_addr.ip(),
+                    &server_state,
+                    &config.access_control,
+                    config.rate_limit.as_ref(),
+                    &mut self.client_table,
+                    config.enable_interleaved,
+                    self.metrics.as_deref(),
+                );
+                result
             };
 
             if let Some(m) = &self.metrics {
@@ -288,6 +307,10 @@ impl NtpServer {
                 }
                 #[cfg(feature = "ntpv5")]
                 HandleResult::V5Response(resp_buf) => {
+                    let _ = self.sock.send_to(&resp_buf, src_addr).await;
+                }
+                #[cfg(any(feature = "nts", feature = "nts-smol"))]
+                HandleResult::NtsResponse(resp_buf) => {
                     let _ = self.sock.send_to(&resp_buf, src_addr).await;
                 }
                 HandleResult::Drop => {
@@ -375,6 +398,19 @@ mod tests {
     fn test_builder_enable_interleaved() {
         let builder = NtpServer::builder().enable_interleaved(true);
         assert!(builder.enable_interleaved);
+    }
+
+    #[test]
+    #[cfg(any(feature = "nts", feature = "nts-smol"))]
+    fn test_builder_nts_key_store() {
+        use crate::nts_server_common::MasterKeyStore;
+        let builder = NtpServer::builder();
+        assert!(builder.nts_key_store.is_none());
+        let store = Arc::new(RwLock::new(MasterKeyStore::new(
+            std::time::Duration::from_secs(60),
+        )));
+        let cfg = NtpServer::builder().nts_key_store(store).into_config();
+        assert!(cfg.server_config.nts_key_store.is_some());
     }
 
     #[test]

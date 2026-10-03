@@ -30,8 +30,12 @@ use std::sync::{Arc, RwLock};
 use tracing::debug;
 
 use crate::error::{ConfigError, NtpServerError};
+#[cfg(not(any(feature = "nts", feature = "nts-smol")))]
+use crate::server_common::handle_request;
+#[cfg(any(feature = "nts", feature = "nts-smol"))]
+use crate::server_common::handle_request_with_nts;
 use crate::server_common::{
-    ClientTable, ConfigHandle, HandleResult, ServerMetrics, ServerSystemState, handle_request,
+    ClientTable, ConfigHandle, HandleResult, ServerMetrics, ServerSystemState,
 };
 
 // Generate the shared NtpServerBuilder struct and config methods.
@@ -134,7 +138,8 @@ impl NtpServer {
                     .config
                     .read()
                     .map_err(|_| io::Error::other("config lock poisoned"))?;
-                handle_request(
+                #[cfg(any(feature = "nts", feature = "nts-smol"))]
+                let result = handle_request_with_nts(
                     &recv_buf,
                     recv_len,
                     src_addr.ip(),
@@ -144,7 +149,21 @@ impl NtpServer {
                     &mut self.client_table,
                     config.enable_interleaved,
                     self.metrics.as_deref(),
-                )
+                    config.nts_key_store.as_deref(),
+                );
+                #[cfg(not(any(feature = "nts", feature = "nts-smol")))]
+                let result = handle_request(
+                    &recv_buf,
+                    recv_len,
+                    src_addr.ip(),
+                    &server_state,
+                    &config.access_control,
+                    config.rate_limit.as_ref(),
+                    &mut self.client_table,
+                    config.enable_interleaved,
+                    self.metrics.as_deref(),
+                );
+                result
             };
 
             if let Some(m) = &self.metrics {
@@ -157,6 +176,10 @@ impl NtpServer {
                 }
                 #[cfg(feature = "ntpv5")]
                 HandleResult::V5Response(resp_buf) => {
+                    let _ = self.sock.send_to(&resp_buf, src_addr).await;
+                }
+                #[cfg(any(feature = "nts", feature = "nts-smol"))]
+                HandleResult::NtsResponse(resp_buf) => {
                     let _ = self.sock.send_to(&resp_buf, src_addr).await;
                 }
                 HandleResult::Drop => {

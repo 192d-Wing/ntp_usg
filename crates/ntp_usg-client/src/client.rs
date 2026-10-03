@@ -156,7 +156,7 @@ impl NtpClientBuilder {
                 socket_opts: cfg.socket_opts,
                 #[cfg(feature = "discipline")]
                 discipline: if cfg.enable_discipline {
-                    Some(crate::discipline::ClockDiscipline::new())
+                    Some(crate::discipline::ClockDiscipline::new().with_max_step(cfg.max_step_secs))
                 } else {
                     None
                 },

@@ -29,4 +29,10 @@ pub fn is_network_skip_error(e: &std::io::Error) -> bool {
       || e.to_string().contains("Connection refused")
       || e.to_string().contains("Connection reset")
       || e.to_string().contains("close_notify")
+      // DNS resolution failures (no resolver / no record on this runner).
+      || e.to_string().contains("failed to lookup address information")
+      || e.to_string().contains("No address associated with hostname")
+      || e.to_string().contains("Temporary failure in name resolution")
+      || e.to_string().contains("Name or service not known")
+      || e.to_string().contains("nodename nor servname provided")
 }

@@ -37,9 +37,11 @@ async fn main() -> std::io::Result<()> {
     let ke_server = NtsKeServer::new(ke_config, key_store.clone())?;
 
     // NTP server (UDP on port 1123).
+    // Share the key store so cookies issued by NTS-KE can be verified here.
     let ntp_server = NtpServer::builder()
         .listen("[::]:1123")
         .stratum(Stratum(2))
+        .nts_key_store(key_store.clone())
         .build()
         .await?;
 

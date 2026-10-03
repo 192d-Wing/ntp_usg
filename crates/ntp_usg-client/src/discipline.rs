@@ -18,6 +18,13 @@
 /// Offsets larger than this trigger the spike/step logic.
 pub const STEPT: f64 = 0.128;
 
+/// Panic threshold in seconds (ntpd convention).
+///
+/// An offset larger than this is refused outright instead of being stepped:
+/// a single bad or malicious source must not be able to move the clock by an
+/// arbitrary amount. See [`ClockDiscipline::with_max_step`].
+pub const PANICT: f64 = 1000.0;
+
 /// Stepout timeout in seconds (RFC 5905 Section 11.3).
 /// If the offset exceeds STEPT for longer than WATCH seconds, a step is forced.
 pub const WATCH: f64 = 900.0;
@@ -77,6 +84,8 @@ pub struct ClockDiscipline {
     wander: f64,
     /// Time since the last "good" (non-spike) update, for stepout logic.
     spike_start: Option<f64>,
+    /// Largest |offset| that will be acted on; larger samples are refused.
+    max_step: Option<f64>,
 }
 
 impl ClockDiscipline {
@@ -91,7 +100,18 @@ impl ClockDiscipline {
             jitter: 0.0,
             wander: 0.0,
             spike_start: None,
+            max_step: Some(PANICT),
         }
+    }
+
+    /// Set the step sanity limit (default [`PANICT`], 1000 s).
+    ///
+    /// Samples with |offset| above the limit are refused and produce no
+    /// correction. `None` disables the check; only do this for a one-time
+    /// initial synchronization from a trusted source (ntpd `-g`).
+    pub fn with_max_step(mut self, max_step: Option<f64>) -> Self {
+        self.max_step = max_step;
+        self
     }
 
     /// Feed a new offset measurement from the combine algorithm.
@@ -115,6 +135,11 @@ impl ClockDiscipline {
         now: f64,
         poll_exponent: u8,
     ) -> Option<DisciplineOutput> {
+        // Sanity limit: refuse absurd offsets instead of stepping to them.
+        if !offset.is_finite() || self.max_step.is_some_and(|limit| offset.abs() > limit) {
+            return None;
+        }
+
         let mu = now - self.last_update;
 
         match self.state {
@@ -286,6 +311,26 @@ impl Default for ClockDiscipline {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A single absurd offset must be refused, not stepped (issue #17).
+    #[test]
+    fn test_offset_above_panic_threshold_is_refused() {
+        let mut d = ClockDiscipline::new();
+        assert!(d.update(5_000.0, 0.001, 1.0, 6).is_none());
+        assert!(d.update(-PANICT - 1.0, 0.001, 2.0, 6).is_none());
+        assert!(d.update(f64::NAN, 0.001, 3.0, 6).is_none());
+        // Still in Nset: a sane first sample is accepted as the initial step.
+        let out = d.update(1.0, 0.001, 4.0, 6).expect("sane offset accepted");
+        assert!(out.step);
+    }
+
+    #[test]
+    fn test_max_step_none_disables_limit() {
+        let mut d = ClockDiscipline::new().with_max_step(None);
+        let out = d.update(5_000.0, 0.001, 1.0, 6).expect("limit disabled");
+        assert!(out.step);
+        assert_eq!(out.phase_correction, 5_000.0);
+    }
 
     #[test]
     fn test_initial_state() {
