@@ -192,6 +192,10 @@ fn handle_request_inner(
         match check_rate_limit(client, now, config) {
             RateLimitResult::Allow => {}
             RateLimitResult::RateExceeded => {
+                // One KoD per window tells a real client to back off; the
+                // rest of an over-limit burst is dropped so the server cannot
+                // be used to reflect traffic at a spoofed source (RFC 8633
+                // §5.7).
                 let kod = build_kod_response(&request, protocol::KissOfDeath::Rate);
                 if let Some(m) = metrics {
                     m.inc_kod_rate();
@@ -200,6 +204,13 @@ fn handle_request_inner(
                     Ok(buf) => return HandleResult::Response(buf),
                     Err(_) => return HandleResult::Drop,
                 }
+            }
+            RateLimitResult::Drop => {
+                debug!(client = %src_ip, "rate limit exceeded; dropping");
+                if let Some(m) = metrics {
+                    m.inc_requests_dropped();
+                }
+                return HandleResult::Drop;
             }
         }
     }
@@ -277,9 +288,13 @@ fn handle_request_inner(
         fraction: t3_fraction,
     };
 
-    // 9. Update per-client state.
-    let client = client_table.get_or_insert(src_ip, now);
-    update_client_state(client, t2, t3, request.transmit_timestamp);
+    // 9. Update per-client state. Only interleaved mode reads these fields, so
+    // skip the table entirely when it is disabled: otherwise every spoofed
+    // source address would cost a table insert even with rate limiting off.
+    if enable_interleaved {
+        let client = client_table.get_or_insert(src_ip, now);
+        update_client_state(client, t2, t3, request.transmit_timestamp);
+    }
 
     if let Some(m) = metrics {
         m.inc_responses_sent();

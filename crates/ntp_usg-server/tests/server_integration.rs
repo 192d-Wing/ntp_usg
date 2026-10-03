@@ -125,6 +125,59 @@ async fn test_rate_limit_returns_kod_rate() {
     assert_eq!(pkt2.reference_id.as_bytes(), *b"RATE");
 }
 
+/// 6b. First contact under the *default* rate-limit config (2 s min_interval)
+/// must be answered, not KoD'd. Regression test for the first-request
+/// rejection bug.
+#[tokio::test]
+async fn test_rate_limit_default_config_allows_first_request() {
+    let addr = spawn_test_server(NtpServer::builder().rate_limit(RateLimitConfig::default())).await;
+
+    let request = build_client_packet();
+    let resp = send_receive_raw(addr, &request, Duration::from_secs(2))
+        .await
+        .expect("no response to first request");
+    let pkt = parse_response(&resp);
+    assert_eq!(pkt.mode, Mode::Server);
+    assert!(
+        pkt.stratum.0 > 0,
+        "first request was KoD'd: {:?}",
+        pkt.reference_id
+    );
+}
+
+/// 6c. Only one KoD RATE is sent per window; further over-limit requests are
+/// dropped so the server does not reflect a flood at a spoofed source.
+#[tokio::test]
+async fn test_rate_limit_kod_sent_once_then_dropped() {
+    let config = RateLimitConfig {
+        max_requests_per_window: 1,
+        window_duration: Duration::from_secs(10),
+        min_interval: Duration::ZERO,
+    };
+    let addr = spawn_test_server(NtpServer::builder().rate_limit(config)).await;
+
+    let request = build_client_packet();
+
+    let resp1 = send_receive_raw(addr, &request, Duration::from_secs(2))
+        .await
+        .expect("no response to first request");
+    assert_eq!(parse_response(&resp1).mode, Mode::Server);
+
+    let resp2 = send_receive_raw(addr, &request, Duration::from_secs(2))
+        .await
+        .expect("no KoD to second request");
+    assert_eq!(parse_response(&resp2).reference_id.as_bytes(), *b"RATE");
+
+    // Third and fourth over-limit requests: silence.
+    for _ in 0..2 {
+        let resp = send_receive_raw(addr, &request, Duration::from_millis(300)).await;
+        assert!(
+            resp.is_none(),
+            "over-limit request after KoD must be dropped"
+        );
+    }
+}
+
 /// 7. Request succeeds after rate limit window expires.
 #[tokio::test]
 async fn test_rate_limit_allows_after_window() {
