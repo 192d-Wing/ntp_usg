@@ -280,7 +280,9 @@ pub(crate) fn handle_v5_request(
         let client = client_table.get_or_insert(src_ip, now);
         match check_rate_limit(client, now, config) {
             RateLimitResult::Allow => {}
-            RateLimitResult::RateExceeded => {
+            // The v5 path never answers over-limit requests, so both the
+            // "send KoD" and "drop" outcomes are dropped here.
+            RateLimitResult::RateExceeded | RateLimitResult::Drop => {
                 debug!("V5 rate limit exceeded for {}", src_ip);
                 if let Some(m) = metrics {
                     m.inc_kod_rate();
