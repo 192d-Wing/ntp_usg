@@ -281,6 +281,12 @@ jobs:
       - name: Fuzz Roughtime parsing (30s)
         working-directory: crates/ntp_usg-proto
         run: cargo +nightly fuzz run fuzz_roughtime -- -max_total_time=30
+      - name: Fuzz NTS authenticator parsing (30s)
+        working-directory: crates/ntp_usg-proto
+        run: cargo +nightly fuzz run fuzz_nts_authenticator -- -max_total_time=30
+      - name: Fuzz packet round-trip (30s)
+        working-directory: crates/ntp_usg-proto
+        run: cargo +nightly fuzz run fuzz_packet_roundtrip -- -max_total_time=30
 
   wasm:
     name: WASM

@@ -27,6 +27,7 @@ nts = [
     "dep:rustls",
     "dep:tokio-rustls",
     "dep:webpki-roots",
+    "dep:zeroize",
     "pq-nts",
 ]
 clock = ["dep:libc", "dep:windows-sys"]
@@ -48,6 +49,7 @@ nts-smol = [
     "dep:futures-rustls",
     "dep:webpki-roots",
     "pq-nts",
+    "dep:zeroize",
 ]
 
 [dependencies]
@@ -62,6 +64,7 @@ futures-rustls = { workspace = true, optional = true }
 futures-lite = { workspace = true, optional = true }
 socket2 = { workspace = true, optional = true }
 serialport = { version = "4.6", optional = true }
+zeroize = { workspace = true, optional = true }
 
 
 [target.'cfg(unix)'.dependencies]

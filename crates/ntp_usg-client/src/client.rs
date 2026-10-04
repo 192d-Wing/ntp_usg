@@ -445,11 +445,8 @@ impl NtpClient {
                     nts_state.cookies.len()
                 );
                 match nts::nts_ke(&nts_state.nts_ke_server).await {
-                    Ok(ke) => {
-                        nts_state.c2s_key = ke.c2s_key;
-                        nts_state.s2c_key = ke.s2c_key;
-                        nts_state.cookies = ke.cookies;
-                        nts_state.aead_algorithm = ke.aead_algorithm;
+                    Ok(mut ke) => {
+                        nts_state.rekey(&mut ke);
                         nts_state.cookie_len = nts_state.cookies.first().map_or(0, |c| c.len());
                         debug!(
                             "peer {}: NTS-KE re-key successful, {} cookies",

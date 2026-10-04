@@ -1,4 +1,27 @@
+use std::io;
 use std::net::IpAddr;
+
+/// Classify an error from `recv_from` on the server socket.
+///
+/// A UDP server must not exit because one datagram failed: on Windows an ICMP
+/// Port Unreachable for a reply we sent surfaces as `WSAECONNRESET` on the
+/// *next* `recv_from`, and other kernels can report `ConnectionRefused` /
+/// `Interrupted` similarly. Such errors are per-datagram and the socket is
+/// still usable, so the serve loop should log and continue. Anything else
+/// (the socket was closed, a programming error, resource exhaustion) is fatal.
+pub(crate) fn recv_error_is_transient(e: &io::Error) -> bool {
+    matches!(
+        e.kind(),
+        io::ErrorKind::ConnectionReset
+            | io::ErrorKind::ConnectionRefused
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::Interrupted
+            | io::ErrorKind::WouldBlock
+            | io::ErrorKind::TimedOut
+            | io::ErrorKind::HostUnreachable
+            | io::ErrorKind::NetworkUnreachable
+    )
+}
 
 /// An IP network (address + prefix length) for access control matching.
 ///
@@ -104,5 +127,24 @@ mod tests {
         assert!(net.contains(&"2001:db8::1".parse().unwrap()));
         assert!(net.contains(&"2001:db8:ffff::1".parse().unwrap()));
         assert!(!net.contains(&"2001:db9::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn recv_error_classification() {
+        for k in [
+            io::ErrorKind::ConnectionReset,
+            io::ErrorKind::ConnectionRefused,
+            io::ErrorKind::Interrupted,
+        ] {
+            assert!(recv_error_is_transient(&io::Error::from(k)), "{k:?}");
+        }
+        for k in [
+            io::ErrorKind::NotConnected,
+            io::ErrorKind::InvalidInput,
+            io::ErrorKind::BrokenPipe,
+            io::ErrorKind::Other,
+        ] {
+            assert!(!recv_error_is_transient(&io::Error::from(k)), "{k:?}");
+        }
     }
 }

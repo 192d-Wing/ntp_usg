@@ -145,6 +145,14 @@ pub struct NtsSession {
     resolved_addrs: Vec<SocketAddr>,
 }
 
+impl Drop for NtsSession {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.c2s_key.zeroize();
+        self.s2c_key.zeroize();
+    }
+}
+
 impl NtsSession {
     /// Create an NTS session by performing key establishment with the given server.
     pub async fn from_ke(server: &str) -> io::Result<Self> {
@@ -153,7 +161,7 @@ impl NtsSession {
     }
 
     /// Create an NTS session from a previously obtained [`NtsKeResult`].
-    pub async fn from_ke_result(ke: NtsKeResult) -> io::Result<Self> {
+    pub async fn from_ke_result(mut ke: NtsKeResult) -> io::Result<Self> {
         let addr_str = format!("{}:{}", ke.ntp_server, ke.ntp_port);
         let resolved_addrs: Vec<SocketAddr> = smol::net::resolve(&addr_str).await?;
         if resolved_addrs.is_empty() {
@@ -162,9 +170,11 @@ impl NtsSession {
         let ntp_addr = resolved_addrs[0];
 
         Ok(NtsSession {
-            c2s_key: ke.c2s_key,
-            s2c_key: ke.s2c_key,
-            cookies: ke.cookies,
+            // `NtsKeResult` zeroizes on drop, so move the keys out rather than
+            // copy them.
+            c2s_key: std::mem::take(&mut ke.c2s_key),
+            s2c_key: std::mem::take(&mut ke.s2c_key),
+            cookies: std::mem::take(&mut ke.cookies),
             aead_algorithm: ke.aead_algorithm,
             ntp_addr,
             resolved_addrs,

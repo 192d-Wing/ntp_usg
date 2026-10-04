@@ -121,14 +121,16 @@ The default implementation (`AesSivCmacAead`) delegates to the `aes-siv`
 RustCrypto crate. The existing free functions `aead_encrypt()` and
 `aead_decrypt()` are preserved — no callers need to change.
 
-A `fips-aead` feature flag is defined in `ntp_usg-proto/Cargo.toml` but
-currently produces a `compile_error!` since no FIPS-certified backend exists.
-When one becomes available, the migration path is:
+There is intentionally **no** `fips-aead` feature flag. Earlier releases
+defined one as a placeholder, but it simply aliased `nts` and so built the
+non-validated RustCrypto backend while appearing to select a FIPS one. A
+deployment that asks for FIPS and silently gets something else is worse off
+than one that fails to build, so the flag was removed. When a FIPS 140-3
+validated AES-SIV-CMAC backend becomes available, the migration path is:
 
-1. Add the FIPS AES-SIV-CMAC dependency behind `fips-aead`
+1. Add the FIPS AES-SIV-CMAC dependency behind a new `fips-aead` feature
 2. Implement `NtsAead` for the FIPS backend
-3. Remove the `compile_error!` gate
-4. Conditionally use the FIPS backend when `fips-aead` is enabled
+3. Conditionally use the FIPS backend when `fips-aead` is enabled
 
 For deployments requiring full FIPS 140-3 compliance end-to-end, the NTS AEAD
 layer is the primary gap. The TLS transport layer (which protects NTS-KE key

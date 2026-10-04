@@ -33,6 +33,12 @@ pub enum ParseError {
     },
     /// Extension field data extends beyond the buffer.
     ExtensionOverflow,
+    /// An extension field value is too long to encode: the on-wire length is
+    /// a `u16`, so `4 + value.len()` must not exceed 65535.
+    ExtensionTooLong {
+        /// Length of the value that could not be encoded.
+        value_len: usize,
+    },
 }
 
 impl fmt::Display for ParseError {
@@ -54,6 +60,14 @@ impl fmt::Display for ParseError {
             ParseError::ExtensionOverflow => {
                 write!(f, "extension field value extends beyond packet")
             }
+            ParseError::ExtensionTooLong { value_len } => {
+                write!(
+                    f,
+                    "extension field value too long to encode: {} bytes (max {})",
+                    value_len,
+                    u16::MAX as usize - 4
+                )
+            }
         }
     }
 }
@@ -66,6 +80,7 @@ impl From<ParseError> for std::io::Error {
             ParseError::InvalidField { .. } => std::io::ErrorKind::InvalidData,
             ParseError::InvalidExtensionLength { .. } => std::io::ErrorKind::InvalidData,
             ParseError::ExtensionOverflow => std::io::ErrorKind::InvalidData,
+            ParseError::ExtensionTooLong { .. } => std::io::ErrorKind::InvalidInput,
         };
         std::io::Error::new(kind, err)
     }

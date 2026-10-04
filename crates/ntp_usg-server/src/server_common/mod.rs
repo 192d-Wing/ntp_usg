@@ -29,6 +29,7 @@ pub(crate) use self::builder::define_server_builder;
 pub use self::config::{ConfigHandle, ConfigSnapshot, ServerConfig};
 pub use self::metrics::{MetricsSnapshot, ServerMetrics};
 pub use self::network::IpNet;
+pub(crate) use self::network::recv_error_is_transient;
 pub use self::rate_limit::RateLimitConfig;
 pub use self::state::ServerSystemState;
 

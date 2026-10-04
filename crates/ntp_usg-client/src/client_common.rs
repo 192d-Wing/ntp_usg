@@ -113,6 +113,30 @@ pub(crate) struct NtsPeerState {
     pub(crate) cookie_len: usize,
 }
 
+#[cfg(any(feature = "nts", feature = "nts-smol"))]
+impl Drop for NtsPeerState {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.c2s_key.zeroize();
+        self.s2c_key.zeroize();
+    }
+}
+
+#[cfg(any(feature = "nts", feature = "nts-smol"))]
+impl NtsPeerState {
+    /// Replace keys and cookies with those from a fresh NTS-KE exchange,
+    /// wiping the old key material first.
+    pub(crate) fn rekey(&mut self, ke: &mut crate::nts_common::NtsKeResult) {
+        use zeroize::Zeroize;
+        self.c2s_key.zeroize();
+        self.s2c_key.zeroize();
+        self.c2s_key = std::mem::take(&mut ke.c2s_key);
+        self.s2c_key = std::mem::take(&mut ke.s2c_key);
+        self.cookies = std::mem::take(&mut ke.cookies);
+        self.aead_algorithm = ke.aead_algorithm;
+    }
+}
+
 /// NTPv5 version negotiation and session state for a peer.
 ///
 /// Follows the version negotiation mechanism in `draft-ietf-ntp-ntpv5-09`
@@ -238,7 +262,7 @@ impl PeerState {
     pub(crate) fn new_nts(
         addr: SocketAddr,
         initial_poll: u8,
-        ke: crate::nts_common::NtsKeResult,
+        mut ke: crate::nts_common::NtsKeResult,
         nts_ke_server: String,
     ) -> Self {
         let cookie_len = ke.cookies.first().map_or(0, |c| c.len());
@@ -256,9 +280,11 @@ impl PeerState {
             interleaved: false,
             demobilized: false,
             nts_state: Some(NtsPeerState {
-                c2s_key: ke.c2s_key,
-                s2c_key: ke.s2c_key,
-                cookies: ke.cookies,
+                // `NtsKeResult` zeroizes on drop, so move the keys out rather
+                // than copy them.
+                c2s_key: std::mem::take(&mut ke.c2s_key),
+                s2c_key: std::mem::take(&mut ke.s2c_key),
+                cookies: std::mem::take(&mut ke.cookies),
                 aead_algorithm: ke.aead_algorithm,
                 nts_ke_server,
                 cookie_len,

@@ -36,6 +36,7 @@ use crate::server_common::handle_request;
 use crate::server_common::handle_request_with_nts;
 use crate::server_common::{
     ClientTable, ConfigHandle, HandleResult, ServerMetrics, ServerSystemState,
+    recv_error_is_transient,
 };
 
 // Generate the shared NtpServerBuilder struct and config methods.
@@ -125,7 +126,28 @@ impl NtpServer {
         let mut recv_buf = [0u8; 2048];
 
         loop {
-            let (recv_len, src_addr) = self.sock.recv_from(&mut recv_buf).await?;
+            let (recv_len, src_addr) = match self.sock.recv_from(&mut recv_buf).await {
+                Ok(r) => r,
+                // Per-datagram errors (e.g. Windows surfacing an ICMP Port
+                // Unreachable as WSAECONNRESET) must not take the server down.
+                Err(e) if recv_error_is_transient(&e) => {
+                    debug!(error = %e, "transient recv_from error; continuing");
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+
+            // Keep the reference timestamp recent so it reflects "clock last
+            // checked" rather than "process started" (uptime disclosure). A
+            // reference clock overwrites it with real update times anyway.
+            let stale = self
+                .system_state
+                .read()
+                .map_err(|_| io::Error::other("system state lock poisoned"))?
+                .reference_timestamp_is_stale();
+            if stale && let Ok(mut state) = self.system_state.write() {
+                state.refresh_reference_timestamp();
+            }
 
             let server_state = self
                 .system_state
