@@ -11,15 +11,16 @@
 //! ```no_run
 //! use ntp_proto::roughtime::{build_request, verify_response};
 //!
-//! // Build a request (generates a random 32-byte nonce).
-//! let (request_bytes, nonce) = build_request();
+//! // Build a request (generates a random 32-byte nonce). Keep `request_bytes`:
+//! // the server's Merkle leaf is the hash of this exact packet.
+//! let (request_bytes, _nonce) = build_request();
 //!
 //! // Send `request_bytes` via UDP to a Roughtime server, receive `response_bytes`.
 //! # let response_bytes = vec![];
 //! # let server_public_key = [0u8; 32];
 //!
 //! // Verify and extract the time.
-//! let result = verify_response(&response_bytes, &nonce, &server_public_key).unwrap();
+//! let result = verify_response(&response_bytes, &request_bytes, &server_public_key).unwrap();
 //! println!("Time: {} seconds since epoch (±{}s)",
 //!     result.midpoint_seconds(), result.radius_seconds());
 //! ```
@@ -32,7 +33,7 @@ mod wire;
 pub use crypto::verify_response;
 pub use error::RoughtimeError;
 pub use types::{
-    ROUGHTIME_VERSION, RoughtimeResult, build_chained_request, build_request,
-    build_request_with_nonce, tag,
+    ROUGHTIME_DRAFT_VERSION, ROUGHTIME_VERSION, RoughtimeResult, SUPPORTED_VERSIONS,
+    build_chained_request, build_request, build_request_with_nonce, tag,
 };
 pub use wire::{TagValueMap, build_tag_value_map, decode_envelope, encode_envelope};

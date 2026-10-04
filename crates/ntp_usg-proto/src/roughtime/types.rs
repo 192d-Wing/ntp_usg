@@ -4,10 +4,22 @@
 //! Roughtime types, tag constants, and request builders.
 
 use super::error::RoughtimeError;
-use super::wire::{build_tag_value_map, encode_envelope};
+use super::wire::{TagValueMap, build_tag_value_map, decode_envelope, encode_envelope};
 
-/// Roughtime protocol version.
+/// Roughtime protocol version number for the published protocol
+/// (draft-ietf-ntp-roughtime-15 §4.3: "The version of Roughtime specified by
+/// this memo has version number 1").
 pub const ROUGHTIME_VERSION: u32 = 1;
+
+/// Version number servers use while the specification is still a draft
+/// (draft-15 §4.3: "For testing this draft of the memo, a version number of
+/// 0x8000000c is used"). Public servers may answer only to this value until
+/// the RFC is published.
+pub const ROUGHTIME_DRAFT_VERSION: u32 = 0x8000_000c;
+
+/// Versions this client offers in a request's VER list and accepts in a
+/// response's VER tag. Draft-15 and version 1 share the same wire format.
+pub const SUPPORTED_VERSIONS: [u32; 2] = [ROUGHTIME_VERSION, ROUGHTIME_DRAFT_VERSION];
 
 /// Well-known Roughtime tag constants.
 ///
@@ -50,23 +62,30 @@ pub mod tag {
 }
 
 /// Result of a verified Roughtime response.
+///
+/// Draft-15 carries MIDP as a `uint64` count of **seconds** since the Unix
+/// epoch and RADI as a `uint32` number of **seconds** (§4.1.4, §5.2.5). The
+/// pre-IETF Google protocol used microseconds; that is not what this type
+/// holds.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RoughtimeResult {
-    /// Midpoint timestamp in microseconds since Unix epoch.
-    pub midpoint_us: u64,
-    /// Radius of uncertainty in microseconds.
-    pub radius_us: u32,
+    /// Midpoint timestamp (MIDP) in seconds since the Unix epoch.
+    pub midpoint_secs: u64,
+    /// Radius of uncertainty (RADI) in seconds.
+    pub radius_secs: u32,
+    /// Protocol version the server chose for this response (SREP VER).
+    pub version: u32,
 }
 
 impl RoughtimeResult {
-    /// Midpoint as seconds since Unix epoch (truncated).
+    /// Midpoint as seconds since Unix epoch.
     pub fn midpoint_seconds(&self) -> u64 {
-        self.midpoint_us / 1_000_000
+        self.midpoint_secs
     }
 
-    /// Radius as seconds (rounded up).
+    /// Radius as seconds.
     pub fn radius_seconds(&self) -> u32 {
-        self.radius_us.div_ceil(1_000_000)
+        self.radius_secs
     }
 }
 
@@ -82,32 +101,35 @@ pub fn build_request() -> (Vec<u8>, [u8; 32]) {
 }
 
 /// Build a Roughtime request envelope with a specific nonce (for testing or chaining).
+///
+/// Per draft-15 §5.1 the request carries VER (the list of versions we
+/// support), NONC, TYPE = 0 and ZZZZ padding to reach 1024 bytes. Keep the
+/// returned bytes: the server's Merkle leaf is computed over this exact
+/// packet, so [`verify_response`](super::verify_response) needs it.
 pub fn build_request_with_nonce(nonce: &[u8; 32]) -> Vec<u8> {
-    let ver = ROUGHTIME_VERSION.to_le_bytes();
+    let mut ver = Vec::with_capacity(4 * SUPPORTED_VERSIONS.len());
+    for v in SUPPORTED_VERSIONS {
+        ver.extend_from_slice(&v.to_le_bytes());
+    }
     let msg_type = 0u32.to_le_bytes();
 
     // Tags must be sorted by LE u32 value.
-    // NONC = 0x434e4f4e, SIG\0 = 0x00474953, TYPE = 0x45505954,
-    // VER\0 = 0x00524556, ZZZZ = 0x5a5a5a5a
-    // Sorted: SIG\0 < VER\0 < NONC < TYPE < ZZZZ
+    // VER\0 = 0x00524556, NONC = 0x434e4f4e, TYPE = 0x45505954, ZZZZ = 0x5a5a5a5a
 
     // Build map without padding first to determine padding size.
     let map_without_pad = build_tag_value_map(&[
-        (&tag::SIG, &[0u8; 64]),
         (&tag::VER, &ver),
         (&tag::NONC, nonce.as_slice()),
         (&tag::TYPE, &msg_type),
     ]);
 
-    // Pad to 1024 bytes total message. Envelope adds 12 bytes.
+    // Pad to 1024 bytes total message (§5.1). Adding the ZZZZ tag costs 8
+    // bytes (one more tag header slot and one more offset).
     let target_msg_size: usize = 1024;
-    let pad_size = target_msg_size.saturating_sub(map_without_pad.len());
+    let pad_size = target_msg_size.saturating_sub(map_without_pad.len() + 8);
 
-    // Rebuild with ZZZZ padding. The map_without_pad didn't include ZZZZ in tag
-    // count/offsets, so we must rebuild from scratch.
     let padding = vec![0u8; pad_size];
     let message = build_tag_value_map(&[
-        (&tag::SIG, &[0u8; 64]),
         (&tag::VER, &ver),
         (&tag::NONC, nonce.as_slice()),
         (&tag::TYPE, &msg_type),
@@ -115,6 +137,23 @@ pub fn build_request_with_nonce(nonce: &[u8; 32]) -> Vec<u8> {
     ]);
 
     encode_envelope(&message)
+}
+
+/// Extract the NONC value from a request packet built by this crate.
+pub(crate) fn request_nonce(request: &[u8]) -> Result<[u8; 32], RoughtimeError> {
+    let msg = decode_envelope(request)?;
+    let map = TagValueMap::parse(msg)?;
+    let nonc = map.require(&tag::NONC)?;
+    if nonc.len() != 32 {
+        return Err(RoughtimeError::InvalidTagLength {
+            tag: tag::NONC,
+            expected: 32,
+            actual: nonc.len(),
+        });
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(nonc);
+    Ok(out)
 }
 
 /// Build a chained Roughtime request using a previous response for auditability.
@@ -136,7 +175,7 @@ pub fn build_chained_request(prev_response: &[u8], blind: &[u8; 32]) -> (Vec<u8>
     (envelope, nonce)
 }
 
-/// Extract `midpoint_us` (u64 LE) from an 8-byte slice.
+/// Read a little-endian u64 tag value from an 8-byte slice.
 pub(crate) fn read_u64_le(data: &[u8], tag: &[u8; 4]) -> Result<u64, RoughtimeError> {
     if data.len() != 8 {
         return Err(RoughtimeError::InvalidTagLength {
@@ -167,23 +206,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_roughtime_result_conversions() {
+    fn test_roughtime_result_is_in_seconds() {
+        // MIDP/RADI are seconds on the wire (draft-15); no unit conversion.
         let result = RoughtimeResult {
-            midpoint_us: 1_700_000_500_000,
-            radius_us: 1_500_000,
+            midpoint_secs: 1_700_000_500,
+            radius_secs: 2,
+            version: ROUGHTIME_VERSION,
         };
-        assert_eq!(result.midpoint_seconds(), 1_700_000);
-        assert_eq!(result.radius_seconds(), 2); // rounds up
-    }
-
-    #[test]
-    fn test_roughtime_result_exact_second() {
-        let result = RoughtimeResult {
-            midpoint_us: 2_000_000_000_000,
-            radius_us: 1_000_000,
-        };
-        assert_eq!(result.midpoint_seconds(), 2_000_000);
-        assert_eq!(result.radius_seconds(), 1); // exact
+        assert_eq!(result.midpoint_seconds(), 1_700_000_500);
+        assert_eq!(result.radius_seconds(), 2);
     }
 
     #[test]
@@ -209,12 +240,27 @@ mod tests {
         let type_val = map.require(&tag::TYPE).unwrap();
         assert_eq!(type_val, &0u32.to_le_bytes());
 
-        // Check VER.
+        // Check VER: a list of every version we support, version 1 first.
         let ver_val = map.require(&tag::VER).unwrap();
-        assert_eq!(ver_val, &1u32.to_le_bytes());
+        let mut expected = Vec::new();
+        for v in SUPPORTED_VERSIONS {
+            expected.extend_from_slice(&v.to_le_bytes());
+        }
+        assert_eq!(ver_val, expected.as_slice());
+        assert_eq!(&ver_val[..4], &1u32.to_le_bytes());
+        assert_eq!(&ver_val[4..8], &0x8000_000cu32.to_le_bytes());
 
-        // ZZZZ should exist (padding).
+        // SIG is a response-only tag and must not appear in a request.
+        assert!(map.get(&tag::SIG).is_none());
+
+        // ZZZZ should exist (padding) and bring the message to exactly 1024
+        // bytes (§5.1), i.e. a 1036-byte datagram with the 12-byte envelope.
         assert!(map.get(&tag::ZZZZ).is_some());
+        assert_eq!(msg.len(), 1024);
+        assert_eq!(envelope.len(), 1036);
+
+        // The nonce is recoverable from the packet for verification.
+        assert_eq!(request_nonce(&envelope).unwrap(), nonce);
     }
 
     #[test]

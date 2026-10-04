@@ -52,6 +52,11 @@ pub enum RoughtimeError {
         /// The TYPE value encountered.
         value: u32,
     },
+    /// The response VER is not a version this client offered or understands.
+    UnsupportedVersion {
+        /// The version number the server chose.
+        version: u32,
+    },
 }
 
 impl fmt::Display for RoughtimeError {
@@ -97,6 +102,9 @@ impl fmt::Display for RoughtimeError {
             RoughtimeError::NonceMismatch => write!(f, "nonce mismatch"),
             RoughtimeError::InvalidType { value } => {
                 write!(f, "invalid TYPE value: {}", value)
+            }
+            RoughtimeError::UnsupportedVersion { version } => {
+                write!(f, "unsupported Roughtime version in response: {version:#x}")
             }
         }
     }
