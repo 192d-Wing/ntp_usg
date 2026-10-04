@@ -45,6 +45,7 @@ use crate::error::{ConfigError, NtpError, NtsError, ProtocolError, TimeoutError}
 pub use crate::nts_common::NtsKeResult;
 use crate::nts_common::*;
 use crate::nts_ke_exchange;
+pub use crate::nts_ke_exchange::NTS_KE_TIMEOUT;
 use crate::request::{bind_addr_for, compute_offset_delay, parse_and_validate_response};
 use crate::{NtpResult, unix_time};
 
@@ -91,6 +92,22 @@ async fn read_ke_record(
 /// # }
 /// ```
 pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
+    nts_ke_with_timeout(server, nts_ke_exchange::NTS_KE_TIMEOUT).await
+}
+
+/// Perform NTS Key Establishment with an explicit deadline for the whole
+/// exchange (TCP connect, TLS handshake, request and response).
+///
+/// [`nts_ke`] uses [`NTS_KE_TIMEOUT`].
+/// On expiry the error is [`NtpError::Timeout`]`(`[`TimeoutError::NtsKe`]`)`.
+pub async fn nts_ke_with_timeout(server: &str, timeout: Duration) -> io::Result<NtsKeResult> {
+    match tokio::time::timeout(timeout, nts_ke_inner(server)).await {
+        Ok(r) => r,
+        Err(_) => Err(NtpError::Timeout(TimeoutError::NtsKe).into()),
+    }
+}
+
+async fn nts_ke_inner(server: &str) -> io::Result<NtsKeResult> {
     let (hostname, port) = nts_ke_exchange::parse_nts_ke_server_addr(server);
     let span = tracing::debug_span!("nts_ke", server = %server, hostname = %hostname);
     async {
@@ -118,13 +135,13 @@ pub async fn nts_ke(server: &str) -> io::Result<NtsKeResult> {
         tls_stream.write_all(&request_buf).await?;
         tls_stream.flush().await?;
 
-        // Read all NTS-KE response records until End of Message.
+        // Read all NTS-KE response records until End of Message, capping the
+        // count so a hostile server cannot stream records until we run out of
+        // memory.
         let mut records = Vec::new();
         loop {
             let record = read_ke_record(&mut tls_stream).await?;
-            let is_eom = record.record_type == NTS_KE_END_OF_MESSAGE;
-            records.push(record);
-            if is_eom {
+            if nts_ke_exchange::push_ke_response_record(&mut records, record)? {
                 break;
             }
         }
