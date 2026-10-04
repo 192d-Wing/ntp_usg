@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::protocol;
 use crate::unix_time;
 
@@ -54,7 +56,7 @@ impl Default for ServerSystemState {
             reference_id: protocol::ReferenceIdentifier::PrimarySource(
                 protocol::PrimarySource::Locl,
             ),
-            reference_timestamp: unix_time::Instant::now().into(),
+            reference_timestamp: coarse_now(),
             #[cfg(feature = "ntpv5")]
             timescale: Timescale::Utc,
             #[cfg(feature = "ntpv5")]
@@ -64,5 +66,38 @@ impl Default for ServerSystemState {
             #[cfg(feature = "ntpv5")]
             v5_reference_id: [0u8; 15],
         }
+    }
+}
+
+/// Maximum age of `reference_timestamp` before the serve loop refreshes it.
+///
+/// Without a reference clock the default state is created once at start-up,
+/// so a never-updated reference timestamp would tell every client exactly
+/// when the process started (RFC 5905 §7.3 only requires it to be the time of
+/// the last clock update, which for a free-running local clock is "recently").
+pub(crate) const REFERENCE_TIMESTAMP_MAX_AGE: Duration = Duration::from_secs(64);
+
+/// Current time truncated to whole seconds, so the reference timestamp does
+/// not leak sub-second timing details either.
+fn coarse_now() -> protocol::TimestampFormat {
+    let now: protocol::TimestampFormat = unix_time::Instant::now().into();
+    protocol::TimestampFormat {
+        seconds: now.seconds,
+        fraction: 0,
+    }
+}
+
+impl ServerSystemState {
+    /// Whether `reference_timestamp` is older than
+    /// [`REFERENCE_TIMESTAMP_MAX_AGE`].
+    pub(crate) fn reference_timestamp_is_stale(&self) -> bool {
+        let now: protocol::TimestampFormat = unix_time::Instant::now().into();
+        now.seconds.wrapping_sub(self.reference_timestamp.seconds)
+            >= REFERENCE_TIMESTAMP_MAX_AGE.as_secs() as u32
+    }
+
+    /// Set `reference_timestamp` to the current (whole-second) time.
+    pub(crate) fn refresh_reference_timestamp(&mut self) {
+        self.reference_timestamp = coarse_now();
     }
 }

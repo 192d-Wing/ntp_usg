@@ -4,10 +4,10 @@
 //! Shared NTS constants, types, and pure functions used by both client
 //! and server NTS implementations.
 
-// NOTE: The `fips-aead` feature flag is defined in Cargo.toml as a placeholder.
-// It currently activates `nts` (the default AES-SIV-CMAC backend). When a FIPS
-// 140-3 certified AES-SIV-CMAC implementation becomes available for Rust, this
-// feature will switch to a validated backend. See docs/CRYPTO.md.
+// There is intentionally no `fips-aead` feature: no FIPS 140-3 validated
+// AES-SIV-CMAC backend exists for Rust yet, and a placeholder feature that
+// silently built this (non-validated) RustCrypto backend would mislead
+// deployments that require FIPS. See docs/CRYPTO.md for the migration path.
 
 use std::io;
 
@@ -81,8 +81,8 @@ impl From<NtsProtoError> for io::Error {
 ///
 /// The default implementation (`AesSivCmacAead`) uses the `aes-siv` RustCrypto
 /// crate. When a FIPS 140-3 certified AES-SIV-CMAC implementation becomes
-/// available for Rust, a second implementation can be provided behind the
-/// `fips-aead` feature flag.
+/// available for Rust, a second implementation can be provided behind a
+/// feature flag (see `docs/CRYPTO.md`).
 pub trait NtsAead: Send + Sync {
     /// Encrypt plaintext with associated data, returning `(nonce, ciphertext)`.
     fn encrypt(&self, aad: &[u8], plaintext: &[u8]) -> io::Result<(Vec<u8>, Vec<u8>)>;
@@ -191,7 +191,11 @@ pub const COOKIE_PLACEHOLDER_COUNT: usize = 7;
 pub const COOKIE_REKEY_THRESHOLD: usize = 2;
 
 /// Result of NTS Key Establishment.
-#[derive(Clone, Debug)]
+///
+/// Holds the raw C2S/S2C AEAD keys. The key material is zeroized on drop and
+/// redacted from `Debug` output; the type is intentionally not `Clone` so
+/// copies of the keys are not created implicitly. Move the fields out (e.g.
+/// with [`core::mem::take`]) when transferring them into a session.
 pub struct NtsKeResult {
     /// Client-to-server AEAD key.
     pub c2s_key: Vec<u8>,
@@ -207,6 +211,34 @@ pub struct NtsKeResult {
     pub ntp_port: u16,
     /// Negotiated NTP protocol ID (0 = NTPv4, 0x8001 = NTPv5).
     pub next_protocol: u16,
+}
+
+impl core::fmt::Debug for NtsKeResult {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("NtsKeResult")
+            .field(
+                "c2s_key",
+                &format_args!("[REDACTED; {} bytes]", self.c2s_key.len()),
+            )
+            .field(
+                "s2c_key",
+                &format_args!("[REDACTED; {} bytes]", self.s2c_key.len()),
+            )
+            .field("cookies", &self.cookies.len())
+            .field("aead_algorithm", &self.aead_algorithm)
+            .field("ntp_server", &self.ntp_server)
+            .field("ntp_port", &self.ntp_port)
+            .field("next_protocol", &self.next_protocol)
+            .finish()
+    }
+}
+
+impl Drop for NtsKeResult {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.c2s_key.zeroize();
+        self.s2c_key.zeroize();
+    }
 }
 
 /// NTS-KE record as read from the TLS stream.

@@ -154,6 +154,14 @@ pub fn write_extension_fields_buf(
 
     for field in fields {
         let field_length = 4 + field.value.len();
+        // The Field Length is a 16-bit wire field. Refuse rather than
+        // truncate: a silently wrapped length would produce a packet whose
+        // declared and actual lengths disagree.
+        if field_length > u16::MAX as usize {
+            return Err(ParseError::ExtensionTooLong {
+                value_len: field.value.len(),
+            });
+        }
         let padded = (field_length + 3) & !3;
 
         if offset + padded > buf.len() {
@@ -193,6 +201,16 @@ pub fn parse_extension_fields(data: &[u8]) -> io::Result<Vec<ExtensionField>> {
 /// Each field is padded to a 4-byte boundary with zero bytes.
 #[cfg(feature = "std")]
 pub fn write_extension_fields(fields: &[ExtensionField]) -> io::Result<Vec<u8>> {
+    // Reject oversized values before allocating for them.
+    if let Some(f) = fields
+        .iter()
+        .find(|f| 4 + f.value.len() > u16::MAX as usize)
+    {
+        return Err(ParseError::ExtensionTooLong {
+            value_len: f.value.len(),
+        }
+        .into());
+    }
     // Calculate total size needed.
     let total: usize = fields.iter().map(|f| ((4 + f.value.len()) + 3) & !3).sum();
     let mut buf = vec![0u8; total];
@@ -530,6 +548,31 @@ impl ExtensionRegistry {
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn write_extension_fields_rejects_value_too_long_for_u16_length() {
+        // 4 + 65532 = 65536 does not fit the 16-bit Field Length; the old code
+        // truncated it to 0 and emitted a self-inconsistent packet.
+        let too_long = ExtensionField {
+            field_type: 0x0104,
+            value: vec![0u8; u16::MAX as usize - 3],
+        };
+        let mut buf = vec![0u8; 70_000];
+        assert!(matches!(
+            write_extension_fields_buf(core::slice::from_ref(&too_long), &mut buf),
+            Err(ParseError::ExtensionTooLong { value_len }) if value_len == u16::MAX as usize - 3
+        ));
+        assert!(write_extension_fields(core::slice::from_ref(&too_long)).is_err());
+
+        // The largest encodable value is accepted.
+        let max_ok = ExtensionField {
+            field_type: 0x0104,
+            value: vec![0u8; u16::MAX as usize - 4],
+        };
+        let n = write_extension_fields_buf(core::slice::from_ref(&max_ok), &mut buf).unwrap();
+        assert_eq!(n, (u16::MAX as usize + 3) & !3);
+        assert_eq!(u16::from_be_bytes([buf[2], buf[3]]), u16::MAX);
+    }
 
     #[test]
     fn test_parse_empty() {

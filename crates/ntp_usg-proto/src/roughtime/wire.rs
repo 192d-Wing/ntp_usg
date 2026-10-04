@@ -172,17 +172,19 @@ pub fn decode_envelope(buf: &[u8]) -> Result<&[u8], RoughtimeError> {
         return Err(RoughtimeError::InvalidMagic);
     }
 
-    let length = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]) as usize;
-    let total = ENVELOPE_HEADER_LEN + length;
+    let length = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]);
+    // Compute in u64 so an attacker-chosen length near u32::MAX cannot
+    // overflow `usize` on 32-bit targets (wasm32) and wrap to a small total.
+    let total = ENVELOPE_HEADER_LEN as u64 + length as u64;
 
-    if buf.len() < total {
+    if (buf.len() as u64) < total {
         return Err(RoughtimeError::MessageTooShort {
-            needed: total,
+            needed: usize::try_from(total).unwrap_or(usize::MAX),
             available: buf.len(),
         });
     }
 
-    Ok(&buf[ENVELOPE_HEADER_LEN..total])
+    Ok(&buf[ENVELOPE_HEADER_LEN..total as usize])
 }
 
 /// Encode a message into a Roughtime envelope.
@@ -261,6 +263,22 @@ fn tag_to_u32(tag: &[u8]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_decode_envelope_huge_length_is_too_short_not_overflow() {
+        // length = u32::MAX: on a 32-bit target `12 + length` would wrap to 11
+        // and slice past the buffer; it must be a clean MessageTooShort.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&ENVELOPE_MAGIC.to_le_bytes());
+        buf.extend_from_slice(&u32::MAX.to_le_bytes());
+        buf.extend_from_slice(&[0u8; 16]);
+        match decode_envelope(&buf) {
+            Err(RoughtimeError::MessageTooShort { available, .. }) => {
+                assert_eq!(available, buf.len());
+            }
+            other => panic!("expected MessageTooShort, got {other:?}"),
+        }
+    }
 
     #[test]
     fn test_empty_map() {

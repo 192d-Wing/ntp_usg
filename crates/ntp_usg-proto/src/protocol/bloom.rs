@@ -71,7 +71,7 @@ impl BloomFilter {
         if start >= self.bits.len() {
             return &[];
         }
-        let end = (start + len).min(self.bits.len());
+        let end = start.saturating_add(len).min(self.bits.len());
         &self.bits[start..end]
     }
 
@@ -83,7 +83,7 @@ impl BloomFilter {
         if start >= self.bits.len() {
             return;
         }
-        let end = (start + data.len()).min(self.bits.len());
+        let end = start.saturating_add(data.len()).min(self.bits.len());
         let copy_len = end - start;
         self.bits[start..end].copy_from_slice(&data[..copy_len]);
     }
@@ -139,6 +139,14 @@ fn extract_12_bits(data: &[u8; 15], bit_offset: usize) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_chunk_len_near_usize_max_does_not_overflow() {
+        let f = BloomFilter::new();
+        // `offset + len` would wrap without saturating arithmetic.
+        assert_eq!(f.chunk(8, usize::MAX).len(), f.bits.len() - 8);
+        assert_eq!(f.chunk(u16::MAX, usize::MAX).len(), 0);
+    }
 
     #[test]
     fn test_bloom_empty() {
