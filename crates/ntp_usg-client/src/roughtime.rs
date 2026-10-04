@@ -119,7 +119,7 @@ pub fn request_with_timeout<A: ToSocketAddrs>(
     }
     let target_addr = resolved_addrs[0];
 
-    let (request_bytes, nonce) = build_request();
+    let (request_bytes, _nonce) = build_request();
 
     let sock = UdpSocket::bind(bind_addr_for(&target_addr))?;
     sock.set_read_timeout(Some(timeout))?;
@@ -132,7 +132,7 @@ pub fn request_with_timeout<A: ToSocketAddrs>(
     let (recv_len, src_addr) = sock.recv_from(&mut recv_buf)?;
     debug!("roughtime: recv {} bytes from {:?}", recv_len, src_addr);
 
-    verify_response(&recv_buf[..recv_len], &nonce, public_key)
+    verify_response(&recv_buf[..recv_len], &request_bytes, public_key)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
@@ -182,7 +182,7 @@ async fn async_request_inner<A: tokio::net::ToSocketAddrs>(
     }
     let target_addr = resolved_addrs[0];
 
-    let (request_bytes, nonce) = build_request();
+    let (request_bytes, _nonce) = build_request();
 
     let sock = tokio::net::UdpSocket::bind(bind_addr_for(&target_addr)).await?;
 
@@ -193,7 +193,7 @@ async fn async_request_inner<A: tokio::net::ToSocketAddrs>(
     let (recv_len, src_addr) = sock.recv_from(&mut recv_buf).await?;
     debug!("roughtime: recv {} bytes from {:?}", recv_len, src_addr);
 
-    verify_response(&recv_buf[..recv_len], &nonce, public_key)
+    verify_response(&recv_buf[..recv_len], &request_bytes, public_key)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 

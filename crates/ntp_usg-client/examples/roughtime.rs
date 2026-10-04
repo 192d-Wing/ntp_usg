@@ -28,8 +28,8 @@ fn main() {
             let secs = result.midpoint_seconds();
             let radius = result.radius_seconds();
             println!("Midpoint:  {secs} seconds since Unix epoch");
-            println!("Radius:    ±{radius}s ({} µs)", result.radius_us);
-            println!("Raw MIDP:  {} µs", result.midpoint_us);
+            println!("Radius:    ±{radius}s");
+            println!("Version:   {:#x}", result.version);
 
             // Compare with NTP.
             match ntp_client::request("time.cloudflare.com:123") {
