@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Run cargo audit
         run: cargo audit
 
@@ -27,6 +27,6 @@ jobs:
     runs-on: ubuntu-latest
     container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Run cargo deny
         run: cargo deny check advisories sources licenses bans
