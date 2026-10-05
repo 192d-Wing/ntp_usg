@@ -34,7 +34,7 @@ jobs:
             arch: arm64
             rust: beta
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install beta toolchain
         if: matrix.rust == 'beta'
         run: rustup toolchain install beta && rustup default beta
@@ -85,7 +85,7 @@ jobs:
         runner: [windows-latest, windows-11-arm]
         rust: [stable, beta]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
@@ -119,7 +119,7 @@ jobs:
       matrix:
         rust: [stable, beta]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
@@ -151,7 +151,7 @@ jobs:
     runs-on: ubuntu-latest
     container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Generate coverage (all features)
         run: cargo llvm-cov nextest --workspace --all-features --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
@@ -167,7 +167,7 @@ jobs:
     runs-on: ubuntu-latest
     container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Check no_std (no features)
         run: cargo check -p ntp_usg-proto --no-default-features --verbose
       - name: Check no_std + alloc
@@ -178,7 +178,7 @@ jobs:
     runs-on: ubuntu-latest
     container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
@@ -187,7 +187,7 @@ jobs:
     runs-on: ubuntu-latest
     container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -196,7 +196,7 @@ jobs:
     runs-on: ubuntu-latest
     container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Check documentation (warnings as errors)
         env:
           RUSTDOCFLAGS: "-D warnings"
@@ -207,7 +207,7 @@ jobs:
     runs-on: ubuntu-latest
     container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Run cargo audit
         run: cargo audit
 
@@ -216,7 +216,7 @@ jobs:
     runs-on: ubuntu-latest
     container: ${{ vars.CI_IMAGE || 'ghcr.io/192d-wing/ntp_usg-ci:latest' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install MSRV toolchain
         run: rustup toolchain install 1.93 && rustup default 1.93
       - name: Check MSRV
@@ -230,7 +230,7 @@ jobs:
       # Limit proptest to 1 case per test — 256 interpreted iterations is very slow under Miri
       PROPTEST_CASES: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
@@ -252,7 +252,7 @@ jobs:
     name: cargo deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
@@ -261,7 +261,7 @@ jobs:
     name: Fuzz (smoke)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-fuzz
@@ -286,7 +286,7 @@ jobs:
     name: WASM
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -308,7 +308,7 @@ jobs:
     name: Minimal Versions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
