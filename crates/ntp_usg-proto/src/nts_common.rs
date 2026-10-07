@@ -283,8 +283,7 @@ pub fn build_nts_request(
     (&mut header_buf[..]).write_bytes(packet)?;
 
     // Build extension fields (unencrypted).
-    let mut uid_data = vec![0u8; 32];
-    rand::fill(&mut uid_data[..]);
+    let uid_data: Vec<u8> = rand::random::<[u8; 32]>().to_vec();
     let uid = UniqueIdentifier::new(uid_data.clone());
     let nts_cookie = NtsCookie::new(cookie);
 
@@ -440,8 +439,7 @@ pub fn aead_encrypt(
         AEAD_AES_SIV_CMAC_256 => {
             let cipher =
                 Aes128SivAead::new_from_slice(key).map_err(|_| NtsProtoError::AeadKeyInit)?;
-            let mut nonce_bytes = [0u8; 16];
-            rand::fill(&mut nonce_bytes);
+            let nonce_bytes: [u8; 16] = rand::random();
 
             let payload = aes_siv::aead::Payload {
                 msg: plaintext,
@@ -457,8 +455,7 @@ pub fn aead_encrypt(
         AEAD_AES_SIV_CMAC_512 => {
             let cipher =
                 Aes256SivAead::new_from_slice(key).map_err(|_| NtsProtoError::AeadKeyInit)?;
-            let mut nonce_bytes = [0u8; 16];
-            rand::fill(&mut nonce_bytes);
+            let nonce_bytes: [u8; 16] = rand::random();
 
             let payload = aes_siv::aead::Payload {
                 msg: plaintext,
