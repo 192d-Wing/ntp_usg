@@ -142,6 +142,11 @@ pub enum NtsError {
     },
     /// No NTS cookies remaining.
     NoCookies,
+    /// NTS-KE response contained too many records without End of Message.
+    TooManyRecords {
+        /// The cap that was exceeded.
+        max: usize,
+    },
     /// The server answered with an `NTSN` Kiss-o'-Death (RFC 8915 Section 5.7):
     /// it could not authenticate our request. All cookies have been discarded;
     /// run NTS-KE again before making further requests.
@@ -246,6 +251,10 @@ impl fmt::Display for NtsError {
             }
             NtsError::MissingRecord { record } => write!(f, "missing NTS-KE record: {record}"),
             NtsError::NoCookies => write!(f, "no NTS cookies remaining"),
+            NtsError::TooManyRecords { max } => write!(
+                f,
+                "NTS-KE response exceeded {max} records without End of Message"
+            ),
             NtsError::NtsNak => write!(
                 f,
                 "server sent NTSN: NTS authentication failed, cookies discarded; re-run NTS-KE"

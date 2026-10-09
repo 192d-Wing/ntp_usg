@@ -8,11 +8,46 @@
 //! only handles TLS connection setup, record reading/writing, and shutdown.
 
 use std::io;
+use std::time::Duration;
 
 use tracing::debug;
 
 use crate::error::{NtpError, NtsError};
 use crate::nts_common::*;
+
+/// Default wall-clock budget for a whole NTS-KE exchange (TCP connect, TLS
+/// handshake, request, response). Without it a stalled or hostile KE server
+/// can hang the client indefinitely; the UDP request path already has its own
+/// 5 s timeout.
+pub const NTS_KE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Maximum number of NTS-KE records accepted in one server response.
+///
+/// A conforming response is a handful of records plus up to eight cookies,
+/// so a few dozen is generous. Without a cap a malicious server can stream
+/// 64 KiB records until the client runs out of memory.
+pub(crate) const MAX_KE_RESPONSE_RECORDS: usize = 64;
+
+/// Append a received record to `records`, enforcing [`MAX_KE_RESPONSE_RECORDS`].
+///
+/// Returns `Ok(true)` once the End of Message record has been appended.
+pub(crate) fn push_ke_response_record(
+    records: &mut Vec<NtsKeRecord>,
+    record: NtsKeRecord,
+) -> io::Result<bool> {
+    let is_eom = record.record_type == NTS_KE_END_OF_MESSAGE;
+    records.push(record);
+    if is_eom {
+        return Ok(true);
+    }
+    if records.len() >= MAX_KE_RESPONSE_RECORDS {
+        return Err(NtpError::Nts(NtsError::TooManyRecords {
+            max: MAX_KE_RESPONSE_RECORDS,
+        })
+        .into());
+    }
+    Ok(false)
+}
 
 /// Parse an NTS-KE server address into (hostname, port).
 ///
@@ -306,5 +341,41 @@ mod tests {
         let last_record_len = u16::from_be_bytes([buf[len - 2], buf[len - 1]]);
         assert_eq!(last_record_type & 0x7FFF, NTS_KE_END_OF_MESSAGE);
         assert_eq!(last_record_len, 0);
+    }
+
+    fn rec(record_type: u16) -> NtsKeRecord {
+        NtsKeRecord {
+            critical: false,
+            record_type,
+            body: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn push_ke_response_record_stops_at_eom() {
+        let mut records = Vec::new();
+        assert!(!push_ke_response_record(&mut records, rec(NTS_KE_NEW_COOKIE)).unwrap());
+        assert!(push_ke_response_record(&mut records, rec(NTS_KE_END_OF_MESSAGE)).unwrap());
+        assert_eq!(records.len(), 2);
+    }
+
+    #[test]
+    fn push_ke_response_record_caps_record_count() {
+        // A server that never sends End of Message must be cut off at the cap
+        // rather than allowed to grow the vector without bound.
+        let mut records = Vec::new();
+        for _ in 0..MAX_KE_RESPONSE_RECORDS - 1 {
+            assert!(!push_ke_response_record(&mut records, rec(NTS_KE_NEW_COOKIE)).unwrap());
+        }
+        let err = push_ke_response_record(&mut records, rec(NTS_KE_NEW_COOKIE)).unwrap_err();
+        assert!(err.to_string().contains("record"), "{err}");
+        assert_eq!(records.len(), MAX_KE_RESPONSE_RECORDS);
+
+        // An EoM as the final permitted record is still accepted.
+        let mut records = Vec::new();
+        for _ in 0..MAX_KE_RESPONSE_RECORDS - 1 {
+            push_ke_response_record(&mut records, rec(NTS_KE_NEW_COOKIE)).unwrap();
+        }
+        assert!(push_ke_response_record(&mut records, rec(NTS_KE_END_OF_MESSAGE)).unwrap());
     }
 }

@@ -75,8 +75,7 @@ impl RoughtimeResult {
 /// Returns `(envelope_bytes, nonce)` where `nonce` is the 32-byte random nonce
 /// that must be used to verify the response.
 pub fn build_request() -> (Vec<u8>, [u8; 32]) {
-    let mut nonce = [0u8; 32];
-    rand::fill(&mut nonce);
+    let nonce: [u8; 32] = rand::random();
     let envelope = build_request_with_nonce(&nonce);
     (envelope, nonce)
 }
@@ -129,8 +128,9 @@ pub fn build_chained_request(prev_response: &[u8], blind: &[u8; 32]) -> (Vec<u8>
     ctx.update(blind);
     let hash = ctx.finish();
 
-    let mut nonce = [0u8; 32];
-    nonce.copy_from_slice(&hash.as_ref()[..32]);
+    let nonce: [u8; 32] = hash.as_ref()[..32]
+        .try_into()
+        .expect("SHA-512 output is 64 bytes");
 
     let envelope = build_request_with_nonce(&nonce);
     (envelope, nonce)

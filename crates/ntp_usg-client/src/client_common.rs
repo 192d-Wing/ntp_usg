@@ -650,25 +650,21 @@ pub(crate) fn select_and_build_state(
                     .collect();
                 selection::cluster_survivors(&mut survivors);
 
-                match selection::combine(&survivors) {
-                    Some(est) => {
-                        let sys_peer = &peers[est.system_peer_index];
-                        let sample = sys_peer
-                            .filter
-                            .best_sample()
-                            .expect("system peer was pre-filtered to have samples");
-                        (
-                            est.offset,
-                            sample.delay,
-                            est.jitter,
-                            est.system_peer_index,
-                            survivors.len(),
-                            sys_peer.root_delay_secs,
-                            sys_peer.root_dispersion_secs,
-                        )
-                    }
-                    None => return None,
-                }
+                let est = selection::combine(&survivors)?;
+                let sys_peer = &peers[est.system_peer_index];
+                let sample = sys_peer
+                    .filter
+                    .best_sample()
+                    .expect("system peer was pre-filtered to have samples");
+                (
+                    est.offset,
+                    sample.delay,
+                    est.jitter,
+                    est.system_peer_index,
+                    survivors.len(),
+                    sys_peer.root_delay_secs,
+                    sys_peer.root_dispersion_secs,
+                )
             }
         };
 
@@ -845,7 +841,7 @@ macro_rules! define_client_builder {
             /// Set the clock-step sanity limit for the discipline loop.
             ///
             /// Offsets larger than this (default
-            /// [`PANICT`](crate::discipline::PANICT), 1000 s) are refused
+            /// [`crate::discipline::PANICT`], 1000 s) are refused
             /// rather than stepped, so one bad or malicious server cannot move
             /// the clock arbitrarily. `None` disables the limit; only use that
             /// for a one-time initial sync from a trusted source.

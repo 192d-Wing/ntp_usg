@@ -7,8 +7,11 @@
 //! the tokio-based [`crate::nts_ke_server`] and smol-based
 //! [`crate::smol_nts_ke_server`] modules.
 
+use std::collections::HashMap;
 use std::io;
-use std::sync::{Arc, RwLock};
+use std::net::IpAddr;
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
 use crate::error::{ConfigError, NtpServerError, NtsError};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
@@ -24,6 +27,18 @@ use crate::nts_server_common::{CookieContents, MasterKeyStore};
 /// bounds memory/CPU against a peer that never sends End-of-Message. Shared by
 /// the tokio and smol NTS-KE servers.
 pub(crate) const MAX_KE_RECORDS: usize = 32;
+
+/// Default wall-clock budget for one NTS-KE connection: TCP accept to response
+/// flushed, including the TLS handshake. A real exchange takes one round trip
+/// plus a handshake; anything still open after this is a stalled or hostile
+/// peer holding a task and a file descriptor.
+pub const DEFAULT_KE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Default cap on NTS-KE connections being served at once.
+pub const DEFAULT_KE_MAX_CONNECTIONS: usize = 256;
+
+/// Default cap on in-flight NTS-KE connections from a single IP address.
+pub const DEFAULT_KE_MAX_CONNECTIONS_PER_IP: usize = 8;
 
 /// Configuration for an NTS-KE server.
 pub struct NtsKeServerConfig {
@@ -41,6 +56,19 @@ pub struct NtsKeServerConfig {
     pub ntp_port: Option<u16>,
     /// Number of cookies to issue per NTS-KE session (default: 8).
     pub cookie_count: usize,
+    /// Maximum time one connection may take from accept to response flushed,
+    /// TLS handshake included (default: [`DEFAULT_KE_CONNECTION_TIMEOUT`]).
+    /// Bounds how long a slow or stalled peer can hold a task and a socket.
+    pub connection_timeout: Duration,
+    /// Maximum NTS-KE connections handled concurrently (default:
+    /// [`DEFAULT_KE_MAX_CONNECTIONS`]). Connections beyond the cap are closed
+    /// immediately after accept without a TLS handshake.
+    pub max_connections: usize,
+    /// Maximum concurrent NTS-KE connections from one client IP (default:
+    /// [`DEFAULT_KE_MAX_CONNECTIONS_PER_IP`]). Stops a single source from
+    /// consuming the whole `max_connections` budget. `0` disables the per-IP
+    /// cap.
+    pub max_connections_per_ip: usize,
 }
 
 impl NtsKeServerConfig {
@@ -69,8 +97,95 @@ impl NtsKeServerConfig {
             ntp_server: None,
             ntp_port: None,
             cookie_count: 8,
+            connection_timeout: DEFAULT_KE_CONNECTION_TIMEOUT,
+            max_connections: DEFAULT_KE_MAX_CONNECTIONS,
+            max_connections_per_ip: DEFAULT_KE_MAX_CONNECTIONS_PER_IP,
         })
     }
+}
+
+/// Admission control for NTS-KE connections: a global cap and a per-IP cap.
+///
+/// Runtime-agnostic (plain `Mutex`, never held across an await). A connection
+/// that is admitted holds a [`KeConnectionPermit`]; dropping the permit frees
+/// the slots, so cancellation (e.g. by a timeout) releases them too.
+pub(crate) struct KeConnectionLimiter {
+    max_total: usize,
+    max_per_ip: usize,
+    inner: Mutex<LimiterState>,
+}
+
+#[derive(Default)]
+struct LimiterState {
+    total: usize,
+    per_ip: HashMap<IpAddr, usize>,
+}
+
+impl KeConnectionLimiter {
+    pub(crate) fn new(max_total: usize, max_per_ip: usize) -> Arc<Self> {
+        Arc::new(KeConnectionLimiter {
+            max_total,
+            max_per_ip,
+            inner: Mutex::new(LimiterState::default()),
+        })
+    }
+
+    /// Try to admit a connection from `ip`. Returns `None` when either cap is
+    /// reached; the caller should close the socket without handshaking.
+    pub(crate) fn try_acquire(self: &Arc<Self>, ip: IpAddr) -> Option<KeConnectionPermit> {
+        // IPv4 clients on a dual-stack socket arrive as `::ffff:a.b.c.d`.
+        let ip = ip.to_canonical();
+        let mut st = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if st.total >= self.max_total {
+            return None;
+        }
+        let per_ip = st.per_ip.entry(ip).or_insert(0);
+        if self.max_per_ip != 0 && *per_ip >= self.max_per_ip {
+            if *per_ip == 0 {
+                st.per_ip.remove(&ip);
+            }
+            return None;
+        }
+        *per_ip += 1;
+        st.total += 1;
+        Some(KeConnectionPermit {
+            limiter: Arc::clone(self),
+            ip,
+        })
+    }
+
+    /// Number of connections currently admitted.
+    #[cfg(test)]
+    pub(crate) fn in_flight(&self) -> usize {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).total
+    }
+}
+
+/// RAII token for an admitted NTS-KE connection; see [`KeConnectionLimiter`].
+pub(crate) struct KeConnectionPermit {
+    limiter: Arc<KeConnectionLimiter>,
+    ip: IpAddr,
+}
+
+impl Drop for KeConnectionPermit {
+    fn drop(&mut self) {
+        let mut st = self.limiter.inner.lock().unwrap_or_else(|e| e.into_inner());
+        st.total = st.total.saturating_sub(1);
+        if let Some(n) = st.per_ip.get_mut(&self.ip) {
+            *n -= 1;
+            if *n == 0 {
+                st.per_ip.remove(&self.ip);
+            }
+        }
+    }
+}
+
+/// Map a timed-out NTS-KE connection to an `io::Error`.
+pub(crate) fn ke_timeout_error(budget: Duration) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::TimedOut,
+        format!("NTS-KE connection exceeded {budget:?} budget"),
+    )
 }
 
 /// Process NTS-KE client records and produce the response bytes to send.
@@ -311,5 +426,62 @@ mod tests {
         assert_eq!(config.ntp_port, Some(1234));
         assert_eq!(config.cookie_count, 4);
         assert_eq!(config.listen_addr, "127.0.0.1:4460");
+    }
+
+    // ── KeConnectionLimiter ──────────────────────────────────────
+
+    #[test]
+    fn limiter_enforces_global_cap_and_releases_on_drop() {
+        let lim = KeConnectionLimiter::new(2, 0);
+        let a: IpAddr = "10.0.0.1".parse().unwrap();
+        let b: IpAddr = "10.0.0.2".parse().unwrap();
+        let c: IpAddr = "10.0.0.3".parse().unwrap();
+
+        let p1 = lim.try_acquire(a).expect("first admitted");
+        let p2 = lim.try_acquire(b).expect("second admitted");
+        assert!(lim.try_acquire(c).is_none(), "third must be refused");
+        assert_eq!(lim.in_flight(), 2);
+
+        drop(p1);
+        assert_eq!(lim.in_flight(), 1);
+        let _p3 = lim.try_acquire(c).expect("slot freed by drop");
+        drop(p2);
+        assert_eq!(lim.in_flight(), 1);
+    }
+
+    #[test]
+    fn limiter_enforces_per_ip_cap_independently() {
+        let lim = KeConnectionLimiter::new(100, 2);
+        let a: IpAddr = "10.0.0.1".parse().unwrap();
+        let b: IpAddr = "10.0.0.2".parse().unwrap();
+
+        let _a1 = lim.try_acquire(a).unwrap();
+        let a2 = lim.try_acquire(a).unwrap();
+        assert!(lim.try_acquire(a).is_none(), "third from same IP refused");
+        // Other IPs are unaffected.
+        let _b1 = lim.try_acquire(b).unwrap();
+        // Releasing one frees a per-IP slot.
+        drop(a2);
+        let _a3 = lim.try_acquire(a).unwrap();
+        assert_eq!(lim.in_flight(), 3);
+    }
+
+    #[test]
+    fn limiter_treats_v4_mapped_as_v4() {
+        let lim = KeConnectionLimiter::new(100, 1);
+        let v4: IpAddr = "192.0.2.1".parse().unwrap();
+        let mapped: IpAddr = "::ffff:192.0.2.1".parse().unwrap();
+        let _p = lim.try_acquire(v4).unwrap();
+        assert!(lim.try_acquire(mapped).is_none());
+    }
+
+    #[test]
+    fn limiter_per_ip_zero_disables_cap() {
+        let lim = KeConnectionLimiter::new(10, 0);
+        let a: IpAddr = "10.0.0.1".parse().unwrap();
+        let permits: Vec<_> = (0..10).map(|_| lim.try_acquire(a).unwrap()).collect();
+        assert!(lim.try_acquire(a).is_none(), "global cap still applies");
+        drop(permits);
+        assert_eq!(lim.in_flight(), 0);
     }
 }

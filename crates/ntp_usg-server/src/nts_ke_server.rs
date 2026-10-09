@@ -39,7 +39,11 @@ use tokio_rustls::TlsAcceptor;
 use tracing::{Instrument, debug};
 
 use crate::nts_common::*;
-pub use crate::nts_ke_server_common::NtsKeServerConfig;
+pub use crate::nts_ke_server_common::{
+    DEFAULT_KE_CONNECTION_TIMEOUT, DEFAULT_KE_MAX_CONNECTIONS, DEFAULT_KE_MAX_CONNECTIONS_PER_IP,
+    NtsKeServerConfig,
+};
+use crate::nts_ke_server_common::{KeConnectionLimiter, ke_timeout_error};
 use crate::nts_server_common::MasterKeyStore;
 
 /// An NTS-KE server that accepts TLS connections and issues NTS cookies.
@@ -50,6 +54,8 @@ pub struct NtsKeServer {
     ntp_port: Option<u16>,
     cookie_count: usize,
     listen_addr: String,
+    connection_timeout: Duration,
+    limiter: Arc<KeConnectionLimiter>,
 }
 
 impl NtsKeServer {
@@ -68,6 +74,11 @@ impl NtsKeServer {
             ntp_port: config.ntp_port,
             cookie_count: config.cookie_count,
             listen_addr: config.listen_addr,
+            connection_timeout: config.connection_timeout,
+            limiter: KeConnectionLimiter::new(
+                config.max_connections,
+                config.max_connections_per_ip,
+            ),
         })
     }
 
@@ -78,6 +89,14 @@ impl NtsKeServer {
 
         loop {
             let (tcp_stream, peer_addr) = listener.accept().await?;
+
+            // Admission control before any TLS work: a refused connection costs
+            // us an accept() and a close(), not a (post-quantum) handshake.
+            let Some(permit) = self.limiter.try_acquire(peer_addr.ip()) else {
+                debug!(peer = %peer_addr, "NTS-KE connection refused: connection limit reached");
+                drop(tcp_stream);
+                continue;
+            };
             debug!(peer = %peer_addr, "NTS-KE connection accepted");
 
             let acceptor = self.tls_acceptor.clone();
@@ -85,26 +104,30 @@ impl NtsKeServer {
             let ntp_server = self.ntp_server.clone();
             let ntp_port = self.ntp_port;
             let cookie_count = self.cookie_count;
+            let budget = self.connection_timeout;
 
             tokio::spawn(
                 async move {
-                    match acceptor.accept(tcp_stream).await {
-                        Ok(tls_stream) => {
-                            if let Err(e) = handle_nts_ke_connection(
-                                tls_stream,
-                                &key_store,
-                                ntp_server.as_deref(),
-                                ntp_port,
-                                cookie_count,
-                            )
-                            .await
-                            {
-                                debug!(peer = %peer_addr, error = %e, "NTS-KE connection error");
-                            }
-                        }
-                        Err(e) => {
-                            debug!("TLS accept error from {}: {}", peer_addr, e);
-                        }
+                    // The permit lives for the whole task, including the time
+                    // spent in the TLS handshake, and is released on timeout.
+                    let _permit = permit;
+                    let work = async {
+                        let tls_stream = acceptor.accept(tcp_stream).await?;
+                        handle_nts_ke_connection(
+                            tls_stream,
+                            &key_store,
+                            ntp_server.as_deref(),
+                            ntp_port,
+                            cookie_count,
+                        )
+                        .await
+                    };
+                    let result = match tokio::time::timeout(budget, work).await {
+                        Ok(r) => r,
+                        Err(_) => Err(ke_timeout_error(budget)),
+                    };
+                    if let Err(e) = result {
+                        debug!(peer = %peer_addr, error = %e, "NTS-KE connection error");
                     }
                 }
                 .instrument(tracing::debug_span!("nts_ke_connection", peer_addr = %peer_addr)),

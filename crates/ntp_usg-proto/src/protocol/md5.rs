@@ -51,7 +51,9 @@ fn md5(data: &[u8]) -> [u8; 16] {
     msg.extend_from_slice(&bit_len.to_le_bytes());
 
     // Process each 64-byte block.
-    for chunk in msg.chunks_exact(64) {
+    // `msg` is padded to a multiple of 64 bytes above, so the remainder is empty.
+    let (blocks, _) = msg.as_chunks::<64>();
+    for chunk in blocks {
         let mut m = [0u32; 16];
         for (i, m_i) in m.iter_mut().enumerate() {
             *m_i = u32::from_le_bytes([

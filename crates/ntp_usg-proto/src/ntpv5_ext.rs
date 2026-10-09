@@ -5,7 +5,7 @@
 //!
 //! NTPv5 defines a provisional range of extension field type codes (0xF5xx)
 //! for use during the draft period. Each type code is paired with a typed
-//! struct that can be converted to/from the generic [`ExtensionField`](crate::extension::ExtensionField) type.
+//! struct that can be converted to/from the generic [`ExtensionField`] type.
 //!
 //! # Required Extension Fields
 //!

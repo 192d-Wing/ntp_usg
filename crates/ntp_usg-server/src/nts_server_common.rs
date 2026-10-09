@@ -129,8 +129,7 @@ impl Drop for MasterKey {
 impl MasterKey {
     /// Generate a new master key with random key material.
     pub fn generate(key_id: u32) -> Self {
-        let mut key = [0u8; 64];
-        rand::fill(&mut key);
+        let key: [u8; 64] = rand::random();
         MasterKey {
             key_id,
             key,
