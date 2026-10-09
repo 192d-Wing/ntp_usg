@@ -193,26 +193,20 @@ fn stratum_0_kod_rate() {
 #[test]
 fn stratum_0_unknown_kiss_code() {
     // XYZW = unknown kiss code
-    let input = make_test_packet(0, [b'X', b'Y', b'Z', b'W']);
+    let input = make_test_packet(0, *b"XYZW");
     let packet = (&input[..]).read_bytes::<Packet>().unwrap();
     assert_eq!(packet.stratum, Stratum::UNSPECIFIED);
-    assert_eq!(
-        packet.reference_id,
-        ReferenceIdentifier::Unknown([b'X', b'Y', b'Z', b'W'])
-    );
+    assert_eq!(packet.reference_id, ReferenceIdentifier::Unknown(*b"XYZW"));
     assert!(!packet.reference_id.is_kiss_of_death());
 }
 
 #[test]
 fn stratum_1_unknown_primary_source() {
     // ABCD = unknown primary source identifier
-    let input = make_test_packet(1, [b'A', b'B', b'C', b'D']);
+    let input = make_test_packet(1, *b"ABCD");
     let packet = (&input[..]).read_bytes::<Packet>().unwrap();
     assert_eq!(packet.stratum, Stratum::PRIMARY);
-    assert_eq!(
-        packet.reference_id,
-        ReferenceIdentifier::Unknown([b'A', b'B', b'C', b'D'])
-    );
+    assert_eq!(packet.reference_id, ReferenceIdentifier::Unknown(*b"ABCD"));
 }
 
 #[test]
